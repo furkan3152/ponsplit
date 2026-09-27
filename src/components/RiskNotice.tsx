@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { activeChain } from "@/lib/chains";
 
 const KEY = "ponsplit:risk-ack:v1";
@@ -27,8 +28,8 @@ export function useRiskGate() {
     setPending(() => fn);
   };
 
-  const dialog = pending ? (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="risk-title">
+  const dialog = pending ? createPortal(
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/40 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="risk-title">
       <div className="card w-full max-w-md animate-pop space-y-4 p-6">
         <h2 id="risk-title" className="font-display text-[22px] font-bold tracking-tight">
           Before you continue
@@ -61,7 +62,8 @@ export function useRiskGate() {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   ) : null;
 
   return { guard, dialog };
