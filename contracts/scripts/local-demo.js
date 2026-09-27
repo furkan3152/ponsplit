@@ -8,7 +8,7 @@
 // ids, so run the web app with X_RESOLVER=mock and SIGNER_PRIVATE_KEY = account #1's key.
 const { ethers } = require("hardhat");
 
-// Must match mockXId() in web/src/lib/x.ts.
+// Must match mockXId() in src/lib/x.ts.
 const mockXId = (handle) => (BigInt(ethers.keccak256(ethers.toUtf8Bytes(`mock-x:${handle}`))) >> 200n) + 1n;
 
 async function main() {
@@ -80,7 +80,7 @@ async function main() {
   await launchpad.connect(carol).buy(tokens[2], 0, { value: ethers.parseEther("6") });
   await launchpad.connect(dave).buy(tokens[2], 0, { value: ethers.parseEther("0.5") });
 
-  console.log("\nweb/.env.local:");
+  console.log("\n.env.local (repo root):");
   console.log("NEXT_PUBLIC_CHAIN=local");
   console.log(`NEXT_PUBLIC_LAUNCHPAD_ADDRESS=${await launchpad.getAddress()}`);
   console.log(`NEXT_PUBLIC_FEE_VAULT_ADDRESS=${await vault.getAddress()}`);

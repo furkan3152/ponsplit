@@ -1,4 +1,5 @@
 import { defineChain } from "viem";
+import deployment from "../deployment.json";
 
 export const robinhoodTestnet = defineChain({
   id: 46630,
@@ -29,7 +30,7 @@ export const localDev = defineChain({
 
 const CHAINS = { mainnet: robinhood, testnet: robinhoodTestnet, local: localDev } as const;
 
-export const activeChain = CHAINS[(process.env.NEXT_PUBLIC_CHAIN as keyof typeof CHAINS) || "testnet"] ?? robinhoodTestnet;
+export const activeChain = CHAINS[(process.env.NEXT_PUBLIC_CHAIN || deployment.chain) as keyof typeof CHAINS] ?? robinhoodTestnet;
 export const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || activeChain.rpcUrls.default.http[0];
 
 export const explorerUrl = (kind: "address" | "tx" | "token", value: string) =>

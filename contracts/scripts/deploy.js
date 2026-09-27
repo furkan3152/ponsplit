@@ -52,6 +52,12 @@ async function main() {
     claimSigner,
     deployedAt: new Date().toISOString(),
   };
+  // The web app reads its addresses from src/deployment.json at the repo root.
+  if (process.env.WRITE_WEB_CONFIG === "1") {
+    const web = { chain: network.name === "robinhood" ? "mainnet" : "testnet", launchpad: out.launchpad, feeVault: out.feeVault, startBlock: out.startBlock, deployedAt: out.deployedAt };
+    fs.writeFileSync(path.join(__dirname, "..", "..", "src", "deployment.json"), JSON.stringify(web, null, 2) + "\n");
+  }
+
   const dir = path.join(__dirname, "..", "deployments");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `${network.name}.json`), JSON.stringify(out, null, 2) + "\n");

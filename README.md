@@ -1,13 +1,13 @@
-<p align="center"><img src="web/public/hero.svg" width="480" alt="PonSplit"></p>
+<p align="center"><img src="public/hero.svg" width="480" alt="PonSplit"></p>
 
 # PonSplit
 
 **Tek coin, birden fazla X hesabı, fee'ler otomatik bölünür.** Robinhood Chain üzerinde bir coin çıkar. Her al/sat işleminden kesilen fee, seçtiğin X (Twitter) hesapları arasında paylaştırılır. Bu hem bonding curve aşamasında hem de coin "mezun olduktan" sonra geçerli. Hesap sahipleri X ile giriş yapıp paylarını istedikleri cüzdana çeker.
 
 ```
-contracts/   Solidity (Hardhat): SplitLaunchpad, FeeVault, SplitToken
-web/         Next.js 14 uygulaması: keşfet, coin çıkar, grafik + al/sat, claim, portföy
-.github/     CI + tek tıkla kontrat deploy workflow'u
+src/, public/   Next.js 14 web uygulaması (repo kökü: Vercel ek ayar istemez)
+contracts/      Solidity (Hardhat): SplitLaunchpad, FeeVault, SplitToken
+.github/        CI, tek tıkla kontrat deploy'u, ağ keşif workflow'u
 ```
 
 ## Nasıl çalışır?
@@ -20,7 +20,11 @@ web/         Next.js 14 uygulaması: keşfet, coin çıkar, grafik + al/sat, cla
    - Havuzun likiditesi sonsuza kadar kilitlidir.
    - İşlemler aynı sayfada, aynı fee paylaşımıyla devam eder.
    - Harici bir DEX'e bağımlılık yoktur.
-4. **Claim:** Hesap sahibi `/claim` sayfasında X ile giriş yapar. Sunucu, o hesabın ID'si için hedef cüzdana bağlı ve 15 dakika geçerli bir imza üretir. `FeeVault.claim` birikmiş ETH'yi bu cüzdana gönderir.
+4. **Claim:** Hesap sahibi `/claim` sayfasında hesabın kendisine ait olduğunu kanıtlar. İki yol var:
+   - **Varsayılan, X geliştirici hesabı gerekmez:** Kullanıcı tek kullanımlık bir kod içeren bir post atıp linkini yapıştırır. Kod, kullanıcı adına, cüzdana ve güne bağlı bir HMAC'tir; başkası kopyalasa bile ödeme yalnızca post sahibinin cüzdanına gider.
+   - **Opsiyonel:** X anahtarları verilirse "Sign in with X" (OAuth).
+
+   Ardından sunucu o hesabın ID'si için hedef cüzdana bağlı, 15 dakika geçerli bir imza üretir ve `FeeVault.claim` birikmiş ETH'yi bu cüzdana gönderir.
 5. **Grafik ve işlem geçmişi:** Her işlem zincir üstüne kaydedilir. Mum grafiği, işlem listesi ve canlı işlem şeridi indexer gerektirmeden doğrudan kontrattan okunur.
 
 ### Güvenlik notları
@@ -30,52 +34,29 @@ web/         Next.js 14 uygulaması: keşfet, coin çıkar, grafik + al/sat, cla
 - X ID çözümlemesi resmi X API ile (`X_BEARER_TOKEN`, ücretli Basic plan) ya da ücretsiz, gayriresmî `api.fxtwitter.com` üzerinden yapılır. İkincisi "best effort" çalışır; ciddi kullanımda resmi API önerilir.
 - Kontratlar denetimden (audit) geçmedi. Mainnet öncesinde audit ve hukuki kontrol şart.
 
-## Testnet'e çıkış (adım adım)
+## Testnet'e çıkış
 
-Robinhood Chain testnet: chain id `46630`, RPC `https://rpc.testnet.chain.robinhood.com`, explorer https://explorer.testnet.chain.robinhood.com, faucet https://faucet.testnet.chain.robinhood.com
+Robinhood Chain testnet: chain id `46630`, RPC `https://rpc.testnet.chain.robinhood.com`, explorer https://explorer.testnet.chain.robinhood.com
 
-**1. İki cüzdan hazırla**
-```bash
-cd contracts && npm install
-node scripts/new-wallet.js   # CLAIM SIGNER: private key → web'de SIGNER_PRIVATE_KEY, adres → CLAIM_SIGNER_ADDRESS
-```
-Deployer için ayrı bir cüzdan kullan ve faucet'ten test ETH al.
+Sistem tek bir **yönetici anahtarı** kullanır. Bu anahtar kontratları deploy eder, kontratların sahibidir ve web sunucusunun launch/claim imzalayıcısıdır (`SIGNER_PRIVATE_KEY`). Mainnet'te bu rolleri ayır (`OWNER_ADDRESS`, ayrı bir imzalayıcı).
 
-**2. Kontratları deploy et.** İki yoldan birini seç:
-- **GitHub Actions ile (önerilen):**
-  - Settings → Secrets and variables → Actions altına şunları ekle:
-    - secret `DEPLOYER_PRIVATE_KEY`
-    - variable `CLAIM_SIGNER_ADDRESS`
-    - istersen variable `OWNER_ADDRESS`
-  - Actions → **Deploy contracts** → Run workflow → `robinhoodTestnet`.
-  - Adresler job özetinde görünür.
-- **Kendi bilgisayarından:**
-  ```bash
-  DEPLOYER_PRIVATE_KEY=0x... CLAIM_SIGNER_ADDRESS=0x... npx hardhat run scripts/deploy.js --network robinhoodTestnet
-  ```
-  Adresler `contracts/deployments/robinhoodTestnet.json` dosyasına yazılır.
+1. **Test ETH al.** Yönetici adresini https://faucet.testnet.chain.robinhood.com adresine yapıştır.
+2. **Kontratları deploy et.** Actions → **Deploy contracts** → `admin_key` alanına anahtarı yaz (ya da `ADMIN_PRIVATE_KEY` secret'ını kullan) → Run. Workflow sırasıyla:
+   - testleri çalıştırır ve kontratları deploy eder
+   - smoke testini yapar ve kontratları Blockscout'ta doğrular
+   - adresleri `src/deployment.json` dosyasına commit'ler
+3. **Siteyi yayınla.** https://vercel.com/new adresinde repoyu import et. Tek bir ortam değişkeni yeterli: `SIGNER_PRIVATE_KEY` = yönetici anahtarı. Kalan her şeyin makul bir varsayılanı var:
+   - adresler koddan okunur
+   - next-auth secret'ı anahtardan türetilir
+   - X profilleri fxtwitter üzerinden çözülür
+   - claim, post ile doğrulama üzerinden yapılır
+4. **Kontrol et.** `https://<site>/api/config` adresi `signer: true` döndürmeli.
 
-**3. X uygulaması aç** (https://developer.x.com → Projects & Apps)
-- User authentication settings: **OAuth 2.0**, tip **Web App**
-- Callback URL: `https://<site-adresin>/api/auth/callback/twitter`
-- Client ID ve Client Secret'ı not al. İstersen Basic plan için `X_BEARER_TOKEN` da al.
-
-**4. Web uygulamasını Vercel'e deploy et**
-- https://vercel.com/new adresinde bu repoyu import et. **Root Directory: `web`**.
-- Environment Variables ekranına `web/.env.example` dosyasındaki değerleri gir. En azından şunlar gerekli:
-
-  | Değişken | Değer |
-  |---|---|
-  | `NEXT_PUBLIC_CHAIN` | `testnet` |
-  | `NEXT_PUBLIC_LAUNCHPAD_ADDRESS`, `NEXT_PUBLIC_FEE_VAULT_ADDRESS` | 2. adımdan |
-  | `SIGNER_PRIVATE_KEY` | 1. adımdan |
-  | `NEXTAUTH_URL` | `https://<site-adresin>` |
-  | `NEXTAUTH_SECRET` | `openssl rand -base64 32` çıktısı |
-  | `TWITTER_CLIENT_ID`, `TWITTER_CLIENT_SECRET` | 3. adımdan |
-  | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | opsiyonel (mobil cüzdanlar için), https://cloud.reown.com |
-  | `PINATA_JWT` | opsiyonel (görsel yükleme için) |
-
-**5. Kontrol et.** `https://<site-adresin>/api/config` şunu döndürmeli: `signer: true`, `xLogin: true`. Ardından cüzdanı bağla, bir coin çıkar, al/sat yap ve `/claim` sayfasından X ile giriş yapıp claim et.
+Opsiyonel ortam değişkenleri `.env.example` dosyasında:
+- `TWITTER_CLIENT_ID` / `TWITTER_CLIENT_SECRET`: "Sign in with X" için
+- `X_BEARER_TOKEN`: resmi X API ile ID çözümleme için
+- `PINATA_JWT`: görsel yükleme için
+- `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`: mobil cüzdanlar için
 
 ## Geliştirme
 
@@ -83,18 +64,18 @@ Deployer için ayrı bir cüzdan kullan ve faucet'ten test ETH al.
 # kontratlar
 cd contracts && npm install
 npm test                  # 19 test
-npm run export-abi        # ABI'leri web/src/lib/abi.ts dosyasına yazar
+npm run export-abi        # ABI'leri src/lib/abi.ts dosyasına yazar
 
 # yerel uçtan uca deneme (gerçek zincir ve X hesabı gerekmez)
 npx hardhat node                                            # terminal 1
 npx hardhat run scripts/local-demo.js --network localhost   # terminal 2: 4 örnek coin + işlemler
-cd ../web && cp .env.example .env.local                     # sonra düzenle:
+cd .. && cp .env.example .env.local                         # sonra düzenle:
 #   NEXT_PUBLIC_CHAIN=local, demo çıktısındaki adresler, X_RESOLVER=mock,
 #   ENABLE_DEV_LOGIN=true, SIGNER_PRIVATE_KEY=<Hardhat #1 anahtarı>
 npm install && npm run dev
 ```
 
-`ENABLE_DEV_LOGIN` yalnızca `X_RESOLVER=mock` iken çalışır. Claim sayfasına sahte bir "Dev login" ekler ve production'da kapalı kalır.
+`X_RESOLVER=mock` modunda claim sayfasındaki post linki yerine `mock:<kullanıcı-adı>` yazılabilir. `ENABLE_DEV_LOGIN=true` ise sahte bir "Dev login" ekler. İkisi de production'da kapalı kalır.
 
 ## Parametreler
 
@@ -112,4 +93,4 @@ Kontrat sahibi bu değerleri `setFees` ve `setCurveConfig` ile değiştirebilir.
 
 Arayüz, Apple'ın sade düzenini (açık gri zemin, büyük tipografi, buzlu cam navigasyon, 24px kartlar) pump.fun'ın oyunbazlığıyla (canlı işlem şeridi, "King of the hill", yoğun coin ızgarası) birleştiriyor.
 
-İllüstrasyonlar "chunky sticker" tarzında: düz parlak renkler, kalın yuvarlak mürekkep konturlar ve sert ofset gölgeler. Logo çapraz ikiye bölünmüş bir coin. Görseli olmayan her coin, adresinden türetilen benzersiz bir sticker avatar alır. Tüm çizimler `web/src/components/art/` altında SVG React bileşenleri olarak durur. Açık ve karanlık mod desteklenir.
+İllüstrasyonlar "chunky sticker" tarzında: düz parlak renkler, kalın yuvarlak mürekkep konturlar ve sert ofset gölgeler. Logo çapraz ikiye bölünmüş bir coin. Görseli olmayan her coin, adresinden türetilen benzersiz bir sticker avatar alır. Tüm çizimler `src/components/art/` altında SVG React bileşenleri olarak durur. Açık ve karanlık mod desteklenir.
