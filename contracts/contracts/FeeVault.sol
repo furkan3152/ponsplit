@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -12,7 +13,9 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 ///      renamed. `signer` is an off-chain service that
 ///        1. attests that a list of usernames maps to a list of X user ids when a token is created, and
 ///        2. signs a claim once the caller has proven ownership of an X account via OAuth.
-contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
+///      If the signer key ever leaks, the owner pauses claims, rotates the signer, and unpauses:
+///      balances never move while paused, and signatures from the old signer stop working.
+contract FeeVault is Ownable2Step, ReentrancyGuard, EIP712 {
     uint256 public constant BPS = 10_000;
     uint256 public constant MAX_RECIPIENTS = 10;
 
@@ -27,6 +30,7 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
 
     address public launchpad;
     address public signer;
+    bool public claimsPaused;
 
     mapping(address token => Recipient[]) private _splits;
     mapping(address token => uint256) public tokenFees;
@@ -39,6 +43,7 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
     event SplitSet(address indexed token, uint64[] xIds, uint16[] bps);
     event FeesDeposited(address indexed token, uint256 amount);
     event Claimed(uint64 indexed xId, address indexed to, uint256 amount);
+    event ClaimsPausedSet(bool paused);
 
     error OnlyLaunchpad();
     error LaunchpadAlreadySet();
@@ -50,6 +55,7 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
     error BadSignature();
     error NothingToClaim();
     error TransferFailed();
+    error ClaimsPaused();
 
     constructor(address owner_, address signer_) Ownable(owner_) EIP712("PonSplit FeeVault", "2") {
         if (signer_ == address(0)) revert ZeroAddress();
@@ -69,6 +75,11 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
         if (launchpad_ == address(0)) revert ZeroAddress();
         launchpad = launchpad_;
         emit LaunchpadSet(launchpad_);
+    }
+
+    function setClaimsPaused(bool paused) external onlyOwner {
+        claimsPaused = paused;
+        emit ClaimsPausedSet(paused);
     }
 
     function setSigner(address signer_) external onlyOwner {
@@ -95,7 +106,7 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
         if (block.timestamp > deadline) revert Expired();
 
         bytes32[] memory handleHashes = new bytes32[](n);
-        uint256 sum;
+        uint256 sum = 0;
         for (uint256 i; i < n; ++i) {
             if (xIds[i] == 0 || bps[i] == 0) revert InvalidSplit();
             for (uint256 j; j < i; ++j) {
@@ -132,6 +143,8 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
         uint256 remaining = msg.value;
         for (uint256 i; i < n; ++i) {
             // Last recipient takes the rounding remainder so no wei is stranded.
+            // msg.value is only divided up here, never spent more than once.
+            // slither-disable-next-line msg-value-loop
             uint256 share = i == n - 1 ? remaining : (msg.value * split[i].bps) / BPS;
             remaining -= share;
             claimable[split[i].xId] += share;
@@ -150,6 +163,7 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
         nonReentrant
         returns (uint256 amount)
     {
+        if (claimsPaused) revert ClaimsPaused();
         if (to == address(0)) revert ZeroAddress();
         if (block.timestamp > deadline) revert Expired();
 
@@ -162,6 +176,8 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
         nonces[xId]++;
         claimable[xId] = 0;
 
+        // The destination is bound by the signer's EIP-712 signature, so it is not arbitrary.
+        // slither-disable-next-line arbitrary-send-eth
         (bool ok,) = to.call{value: amount}("");
         if (!ok) revert TransferFailed();
         emit Claimed(xId, to, amount);

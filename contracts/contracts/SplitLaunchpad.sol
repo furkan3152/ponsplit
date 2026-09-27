@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SplitToken} from "./SplitToken.sol";
 import {FeeVault} from "./FeeVault.sol";
@@ -21,10 +22,14 @@ import {FeeVault} from "./FeeVault.sol";
 ///
 ///         Every trade is also recorded on-chain so the app can draw charts and trade lists
 ///         without an indexer.
-contract SplitLaunchpad is Ownable, ReentrancyGuard {
+///
+///         Fee terms are snapshotted per token at launch: the owner can change them for future
+///         launches but never for a live token. Trading can never be paused; only new launches can.
+contract SplitLaunchpad is Ownable2Step, ReentrancyGuard {
     uint256 public constant BPS = 10_000;
     uint256 public constant MAX_FEE_BPS = 500; // 5%
     uint256 public constant MAX_GRADUATION_FEE_BPS = 1_000; // 10%
+    uint256 public constant MAX_PROTOCOL_SHARE_BPS = 5_000; // X accounts always get at least half of every fee
     uint256 public constant MAX_METADATA_BYTES = 2_000;
 
     struct CurveConfig {
@@ -44,6 +49,9 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         uint64 createdAt;
         uint64 graduatedAt; // 0 while on the curve
         bool graduated;
+        uint16 feeBps; // fee terms snapshotted at launch
+        uint16 protocolShareBps;
+        uint16 graduationFeeBps;
     }
 
     /// @notice What the signer attested for the fee split, plus the attestation itself.
@@ -99,6 +107,7 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     uint256 public graduationFeeBps; // taken from the curve ETH when the pool is seeded
     uint256 public creationFee;
     uint256 public protocolFees;
+    bool public launchesPaused;
 
     address[] public allTokens;
     mapping(address token => Market) public markets;
@@ -107,6 +116,8 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     mapping(address token => uint64[]) private _xIdsOf;
     mapping(address token => string[]) private _handlesOf;
     mapping(address token => uint16[]) private _bpsOf;
+    // Filled by _record; slither mistakes the mapping of arrays for uninitialized storage.
+    // slither-disable-next-line uninitialized-state
     mapping(address token => TradeRecord[]) private _trades;
     GlobalTrade[] private _globalTrades;
 
@@ -133,6 +144,8 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     event Graduated(address indexed token, uint256 poolEth, uint256 poolTokens);
     event CurveConfigSet(uint256 virtualEth, uint256 virtualToken, uint256 curveSupply, uint256 lpSupply);
     event FeesSet(uint256 feeBps, uint256 protocolShareBps, uint256 graduationFeeBps, uint256 creationFee);
+    event LaunchesPausedSet(bool paused);
+    event ProtocolFeesWithdrawn(address indexed to, uint256 amount);
 
     error InvalidConfig();
     error InvalidMetadata();
@@ -141,6 +154,8 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     error ZeroAmount();
     error InsufficientPayment();
     error TransferFailed();
+    error LaunchesPaused();
+    error ZeroAddress();
 
     constructor(address owner_, FeeVault vault_, CurveConfig memory config_) Ownable(owner_) {
         vault = vault_;
@@ -160,6 +175,7 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         if (bytes(name).length == 0 || bytes(name).length > 32) revert InvalidMetadata();
         if (bytes(symbol).length == 0 || bytes(symbol).length > 10) revert InvalidMetadata();
         if (bytes(metadata).length > MAX_METADATA_BYTES) revert InvalidMetadata();
+        if (launchesPaused) revert LaunchesPaused();
         if (msg.value < creationFee) revert InsufficientPayment();
 
         CurveConfig memory cfg = curveConfig;
@@ -174,17 +190,21 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
             creator: msg.sender,
             createdAt: uint64(block.timestamp),
             graduatedAt: 0,
-            graduated: false
+            graduated: false,
+            feeBps: uint16(feeBps),
+            protocolShareBps: uint16(protocolShareBps),
+            graduationFeeBps: uint16(graduationFeeBps)
         });
         curveSupplyOf[token] = cfg.curveSupply;
         metadataOf[token] = metadata;
         allTokens.push(token);
 
-        vault.setSplit(token, msg.sender, split.xIds, split.handles, split.bps, split.deadline, split.attestation);
         _xIdsOf[token] = split.xIds;
         _handlesOf[token] = split.handles;
         _bpsOf[token] = split.bps;
         protocolFees += creationFee;
+        // Verifies the attestation and reverts the whole launch if it doesn't hold.
+        vault.setSplit(token, msg.sender, split.xIds, split.handles, split.bps, split.deadline, split.attestation);
 
         emit TokenCreated(token, msg.sender, name, symbol, metadata, split.xIds, split.handles, split.bps);
 
@@ -207,7 +227,9 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
 
         uint256 gross = (m.virtualEth * tokenAmount) / (m.virtualToken + tokenAmount);
         if (gross > m.realEth) gross = m.realEth;
-        uint256 fee = (gross * feeBps) / BPS;
+        // The fee is a share of the rounded amount actually paid out.
+        // slither-disable-next-line divide-before-multiply
+        uint256 fee = (gross * m.feeBps) / BPS;
         ethOut = gross - fee;
         if (ethOut == 0 || ethOut < minEthOut) revert Slippage();
 
@@ -215,15 +237,14 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         m.virtualToken += tokenAmount;
         m.realEth -= gross;
         m.realToken += tokenAmount;
+        uint256 creatorCut = _bookFee(fee, m);
+        _record(token, false, ethOut, tokenAmount, m);
+        emit Trade(token, msg.sender, false, ethOut, tokenAmount, fee, m.virtualEth, m.virtualToken);
 
         // SplitToken lets the launchpad pull without an allowance; it only ever pulls from msg.sender.
         if (!SplitToken(token).transferFrom(msg.sender, address(this), tokenAmount)) revert TransferFailed();
-
-        _distributeFee(token, fee);
-        _record(token, false, ethOut, tokenAmount, m);
+        _payCreators(token, creatorCut);
         _sendEth(msg.sender, ethOut);
-
-        emit Trade(token, msg.sender, false, ethOut, tokenAmount, fee, m.virtualEth, m.virtualToken);
     }
 
     // ----------------------------------------------------------------- quotes
@@ -235,7 +256,8 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         Market storage m = markets[token];
         if (m.creator == address(0) || ethIn == 0) return (0, 0, 0);
 
-        fee = (ethIn * feeBps) / BPS;
+        uint256 fBps = m.feeBps;
+        fee = (ethIn * fBps) / BPS;
         uint256 net = ethIn - fee;
         tokensOut = (m.virtualToken * net) / (m.virtualEth + net);
 
@@ -245,7 +267,8 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
             // Smallest net input that buys the rest of the curve, rounded up.
             uint256 remainingVirtual = m.virtualToken - tokensOut;
             net = (m.virtualEth * tokensOut + remainingVirtual - 1) / remainingVirtual;
-            fee = (net * feeBps + (BPS - feeBps) - 1) / (BPS - feeBps);
+            // slither-disable-next-line divide-before-multiply
+            fee = (net * fBps + (BPS - fBps) - 1) / (BPS - fBps);
             if (net + fee > ethIn) fee = ethIn - net;
             refund = ethIn - net - fee;
         }
@@ -256,7 +279,8 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         if (m.creator == address(0) || tokenAmount == 0) return (0, 0);
         uint256 gross = (m.virtualEth * tokenAmount) / (m.virtualToken + tokenAmount);
         if (gross > m.realEth) gross = m.realEth;
-        fee = (gross * feeBps) / BPS;
+        // slither-disable-next-line divide-before-multiply
+        fee = (gross * m.feeBps) / BPS;
         ethOut = gross - fee;
     }
 
@@ -337,7 +361,7 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         external
         onlyOwner
     {
-        if (feeBps_ > MAX_FEE_BPS || protocolShareBps_ > BPS || graduationFeeBps_ > MAX_GRADUATION_FEE_BPS) {
+        if (feeBps_ > MAX_FEE_BPS || protocolShareBps_ > MAX_PROTOCOL_SHARE_BPS || graduationFeeBps_ > MAX_GRADUATION_FEE_BPS) {
             revert InvalidConfig();
         }
         feeBps = feeBps_;
@@ -347,10 +371,17 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         emit FeesSet(feeBps_, protocolShareBps_, graduationFeeBps_, creationFee_);
     }
 
+    function setLaunchesPaused(bool paused) external onlyOwner {
+        launchesPaused = paused;
+        emit LaunchesPausedSet(paused);
+    }
+
     function withdrawProtocolFees(address to) external onlyOwner nonReentrant {
+        if (to == address(0)) revert ZeroAddress();
         uint256 amount = protocolFees;
         protocolFees = 0;
         _sendEth(to, amount);
+        emit ProtocolFeesWithdrawn(to, amount);
     }
 
     // --------------------------------------------------------------- internal
@@ -364,25 +395,25 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         if (tokensOut == 0 || tokensOut < minTokensOut) revert Slippage();
         uint256 net = ethIn - fee - refund;
 
+        // Effects first (checks-effects-interactions), then calls out.
         m.virtualEth += net;
         m.virtualToken -= tokensOut;
         m.realEth += net;
         m.realToken -= tokensOut;
+        uint256 creatorCut = _bookFee(fee, m);
+        _record(token, true, net + fee, tokensOut, m);
+        emit Trade(token, msg.sender, true, net + fee, tokensOut, fee, m.virtualEth, m.virtualToken);
+        if (!m.graduated && m.realToken == 0) _graduate(token, m);
 
         if (!SplitToken(token).transfer(msg.sender, tokensOut)) revert TransferFailed();
-        _distributeFee(token, fee);
-        _record(token, true, net + fee, tokensOut, m);
-
-        emit Trade(token, msg.sender, true, net + fee, tokensOut, fee, m.virtualEth, m.virtualToken);
-
-        if (!m.graduated && m.realToken == 0) _graduate(token, m);
+        _payCreators(token, creatorCut);
         if (refund > 0) _sendEth(msg.sender, refund);
     }
 
     /// @dev Turns the sold-out curve into the PonSwap pool. The pool price matches the curve's
     ///      final price when the config keeps virtualEth/virtualToken proportional to lpSupply.
     function _graduate(address token, Market storage m) internal {
-        uint256 gradFee = (m.realEth * graduationFeeBps) / BPS;
+        uint256 gradFee = (m.realEth * m.graduationFeeBps) / BPS;
         protocolFees += gradFee;
         uint256 poolEth = m.realEth - gradFee;
         uint256 poolTokens = m.lpSupply;
@@ -413,11 +444,16 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         );
     }
 
-    function _distributeFee(address token, uint256 fee) internal {
-        if (fee == 0) return;
-        uint256 protocolCut = (fee * protocolShareBps) / BPS;
+    /// @dev Books the protocol's part of a fee and returns the X accounts' part, to be paid after
+    ///      all state changes via _payCreators.
+    function _bookFee(uint256 fee, Market storage m) internal returns (uint256 creatorCut) {
+        if (fee == 0) return 0;
+        uint256 protocolCut = (fee * m.protocolShareBps) / BPS;
         protocolFees += protocolCut;
-        uint256 creatorCut = fee - protocolCut;
+        creatorCut = fee - protocolCut;
+    }
+
+    function _payCreators(address token, uint256 creatorCut) internal {
         if (creatorCut > 0) vault.deposit{value: creatorCut}(token);
     }
 
