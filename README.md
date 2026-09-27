@@ -34,7 +34,17 @@ contracts/      Solidity (Hardhat): SplitLaunchpad, FeeVault, SplitToken
 - X ID çözümlemesi resmi X API ile (`X_BEARER_TOKEN`, ücretli Basic plan) ya da ücretsiz, gayriresmî `api.fxtwitter.com` üzerinden yapılır. İkincisi "best effort" çalışır; ciddi kullanımda resmi API önerilir.
 - Kontratlar denetimden (audit) geçmedi. Mainnet öncesinde audit ve hukuki kontrol şart.
 
-## Testnet'e çıkış (telefondan ~5 dakika)
+## Testnet'e çıkış (en kolay yol: Render)
+
+1. https://render.com/deploy?repo=https://github.com/furkan3152/ponsplit bağlantısını aç → GitHub ile giriş → **Apply**.
+   - `render.yaml` servisi kendisi kurar.
+   - Yönetici anahtarı Render'ın ürettiği `SIGNER_SEED` değerinden türetilir. Kimse bir anahtar kopyalamaz.
+2. Site açılınca **/setup** sayfasına git → adresi kopyala → **Open faucet** → test ETH iste.
+3. **Deploy contracts** butonuna bas. Hepsi bu.
+
+Yönetici anahtarının kendisi `keccak256("ponsplit-admin:" + SIGNER_SEED)` değeridir. `SIGNER_SEED` Render panelinde saklanır; kontrat sahibi işlemleri için bu değerden türetilir.
+
+## Alternatif: Vercel
 
 Robinhood Chain testnet: chain id `46630`, explorer https://explorer.testnet.chain.robinhood.com
 
