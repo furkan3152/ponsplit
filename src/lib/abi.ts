@@ -60,6 +60,11 @@ export const launchpadAbi = [
     "type": "error"
   },
   {
+    "inputs": [],
+    "name": "LaunchesPaused",
+    "type": "error"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -99,6 +104,11 @@ export const launchpadAbi = [
   {
     "inputs": [],
     "name": "UnknownToken",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZeroAddress",
     "type": "error"
   },
   {
@@ -197,6 +207,38 @@ export const launchpadAbi = [
     "anonymous": false,
     "inputs": [
       {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "paused",
+        "type": "bool"
+      }
+    ],
+    "name": "LaunchesPausedSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "previousOwner",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnershipTransferStarted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
         "indexed": true,
         "internalType": "address",
         "name": "previousOwner",
@@ -210,6 +252,25 @@ export const launchpadAbi = [
       }
     ],
     "name": "OwnershipTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "ProtocolFeesWithdrawn",
     "type": "event"
   },
   {
@@ -372,6 +433,26 @@ export const launchpadAbi = [
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_PROTOCOL_SHARE_BPS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "acceptOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -702,6 +783,21 @@ export const launchpadAbi = [
                 "internalType": "bool",
                 "name": "graduated",
                 "type": "bool"
+              },
+              {
+                "internalType": "uint16",
+                "name": "feeBps",
+                "type": "uint16"
+              },
+              {
+                "internalType": "uint16",
+                "name": "protocolShareBps",
+                "type": "uint16"
+              },
+              {
+                "internalType": "uint16",
+                "name": "graduationFeeBps",
+                "type": "uint16"
               }
             ],
             "internalType": "struct SplitLaunchpad.Market",
@@ -840,6 +936,21 @@ export const launchpadAbi = [
                 "internalType": "bool",
                 "name": "graduated",
                 "type": "bool"
+              },
+              {
+                "internalType": "uint16",
+                "name": "feeBps",
+                "type": "uint16"
+              },
+              {
+                "internalType": "uint16",
+                "name": "protocolShareBps",
+                "type": "uint16"
+              },
+              {
+                "internalType": "uint16",
+                "name": "graduationFeeBps",
+                "type": "uint16"
               }
             ],
             "internalType": "struct SplitLaunchpad.Market",
@@ -983,6 +1094,19 @@ export const launchpadAbi = [
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "launchesPaused",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -1036,6 +1160,21 @@ export const launchpadAbi = [
         "internalType": "bool",
         "name": "graduated",
         "type": "bool"
+      },
+      {
+        "internalType": "uint16",
+        "name": "feeBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "protocolShareBps",
+        "type": "uint16"
+      },
+      {
+        "internalType": "uint16",
+        "name": "graduationFeeBps",
+        "type": "uint16"
       }
     ],
     "stateMutability": "view",
@@ -1063,6 +1202,19 @@ export const launchpadAbi = [
   {
     "inputs": [],
     "name": "owner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "pendingOwner",
     "outputs": [
       {
         "internalType": "address",
@@ -1262,6 +1414,19 @@ export const launchpadAbi = [
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "bool",
+        "name": "paused",
+        "type": "bool"
+      }
+    ],
+    "name": "setLaunchesPaused",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "tokenCount",
     "outputs": [
@@ -1354,6 +1519,11 @@ export const feeVaultAbi = [
   {
     "inputs": [],
     "name": "BadSignature",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ClaimsPaused",
     "type": "error"
   },
   {
@@ -1498,6 +1668,19 @@ export const feeVaultAbi = [
   },
   {
     "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "paused",
+        "type": "bool"
+      }
+    ],
+    "name": "ClaimsPausedSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
     "inputs": [],
     "name": "EIP712DomainChanged",
     "type": "event"
@@ -1532,6 +1715,25 @@ export const feeVaultAbi = [
       }
     ],
     "name": "LaunchpadSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "previousOwner",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnershipTransferStarted",
     "type": "event"
   },
   {
@@ -1644,6 +1846,13 @@ export const feeVaultAbi = [
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "acceptOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint64",
@@ -1691,6 +1900,19 @@ export const feeVaultAbi = [
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "claimsPaused",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -1867,7 +2089,33 @@ export const feeVaultAbi = [
   },
   {
     "inputs": [],
+    "name": "pendingOwner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "renounceOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bool",
+        "name": "paused",
+        "type": "bool"
+      }
+    ],
+    "name": "setClaimsPaused",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
