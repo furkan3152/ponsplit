@@ -1,3 +1,27 @@
+import { readFileSync } from "fs";
+import { getContractAddress } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+
+/**
+ * Zero-config addresses: a fresh admin key deploys FeeVault with nonce 0 and SplitLaunchpad with
+ * nonce 1 (see /setup), so both addresses are known at build time from the key alone. Explicit
+ * NEXT_PUBLIC_* variables or addresses committed to src/deployment.json take precedence.
+ */
+function predictedAddresses() {
+  const deployment = JSON.parse(readFileSync(new URL("./src/deployment.json", import.meta.url), "utf8"));
+  const key = process.env.SIGNER_PRIVATE_KEY;
+  if (deployment.launchpad || process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS || !key) return {};
+  try {
+    const admin = privateKeyToAccount(key).address;
+    return {
+      NEXT_PUBLIC_FEE_VAULT_ADDRESS: getContractAddress({ from: admin, nonce: 0n }),
+      NEXT_PUBLIC_LAUNCHPAD_ADDRESS: getContractAddress({ from: admin, nonce: 1n }),
+    };
+  } catch {
+    return {};
+  }
+}
+
 const X402_MODULES = [
   "@x402/core/client",
   "@x402/core/schemas",
@@ -24,6 +48,7 @@ const X402_MODULES = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  env: predictedAddresses(),
   webpack: (config) => {
     // Optional deps pulled in by WalletConnect / MetaMask SDK that are not needed in the browser.
     config.externals.push("pino-pretty", "lokijs", "encoding");

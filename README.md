@@ -34,23 +34,23 @@ contracts/      Solidity (Hardhat): SplitLaunchpad, FeeVault, SplitToken
 - X ID çözümlemesi resmi X API ile (`X_BEARER_TOKEN`, ücretli Basic plan) ya da ücretsiz, gayriresmî `api.fxtwitter.com` üzerinden yapılır. İkincisi "best effort" çalışır; ciddi kullanımda resmi API önerilir.
 - Kontratlar denetimden (audit) geçmedi. Mainnet öncesinde audit ve hukuki kontrol şart.
 
-## Testnet'e çıkış
+## Testnet'e çıkış (telefondan ~5 dakika)
 
-Robinhood Chain testnet: chain id `46630`, RPC `https://rpc.testnet.chain.robinhood.com`, explorer https://explorer.testnet.chain.robinhood.com
+Robinhood Chain testnet: chain id `46630`, explorer https://explorer.testnet.chain.robinhood.com
 
-Sistem tek bir **yönetici anahtarı** kullanır. Bu anahtar kontratları deploy eder, kontratların sahibidir ve web sunucusunun launch/claim imzalayıcısıdır (`SIGNER_PRIVATE_KEY`). Mainnet'te bu rolleri ayır (`OWNER_ADDRESS`, ayrı bir imzalayıcı).
+1. **Siteyi yayınla.** https://vercel.com/new → GitHub ile giriş → `ponsplit` reposunu **Import** → **Deploy**. Hiçbir ayar gerekmiyor. Site açılır ve "Finish setup" uyarısı gösterir.
+2. **`/setup` sayfasını aç** → **Generate admin key**.
+   - Anahtar tarayıcıda üretilir ve kimseye gönderilmez.
+   - Kopyala → Vercel → Settings → Environment Variables → `SIGNER_PRIVATE_KEY` olarak ekle → Deployments → **Redeploy**.
+   - Anahtarı güvenli bir yere de kaydet. Kontratların sahibi ve imzalayıcısı bu anahtar.
+3. **Test ETH al.** `/setup` sayfasında adresi kopyala → **Open faucet** → yapıştır.
+4. **Deploy contracts** butonuna bas. Sunucu 3 işlem gönderir (FeeVault, SplitLaunchpad, bağlama).
+   - Kontrat adresleri anahtarın adresinden önceden hesaplandığı için yeniden build gerekmez.
+   - Site hemen çalışmaya başlar.
 
-1. **Test ETH al.** Yönetici adresini https://faucet.testnet.chain.robinhood.com adresine yapıştır.
-2. **Kontratları deploy et.** Actions → **Deploy contracts** → `admin_key` alanına anahtarı yaz (ya da `ADMIN_PRIVATE_KEY` secret'ını kullan) → Run. Workflow sırasıyla:
-   - testleri çalıştırır ve kontratları deploy eder
-   - smoke testini yapar ve kontratları Blockscout'ta doğrular
-   - adresleri `src/deployment.json` dosyasına commit'ler
-3. **Siteyi yayınla.** https://vercel.com/new adresinde repoyu import et. Tek bir ortam değişkeni yeterli: `SIGNER_PRIVATE_KEY` = yönetici anahtarı. Kalan her şeyin makul bir varsayılanı var:
-   - adresler koddan okunur
-   - next-auth secret'ı anahtardan türetilir
-   - X profilleri fxtwitter üzerinden çözülür
-   - claim, post ile doğrulama üzerinden yapılır
-4. **Kontrol et.** `https://<site>/api/config` adresi `signer: true` döndürmeli.
+Bundan sonra coin çıkarma, al/sat, grafik ve post ile claim çalışır. Tek anahtarın rolleri: deploy eden, kontrat sahibi ve launch/claim imzalayıcısı. Mainnet'te bu rolleri ayır.
+
+**Alternatif:** GitHub'da `ADMIN_PRIVATE_KEY` secret'ı tanımlanırsa Actions → **Deploy contracts** workflow'u aynı deploy'u yapar. Workflow ayrıca Blockscout doğrulaması ve smoke test çalıştırır, adresleri `src/deployment.json` dosyasına commit'ler.
 
 Opsiyonel ortam değişkenleri `.env.example` dosyasında:
 - `TWITTER_CLIENT_ID` / `TWITTER_CLIENT_SECRET`: "Sign in with X" için
