@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import TwitterProvider from "next-auth/providers/twitter";
@@ -13,7 +14,13 @@ declare module "next-auth" {
 /** Local-only login that fakes an X account. Never enabled unless the mock resolver is on. */
 export const devLoginEnabled = process.env.ENABLE_DEV_LOGIN === "true" && resolverMode() === "mock";
 
+// Falls back to a secret derived from the signer key so deployments need one less variable.
+const secret =
+  process.env.NEXTAUTH_SECRET ||
+  (process.env.SIGNER_PRIVATE_KEY ? createHash("sha256").update(`ponsplit-nextauth:${process.env.SIGNER_PRIVATE_KEY}`).digest("hex") : undefined);
+
 export const authOptions: NextAuthOptions = {
+  secret,
   providers: [
     TwitterProvider({
       clientId: process.env.TWITTER_CLIENT_ID ?? "",

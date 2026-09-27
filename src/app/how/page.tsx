@@ -17,11 +17,11 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "How do X accounts get paid?",
-    a: "Fees are held by the FeeVault contract under each account's permanent X user id, so renaming an account never loses its earnings. The owner signs in with X on the Claim page and sends everything to any wallet.",
+    a: "Fees are held by the FeeVault contract under each account's permanent X user id, so renaming an account never loses its earnings. On the Claim page the owner proves the account is theirs by posting a one-time code (or signing in with X), then sends everything to any wallet.",
   },
   {
     q: "Can someone claim fees for an account they don't own?",
-    a: "No. Claims need a signature that is only issued after an X login for that exact account, and it is bound to the destination wallet and expires after 15 minutes.",
+    a: "No. A claim needs a signature that is only issued after that exact account posts a one-time code (or signs in with X). The code and the signature are both bound to the destination wallet, so copying someone’s post gets you nothing.",
   },
   {
     q: "Do the X accounts need to do anything to be added?",
