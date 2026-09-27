@@ -34,6 +34,10 @@ contracts/      Solidity (Hardhat): SplitLaunchpad, FeeVault, SplitToken
 - X ID çözümlemesi resmi X API ile (`X_BEARER_TOKEN`, ücretli Basic plan) ya da ücretsiz, gayriresmî `api.fxtwitter.com` üzerinden yapılır. İkincisi "best effort" çalışır; ciddi kullanımda resmi API önerilir.
 - Kontratlar denetimden (audit) geçmedi. Mainnet öncesinde audit ve hukuki kontrol şart.
 
+## Mainnet
+
+Mainnet kontrol listesi, deploy adımları ve acil durum planı için bkz. **[MAINNET.md](MAINNET.md)**. Her push'ta CI; testleri, Slither'ı ve gerçek testnet/mainnet üzerindeki yaşam döngüsü simülasyonunu çalıştırır.
+
 ## Testnet'e çıkış (en kolay yol: Render)
 
 1. https://render.com/deploy?repo=https://github.com/furkan3152/ponsplit bağlantısını aç → GitHub ile giriş → **Apply**.

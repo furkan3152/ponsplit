@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { ConfigBanner } from "@/components/ConfigBanner";
 import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
+import { TabBar } from "@/components/TabBar";
 import { Ticker } from "@/components/Ticker";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <ConfigBanner />
           <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-6 sm:px-6">{children}</main>
           <Footer />
+          <TabBar />
         </Providers>
       </body>
     </html>
