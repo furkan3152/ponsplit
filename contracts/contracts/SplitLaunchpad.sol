@@ -5,78 +5,118 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SplitToken} from "./SplitToken.sol";
 import {FeeVault} from "./FeeVault.sol";
-import {IUniswapV2Factory, IUniswapV2Pair, IWETH} from "./interfaces/IUniswapV2.sol";
 
 /// @title SplitLaunchpad
-/// @notice Launches tokens on a constant-product bonding curve (virtual reserves, pump.fun style)
-///         and routes the creator share of every trading fee to a set of X accounts via FeeVault.
-///         When the curve sells out the token graduates, and anyone can migrate its ETH plus the
-///         reserved LP tokens into a Uniswap V2 style pool whose LP tokens are burned.
+/// @notice Launches tokens whose trading fees are split between X accounts.
+///
+///         Phase 1, bonding curve: constant product over virtual reserves (pump.fun style). The
+///         curve sells `curveSupply` tokens; the last buy is capped and the excess refunded.
+///         Phase 2, PonSwap: once the curve sells out, the collected ETH and the reserved
+///         `lpSupply` tokens become a built-in constant-product pool (x * y = k over real reserves)
+///         with permanently locked liquidity. The same fee split keeps paying the X accounts.
+///
+///         Both phases share one set of reserves: during the curve, `virtual*` drive the price and
+///         `real*` track ETH held and tokens left for sale; at graduation both are set to the pool
+///         reserves and move together from then on.
+///
+///         Every trade is also recorded on-chain so the app can draw charts and trade lists
+///         without an indexer.
 contract SplitLaunchpad is Ownable, ReentrancyGuard {
     uint256 public constant BPS = 10_000;
     uint256 public constant MAX_FEE_BPS = 500; // 5%
-    uint256 public constant MAX_MIGRATION_FEE_BPS = 1_000; // 10%
-    address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
+    uint256 public constant MAX_GRADUATION_FEE_BPS = 1_000; // 10%
+    uint256 public constant MAX_METADATA_BYTES = 2_000;
 
     struct CurveConfig {
         uint256 virtualEth; // initial virtual ETH reserve
         uint256 virtualToken; // initial virtual token reserve
         uint256 curveSupply; // tokens sold through the curve
-        uint256 lpSupply; // tokens reserved for the DEX pool
+        uint256 lpSupply; // tokens reserved for the PonSwap pool
     }
 
-    struct Curve {
-        uint256 virtualEth;
-        uint256 virtualToken;
-        uint256 realEth; // ETH actually held for this token
-        uint256 realToken; // curve tokens still for sale
-        uint256 lpSupply;
+    struct Market {
+        uint256 virtualEth; // price reserves (== realEth after graduation)
+        uint256 virtualToken; // price reserves (== realToken after graduation)
+        uint256 realEth; // ETH held for this token
+        uint256 realToken; // curve: tokens left for sale. pool: token reserve
+        uint256 lpSupply; // tokens waiting to seed the pool (0 after graduation)
         address creator;
         uint64 createdAt;
+        uint64 graduatedAt; // 0 while on the curve
         bool graduated;
-        bool migrated;
+    }
+
+    /// @notice What the signer attested for the fee split, plus the attestation itself.
+    struct Split {
+        uint64[] xIds;
+        string[] handles; // lowercase usernames at launch time (display only; ids are authoritative)
+        uint16[] bps;
+        uint256 deadline;
+        bytes attestation;
+    }
+
+    struct TradeRecord {
+        address trader;
+        uint40 timestamp;
+        bool isBuy;
+        uint128 ethAmount; // ETH paid (buy, incl. fee) or received (sell, after fee)
+        uint128 tokenAmount;
+        uint128 price; // wei per 1e18 token units after the trade
+    }
+
+    struct RecentTrade {
+        address token;
+        string symbol;
+        TradeRecord trade;
     }
 
     struct TokenView {
         address token;
         string name;
         string symbol;
-        string imageUrl;
-        string description;
-        Curve curve;
+        string metadata; // JSON: { image, description, website, telegram, twitter }
+        Market market;
         uint256 curveSupply;
+        uint256 totalSupply;
         uint256 creatorFees;
+        uint256 tradeCount;
+        uint64 lastTradeAt;
+        uint64[] xIds;
         string[] handles;
         uint16[] bps;
+    }
+
+    struct GlobalTrade {
+        address token;
+        uint96 index;
     }
 
     FeeVault public immutable vault;
 
     CurveConfig public curveConfig;
-    uint256 public feeBps = 100; // 1% of every trade
+    uint256 public feeBps = 100; // 1% of every trade, curve and pool alike
     uint256 public protocolShareBps = 2_000; // 20% of the fee; the rest goes to the X accounts
-    uint256 public migrationFeeBps; // taken from the curve ETH at migration
+    uint256 public graduationFeeBps; // taken from the curve ETH when the pool is seeded
     uint256 public creationFee;
     uint256 public protocolFees;
 
-    address public dexFactory;
-    address public weth;
-
     address[] public allTokens;
-    mapping(address token => Curve) public curves;
+    mapping(address token => Market) public markets;
     mapping(address token => uint256) public curveSupplyOf;
-    mapping(address token => string) public imageUrlOf;
-    mapping(address token => string) public descriptionOf;
+    mapping(address token => string) public metadataOf;
+    mapping(address token => uint64[]) private _xIdsOf;
     mapping(address token => string[]) private _handlesOf;
     mapping(address token => uint16[]) private _bpsOf;
+    mapping(address token => TradeRecord[]) private _trades;
+    GlobalTrade[] private _globalTrades;
 
     event TokenCreated(
         address indexed token,
         address indexed creator,
         string name,
         string symbol,
-        string imageUrl,
-        string description,
+        string metadata,
+        uint64[] xIds,
         string[] handles,
         uint16[] bps
     );
@@ -90,20 +130,13 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         uint256 virtualEth,
         uint256 virtualToken
     );
-    event Graduated(address indexed token, uint256 realEth);
-    event Migrated(address indexed token, address indexed pair, uint256 ethAmount, uint256 tokenAmount, uint256 liquidity);
+    event Graduated(address indexed token, uint256 poolEth, uint256 poolTokens);
     event CurveConfigSet(uint256 virtualEth, uint256 virtualToken, uint256 curveSupply, uint256 lpSupply);
-    event FeesSet(uint256 feeBps, uint256 protocolShareBps, uint256 migrationFeeBps, uint256 creationFee);
-    event DexSet(address factory, address weth);
+    event FeesSet(uint256 feeBps, uint256 protocolShareBps, uint256 graduationFeeBps, uint256 creationFee);
 
     error InvalidConfig();
     error InvalidMetadata();
-    error InvalidHandle();
     error UnknownToken();
-    error CurveComplete();
-    error NotGraduated();
-    error AlreadyMigrated();
-    error DexNotSet();
     error Slippage();
     error ZeroAmount();
     error InsufficientPayment();
@@ -117,26 +150,22 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     // ---------------------------------------------------------------- launch
 
     /// @notice Creates a token. Any ETH sent above `creationFee` is used as the creator's first buy.
-    /// @param handles X usernames without the at-sign, lowercase; validated on-chain so a typo in
-    ///        case or format can never strand fees under a hash nobody can claim.
     function createToken(
         string calldata name,
         string calldata symbol,
-        string calldata imageUrl,
-        string calldata description,
-        string[] calldata handles,
-        uint16[] calldata bps,
+        string calldata metadata,
+        Split calldata split,
         uint256 minTokensOut
     ) external payable nonReentrant returns (address token) {
         if (bytes(name).length == 0 || bytes(name).length > 32) revert InvalidMetadata();
         if (bytes(symbol).length == 0 || bytes(symbol).length > 10) revert InvalidMetadata();
-        if (bytes(imageUrl).length > 256 || bytes(description).length > 500) revert InvalidMetadata();
+        if (bytes(metadata).length > MAX_METADATA_BYTES) revert InvalidMetadata();
         if (msg.value < creationFee) revert InsufficientPayment();
 
         CurveConfig memory cfg = curveConfig;
         token = address(new SplitToken(name, symbol, cfg.curveSupply + cfg.lpSupply));
 
-        curves[token] = Curve({
+        markets[token] = Market({
             virtualEth: cfg.virtualEth,
             virtualToken: cfg.virtualToken,
             realEth: 0,
@@ -144,24 +173,20 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
             lpSupply: cfg.lpSupply,
             creator: msg.sender,
             createdAt: uint64(block.timestamp),
-            graduated: false,
-            migrated: false
+            graduatedAt: 0,
+            graduated: false
         });
         curveSupplyOf[token] = cfg.curveSupply;
-        imageUrlOf[token] = imageUrl;
-        descriptionOf[token] = description;
+        metadataOf[token] = metadata;
         allTokens.push(token);
 
-        bytes32[] memory hashes = new bytes32[](handles.length);
-        for (uint256 i; i < handles.length; ++i) {
-            hashes[i] = _handleHash(handles[i]);
-        }
-        vault.setSplit(token, hashes, bps);
-        _handlesOf[token] = handles;
-        _bpsOf[token] = bps;
+        vault.setSplit(token, msg.sender, split.xIds, split.handles, split.bps, split.deadline, split.attestation);
+        _xIdsOf[token] = split.xIds;
+        _handlesOf[token] = split.handles;
+        _bpsOf[token] = split.bps;
         protocolFees += creationFee;
 
-        emit TokenCreated(token, msg.sender, name, symbol, imageUrl, description, handles, bps);
+        emit TokenCreated(token, msg.sender, name, symbol, metadata, split.xIds, split.handles, split.bps);
 
         uint256 initialBuy = msg.value - creationFee;
         if (initialBuy > 0) _buy(token, initialBuy, minTokensOut);
@@ -170,63 +195,35 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     // ----------------------------------------------------------------- trade
 
     function buy(address token, uint256 minTokensOut) external payable nonReentrant returns (uint256 tokensOut) {
-        if (curves[token].creator == address(0)) revert UnknownToken();
+        if (markets[token].creator == address(0)) revert UnknownToken();
         if (msg.value == 0) revert ZeroAmount();
         tokensOut = _buy(token, msg.value, minTokensOut);
     }
 
     function sell(address token, uint256 tokenAmount, uint256 minEthOut) external nonReentrant returns (uint256 ethOut) {
-        Curve storage c = curves[token];
-        if (c.creator == address(0)) revert UnknownToken();
-        if (c.graduated) revert CurveComplete();
+        Market storage m = markets[token];
+        if (m.creator == address(0)) revert UnknownToken();
         if (tokenAmount == 0) revert ZeroAmount();
 
-        uint256 gross = (c.virtualEth * tokenAmount) / (c.virtualToken + tokenAmount);
-        if (gross > c.realEth) gross = c.realEth;
+        uint256 gross = (m.virtualEth * tokenAmount) / (m.virtualToken + tokenAmount);
+        if (gross > m.realEth) gross = m.realEth;
         uint256 fee = (gross * feeBps) / BPS;
         ethOut = gross - fee;
-        if (ethOut < minEthOut) revert Slippage();
+        if (ethOut == 0 || ethOut < minEthOut) revert Slippage();
 
-        c.virtualEth -= gross;
-        c.virtualToken += tokenAmount;
-        c.realEth -= gross;
-        c.realToken += tokenAmount;
+        m.virtualEth -= gross;
+        m.virtualToken += tokenAmount;
+        m.realEth -= gross;
+        m.realToken += tokenAmount;
 
         // SplitToken lets the launchpad pull without an allowance; it only ever pulls from msg.sender.
-        SplitToken(token).transferFrom(msg.sender, address(this), tokenAmount);
+        if (!SplitToken(token).transferFrom(msg.sender, address(this), tokenAmount)) revert TransferFailed();
 
         _distributeFee(token, fee);
+        _record(token, false, ethOut, tokenAmount, m);
         _sendEth(msg.sender, ethOut);
 
-        emit Trade(token, msg.sender, false, ethOut, tokenAmount, fee, c.virtualEth, c.virtualToken);
-    }
-
-    /// @notice Moves a graduated token's ETH and LP reserve into a Uniswap V2 pool. Permissionless.
-    function migrate(address token) external nonReentrant returns (address pair) {
-        Curve storage c = curves[token];
-        if (!c.graduated) revert NotGraduated();
-        if (c.migrated) revert AlreadyMigrated();
-        if (dexFactory == address(0) || weth == address(0)) revert DexNotSet();
-
-        c.migrated = true;
-        uint256 migrationFee = (c.realEth * migrationFeeBps) / BPS;
-        uint256 ethForLp = c.realEth - migrationFee;
-        uint256 tokensForLp = c.lpSupply;
-        c.realEth = 0;
-        c.lpSupply = 0;
-        protocolFees += migrationFee;
-
-        pair = IUniswapV2Factory(dexFactory).getPair(token, weth);
-        if (pair == address(0)) pair = IUniswapV2Factory(dexFactory).createPair(token, weth);
-
-        // Transfers were locked until now, so the pair cannot already hold any of this token.
-        SplitToken(token).openTrading();
-        IWETH(weth).deposit{value: ethForLp}();
-        if (!IWETH(weth).transfer(pair, ethForLp)) revert TransferFailed();
-        if (!SplitToken(token).transfer(pair, tokensForLp)) revert TransferFailed();
-        uint256 liquidity = IUniswapV2Pair(pair).mint(DEAD);
-
-        emit Migrated(token, pair, ethForLp, tokensForLp, liquidity);
+        emit Trade(token, msg.sender, false, ethOut, tokenAmount, fee, m.virtualEth, m.virtualToken);
     }
 
     // ----------------------------------------------------------------- quotes
@@ -235,18 +232,19 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     /// @return fee total fee charged
     /// @return refund ETH returned because the curve sold out
     function quoteBuy(address token, uint256 ethIn) public view returns (uint256 tokensOut, uint256 fee, uint256 refund) {
-        Curve storage c = curves[token];
-        if (c.graduated || ethIn == 0) return (0, 0, 0);
+        Market storage m = markets[token];
+        if (m.creator == address(0) || ethIn == 0) return (0, 0, 0);
 
         fee = (ethIn * feeBps) / BPS;
         uint256 net = ethIn - fee;
-        tokensOut = (c.virtualToken * net) / (c.virtualEth + net);
+        tokensOut = (m.virtualToken * net) / (m.virtualEth + net);
 
-        if (tokensOut >= c.realToken) {
-            tokensOut = c.realToken;
+        // Only reachable on the curve: in the pool virtualToken == realToken and tokensOut < virtualToken.
+        if (tokensOut >= m.realToken) {
+            tokensOut = m.realToken;
             // Smallest net input that buys the rest of the curve, rounded up.
-            uint256 remainingVirtual = c.virtualToken - tokensOut;
-            net = (c.virtualEth * tokensOut + remainingVirtual - 1) / remainingVirtual;
+            uint256 remainingVirtual = m.virtualToken - tokensOut;
+            net = (m.virtualEth * tokensOut + remainingVirtual - 1) / remainingVirtual;
             fee = (net * feeBps + (BPS - feeBps) - 1) / (BPS - feeBps);
             if (net + fee > ethIn) fee = ethIn - net;
             refund = ethIn - net - fee;
@@ -254,10 +252,10 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     }
 
     function quoteSell(address token, uint256 tokenAmount) external view returns (uint256 ethOut, uint256 fee) {
-        Curve storage c = curves[token];
-        if (c.graduated || tokenAmount == 0) return (0, 0);
-        uint256 gross = (c.virtualEth * tokenAmount) / (c.virtualToken + tokenAmount);
-        if (gross > c.realEth) gross = c.realEth;
+        Market storage m = markets[token];
+        if (m.creator == address(0) || tokenAmount == 0) return (0, 0);
+        uint256 gross = (m.virtualEth * tokenAmount) / (m.virtualToken + tokenAmount);
+        if (gross > m.realEth) gross = m.realEth;
         fee = (gross * feeBps) / BPS;
         ethOut = gross - fee;
     }
@@ -280,16 +278,53 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     }
 
     function getToken(address token) public view returns (TokenView memory v) {
+        Market memory m = markets[token];
+        if (m.creator == address(0)) return v;
         v.token = token;
         v.name = SplitToken(token).name();
         v.symbol = SplitToken(token).symbol();
-        v.imageUrl = imageUrlOf[token];
-        v.description = descriptionOf[token];
-        v.curve = curves[token];
+        v.metadata = metadataOf[token];
+        v.market = m;
         v.curveSupply = curveSupplyOf[token];
+        v.totalSupply = SplitToken(token).totalSupply();
         v.creatorFees = vault.tokenFees(token);
+        uint256 count = _trades[token].length;
+        v.tradeCount = count;
+        v.lastTradeAt = count == 0 ? m.createdAt : _trades[token][count - 1].timestamp;
+        v.xIds = _xIdsOf[token];
         v.handles = _handlesOf[token];
         v.bps = _bpsOf[token];
+    }
+
+    function tradeCount(address token) external view returns (uint256) {
+        return _trades[token].length;
+    }
+
+    /// @notice Oldest-first slice of a token's trades, starting at `offset`.
+    function getTrades(address token, uint256 offset, uint256 limit) external view returns (TradeRecord[] memory page) {
+        TradeRecord[] storage all = _trades[token];
+        uint256 total = all.length;
+        if (offset >= total) return new TradeRecord[](0);
+        uint256 n = total - offset < limit ? total - offset : limit;
+        page = new TradeRecord[](n);
+        for (uint256 i; i < n; ++i) {
+            page[i] = all[offset + i];
+        }
+    }
+
+    function globalTradeCount() external view returns (uint256) {
+        return _globalTrades.length;
+    }
+
+    /// @notice Most recent trades across every token, newest first.
+    function getRecentTrades(uint256 limit) external view returns (RecentTrade[] memory page) {
+        uint256 total = _globalTrades.length;
+        uint256 n = total < limit ? total : limit;
+        page = new RecentTrade[](n);
+        for (uint256 i; i < n; ++i) {
+            GlobalTrade memory g = _globalTrades[total - 1 - i];
+            page[i] = RecentTrade(g.token, SplitToken(g.token).symbol(), _trades[g.token][g.index]);
+        }
     }
 
     // ------------------------------------------------------------------ admin
@@ -298,24 +333,18 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         _setCurveConfig(config_);
     }
 
-    function setFees(uint256 feeBps_, uint256 protocolShareBps_, uint256 migrationFeeBps_, uint256 creationFee_)
+    function setFees(uint256 feeBps_, uint256 protocolShareBps_, uint256 graduationFeeBps_, uint256 creationFee_)
         external
         onlyOwner
     {
-        if (feeBps_ > MAX_FEE_BPS || protocolShareBps_ > BPS || migrationFeeBps_ > MAX_MIGRATION_FEE_BPS) {
+        if (feeBps_ > MAX_FEE_BPS || protocolShareBps_ > BPS || graduationFeeBps_ > MAX_GRADUATION_FEE_BPS) {
             revert InvalidConfig();
         }
         feeBps = feeBps_;
         protocolShareBps = protocolShareBps_;
-        migrationFeeBps = migrationFeeBps_;
+        graduationFeeBps = graduationFeeBps_;
         creationFee = creationFee_;
-        emit FeesSet(feeBps_, protocolShareBps_, migrationFeeBps_, creationFee_);
-    }
-
-    function setDex(address factory_, address weth_) external onlyOwner {
-        dexFactory = factory_;
-        weth = weth_;
-        emit DexSet(factory_, weth_);
+        emit FeesSet(feeBps_, protocolShareBps_, graduationFeeBps_, creationFee_);
     }
 
     function withdrawProtocolFees(address to) external onlyOwner nonReentrant {
@@ -327,8 +356,7 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     // --------------------------------------------------------------- internal
 
     function _buy(address token, uint256 ethIn, uint256 minTokensOut) internal returns (uint256 tokensOut) {
-        Curve storage c = curves[token];
-        if (c.graduated) revert CurveComplete();
+        Market storage m = markets[token];
 
         uint256 fee;
         uint256 refund;
@@ -336,34 +364,53 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         if (tokensOut == 0 || tokensOut < minTokensOut) revert Slippage();
         uint256 net = ethIn - fee - refund;
 
-        c.virtualEth += net;
-        c.virtualToken -= tokensOut;
-        c.realEth += net;
-        c.realToken -= tokensOut;
+        m.virtualEth += net;
+        m.virtualToken -= tokensOut;
+        m.realEth += net;
+        m.realToken -= tokensOut;
 
         if (!SplitToken(token).transfer(msg.sender, tokensOut)) revert TransferFailed();
         _distributeFee(token, fee);
+        _record(token, true, net + fee, tokensOut, m);
+
+        emit Trade(token, msg.sender, true, net + fee, tokensOut, fee, m.virtualEth, m.virtualToken);
+
+        if (!m.graduated && m.realToken == 0) _graduate(token, m);
         if (refund > 0) _sendEth(msg.sender, refund);
-
-        emit Trade(token, msg.sender, true, net + fee, tokensOut, fee, c.virtualEth, c.virtualToken);
-
-        if (c.realToken == 0) {
-            c.graduated = true;
-            emit Graduated(token, c.realEth);
-        }
     }
 
-    /// @dev X usernames are 1-15 chars of [a-z0-9_] once lowercased. Uppercase is rejected rather
-    ///      than folded so the stored handle, the hash and the OAuth username always agree.
-    function _handleHash(string calldata handle) internal pure returns (bytes32) {
-        bytes calldata b = bytes(handle);
-        if (b.length == 0 || b.length > 15) revert InvalidHandle();
-        for (uint256 i; i < b.length; ++i) {
-            bytes1 c = b[i];
-            bool ok = (c >= 0x61 && c <= 0x7a) || (c >= 0x30 && c <= 0x39) || c == 0x5f;
-            if (!ok) revert InvalidHandle();
-        }
-        return keccak256(b);
+    /// @dev Turns the sold-out curve into the PonSwap pool. The pool price matches the curve's
+    ///      final price when the config keeps virtualEth/virtualToken proportional to lpSupply.
+    function _graduate(address token, Market storage m) internal {
+        uint256 gradFee = (m.realEth * graduationFeeBps) / BPS;
+        protocolFees += gradFee;
+        uint256 poolEth = m.realEth - gradFee;
+        uint256 poolTokens = m.lpSupply;
+
+        m.graduated = true;
+        m.graduatedAt = uint64(block.timestamp);
+        m.realEth = poolEth;
+        m.realToken = poolTokens;
+        m.virtualEth = poolEth;
+        m.virtualToken = poolTokens;
+        m.lpSupply = 0;
+
+        emit Graduated(token, poolEth, poolTokens);
+    }
+
+    function _record(address token, bool isBuy, uint256 ethAmount, uint256 tokenAmount, Market storage m) internal {
+        TradeRecord[] storage list = _trades[token];
+        _globalTrades.push(GlobalTrade(token, uint96(list.length)));
+        list.push(
+            TradeRecord({
+                trader: msg.sender,
+                timestamp: uint40(block.timestamp),
+                isBuy: isBuy,
+                ethAmount: uint128(ethAmount),
+                tokenAmount: uint128(tokenAmount),
+                price: uint128((m.virtualEth * 1e18) / m.virtualToken)
+            })
+        );
     }
 
     function _distributeFee(address token, uint256 fee) internal {

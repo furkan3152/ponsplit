@@ -2,97 +2,137 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { EmptyState } from "@/components/EmptyState";
+import { HowItWorks } from "@/components/HowItWorks";
+import { KingCard } from "@/components/KingCard";
 import { TokenCard } from "@/components/TokenCard";
-import { formatEth } from "@/lib/format";
-import { useTokens } from "@/lib/hooks";
+import { HeroArt } from "@/components/art";
+import { activeChain } from "@/lib/chains";
+import { compact, formatEth } from "@/lib/format";
+import { useNow, useTokens } from "@/lib/hooks";
+import { describe } from "@/lib/market";
+import type { TokenView } from "@/lib/types";
 
-type Filter = "all" | "bonding" | "graduated";
+const SORTS = [
+  { key: "trending", label: "Trending" },
+  { key: "new", label: "New" },
+  { key: "mcap", label: "Market cap" },
+  { key: "graduated", label: "Graduated" },
+] as const;
+type Sort = (typeof SORTS)[number]["key"];
+
+function sortTokens(list: readonly TokenView[], sort: Sort): TokenView[] {
+  const arr = [...list];
+  switch (sort) {
+    case "trending":
+      return arr.sort((a, b) => Number(b.lastTradeAt) - Number(a.lastTradeAt));
+    case "new":
+      return arr.sort((a, b) => Number(b.market.createdAt) - Number(a.market.createdAt));
+    case "mcap":
+      return arr.sort((a, b) => describe(b).marketCap - describe(a).marketCap);
+    case "graduated":
+      return arr.filter((t) => t.market.graduated).sort((a, b) => describe(b).marketCap - describe(a).marketCap);
+  }
+}
 
 export default function Home() {
   const { data: tokens, isLoading, error } = useTokens();
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [sort, setSort] = useState<Sort>("trending");
+  useNow(15_000);
+
+  const king = useMemo(() => {
+    const bonding = (tokens ?? []).filter((t) => !t.market.graduated && t.tradeCount > 0n);
+    return bonding.sort((a, b) => describe(b).progress - describe(a).progress)[0];
+  }, [tokens]);
 
   const list = useMemo(() => {
-    const q = query.trim().toLowerCase().replace(/^@/, "");
-    return (tokens ?? []).filter((t) => {
-      if (filter === "bonding" && t.curve.graduated) return false;
-      if (filter === "graduated" && !t.curve.graduated) return false;
-      if (!q) return true;
-      return (
-        t.name.toLowerCase().includes(q) ||
-        t.symbol.toLowerCase().includes(q) ||
-        t.token.toLowerCase() === q ||
-        t.handles.some((h) => h.includes(q))
-      );
-    });
-  }, [tokens, query, filter]);
+    const q = query.trim().toLowerCase().replace(/^[@$]/, "");
+    const filtered = (tokens ?? []).filter(
+      (t) => !q || t.name.toLowerCase().includes(q) || t.symbol.toLowerCase().includes(q) || t.token.toLowerCase() === q || t.handles.some((h) => h.includes(q))
+    );
+    return sortTokens(filtered, sort);
+  }, [tokens, query, sort]);
 
   const totalFees = (tokens ?? []).reduce((a, t) => a + t.creatorFees, 0n);
+  const totalTrades = (tokens ?? []).reduce((a, t) => a + t.tradeCount, 0n);
 
   return (
-    <div className="space-y-10">
-      <section className="pt-8 text-center sm:pt-14">
-        <p className="mb-4 inline-block rounded-full border border-lime/30 bg-lime/10 px-3 py-1 font-mono text-xs text-lime">
-          built on Robinhood Chain
-        </p>
-        <h1 className="mx-auto max-w-3xl text-4xl font-semibold leading-tight tracking-tight sm:text-6xl">
-          One coin. Many X accounts. <span className="text-lime">Fees split automatically.</span>
-        </h1>
-        <p className="mx-auto mt-5 max-w-xl text-mute">
-          Launch a token on a bonding curve and route its creator fees to any set of X accounts. Owners sign in with X and
-          claim to their wallet whenever they want.
-        </p>
-        <div className="mt-8 flex justify-center gap-3">
-          <Link href="/create" className="btn-primary px-6">
-            Launch a token
-          </Link>
-          <Link href="/claim" className="btn-ghost px-6">
-            Claim my fees
-          </Link>
+    <div className="space-y-14">
+      <section className="grid items-center gap-8 pt-6 md:grid-cols-[1.05fr_1fr] md:pt-12">
+        <div>
+          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 text-[12px] font-medium text-ink-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-up" /> Live on {activeChain.name}
+          </span>
+          <h1 className="mt-5 font-display text-[44px] font-bold leading-[1.02] tracking-[-0.035em] sm:text-[64px]">
+            One coin.
+            <br />
+            Many X accounts.
+            <br />
+            <span className="relative inline-block">
+              <span className="relative z-10">Fees, split.</span>
+              <span className="absolute inset-x-[-4px] bottom-1 z-0 h-[0.38em] -rotate-1 rounded-md bg-lime" aria-hidden />
+            </span>
+          </h1>
+          <p className="mt-5 max-w-md text-[17px] leading-relaxed text-ink-2">
+            Launch a coin and every trade pays the X accounts you choose, on the curve and after it graduates. They sign in with X and claim whenever they like.
+          </p>
+          <div className="mt-7 flex flex-wrap gap-3">
+            <Link href="/create" className="btn-sticker px-6 py-3 text-[16px]">
+              Launch a coin
+            </Link>
+            <Link href="/claim" className="btn-secondary px-6 py-3 text-[16px]">
+              Claim my fees
+            </Link>
+          </div>
+          <dl className="mt-8 flex gap-8">
+            <HeroStat label="Coins" value={tokens ? tokens.length.toString() : "–"} />
+            <HeroStat label="Trades" value={tokens ? compact(Number(totalTrades)) : "–"} />
+            <HeroStat label="Fees split" value={tokens ? `${formatEth(totalFees, 3)} Ξ` : "–"} />
+          </dl>
         </div>
-        <div className="mx-auto mt-10 grid max-w-lg grid-cols-2 gap-3">
-          <Stat label="Tokens launched" value={tokens ? tokens.length.toString() : "–"} />
-          <Stat label="Fees split" value={tokens ? `${formatEth(totalFees, 3)} ETH` : "–"} />
-        </div>
+        <HeroArt className="mx-auto w-full max-w-[560px] animate-float motion-reduce:animate-none" />
       </section>
 
-      <section className="space-y-4">
+      {king ? (
+        <section>
+          <KingCard t={king} />
+        </section>
+      ) : null}
+
+      <section className="space-y-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <input
-            className="input sm:max-w-xs"
-            placeholder="Search name, ticker or @handle"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <div className="flex gap-1 rounded-xl border border-ink-700 bg-ink-900 p-1">
-            {(["all", "bonding", "graduated"] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`rounded-lg px-3 py-1.5 text-sm capitalize ${filter === f ? "bg-ink-700 text-white" : "text-mute hover:text-white"}`}
-              >
-                {f}
+          <h2 className="font-display text-[28px] font-bold tracking-tight">Explore</h2>
+          <div className="segmented no-scrollbar max-w-full overflow-x-auto sm:ml-4">
+            {SORTS.map((s) => (
+              <button key={s.key} data-active={sort === s.key} onClick={() => setSort(s.key)} className="whitespace-nowrap">
+                {s.label}
               </button>
             ))}
           </div>
+          <input
+            className="input !rounded-full !py-2 sm:ml-auto sm:max-w-[260px]"
+            placeholder="Search coin, $ticker, @account"
+            aria-label="Search coins"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
 
         {error ? (
-          <p className="card p-6 text-sm text-red-300">Could not load tokens: {error.message.split("\n")[0]}</p>
+          <div className="card p-6 text-[14px] text-down-ink">Could not load coins: {error.message.split("\n")[0]}</div>
         ) : isLoading ? (
           <Grid>
             {Array.from({ length: 6 }, (_, i) => (
-              <div key={i} className="card h-52 animate-pulse" />
+              <div key={i} className="card h-[150px] animate-pulse" />
             ))}
           </Grid>
         ) : list.length === 0 ? (
-          <div className="card p-10 text-center text-mute">
-            {tokens?.length ? "No tokens match." : "No tokens yet."}{" "}
-            <Link href="/create" className="text-lime hover:underline">
+          <EmptyState title={tokens?.length ? "Nothing matches that." : "No coins yet."}>
+            <Link href="/create" className="font-medium text-ink underline">
               Launch the first one
             </Link>
-          </div>
+          </EmptyState>
         ) : (
           <Grid>
             {list.map((t) => (
@@ -100,6 +140,16 @@ export default function Home() {
             ))}
           </Grid>
         )}
+      </section>
+
+      <section className="space-y-5">
+        <div className="flex items-end justify-between">
+          <h2 className="font-display text-[28px] font-bold tracking-tight">How it works</h2>
+          <Link href="/how" className="text-[14px] font-medium text-ink-2 hover:text-ink">
+            Details →
+          </Link>
+        </div>
+        <HowItWorks />
       </section>
     </div>
   );
@@ -109,11 +159,11 @@ function Grid({ children }: { children: React.ReactNode }) {
   return <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{children}</div>;
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function HeroStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="card px-4 py-3">
-      <div className="font-mono text-lg">{value}</div>
-      <div className="text-xs text-mute">{label}</div>
+    <div>
+      <dt className="text-[12px] font-medium text-ink-2">{label}</dt>
+      <dd className="num text-[22px] font-semibold tracking-tight">{value}</dd>
     </div>
   );
 }

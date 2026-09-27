@@ -1,98 +1,115 @@
-# PonSplit: Robinhood Chain için UseSplit
+<p align="center"><img src="web/public/hero.svg" width="480" alt="PonSplit"></p>
 
-Bir token çıkar, creator fee'lerini birden fazla X (Twitter) hesabı arasında paylaştır. Hesap sahipleri X ile giriş yapıp paylarını cüzdanlarına çeker. [usesplit.pro](https://usesplit.pro/) fikrinin **Robinhood Chain** (EVM, Arbitrum Orbit L2) versiyonu.
+# PonSplit
+
+**Tek coin, birden fazla X hesabı, fee'ler otomatik bölünür.** Robinhood Chain üzerinde bir coin çıkar. Her al/sat işleminden kesilen fee, seçtiğin X (Twitter) hesapları arasında paylaştırılır. Bu hem bonding curve aşamasında hem de coin "mezun olduktan" sonra geçerli. Hesap sahipleri X ile giriş yapıp paylarını istedikleri cüzdana çeker.
 
 ```
-contracts/   Solidity kontratları (Hardhat): launchpad, bonding curve, fee kasası
-web/         Next.js 14 uygulaması: keşfet, token oluştur, al/sat, fee claim
+contracts/   Solidity (Hardhat): SplitLaunchpad, FeeVault, SplitToken
+web/         Next.js 14 uygulaması: keşfet, coin çıkar, grafik + al/sat, claim, portföy
+.github/     CI + tek tıkla kontrat deploy workflow'u
 ```
 
 ## Nasıl çalışır?
 
-1. **Launch:** Token oluşturan kişi isim, ticker, görsel ve en fazla 10 X hesabı ile yüzde paylarını girer. İsterse aynı işlemde ilk alımı yapar.
-2. **Bonding curve:** Token, sanal rezervli sabit çarpım (x·y=k) eğrisinde ETH ile alınıp satılır (pump.fun modeli). Her işlemde **%1 fee** kesilir:
-   - %80'i → `FeeVault` içinde X hesaplarına payları oranında yazılır
-   - %20'si → protokol
-3. **Graduation:** Eğrideki 793.1M token satılınca (varsayılan ayarlarla ~4.25 ETH) eğri kapanır. Herkes `migrate` çağırabilir: toplanan ETH + ayrılmış 206.9M token Uniswap V2 uyumlu bir havuza eklenir ve LP token'ları yakılır.
-4. **Claim:** Hesap sahibi `/claim` sayfasında X ile giriş yapar (OAuth 2.0). Sunucu, oturumdaki kullanıcı adı için bir EIP-712 imzası üretir. Kullanıcı bu imzayla `FeeVault.claim` çağırıp birikmiş ETH'yi kendi cüzdanına çeker.
+1. **Launch:** Coin'i oluşturan kişi isim, ticker, görsel, açıklama/linkler ve en fazla 10 X hesabıyla bu hesapların paylarını girer.
+   - Sunucu kullanıcı adlarını **kalıcı X kullanıcı ID'lerine** çevirir ve bu eşleşmeyi imzalar (attestation). Kontrat imzayı doğrulamadan coin'i oluşturmaz.
+   - Böylece bir hesap adını değiştirse de kazancı ID'ye bağlı kalır ve kimse başkasının hesabını sahte bir ID ile listeleyemez.
+2. **Bonding curve:** Coin, sanal rezervli x·y=k eğrisinde ETH ile alınıp satılır (pump.fun modeli). Her işlemde **%1 fee** kesilir: %80'i X hesaplarına, %20'si protokole gider.
+3. **PonSwap'a mezuniyet:** Eğrideki 793.1M token satılınca (yaklaşık 4.25 ETH) toplanan ETH ve ayrılmış 206.9M token, kontratın **dahili AMM havuzuna** geçer.
+   - Havuzun likiditesi sonsuza kadar kilitlidir.
+   - İşlemler aynı sayfada, aynı fee paylaşımıyla devam eder.
+   - Harici bir DEX'e bağımlılık yoktur.
+4. **Claim:** Hesap sahibi `/claim` sayfasında X ile giriş yapar. Sunucu, o hesabın ID'si için hedef cüzdana bağlı ve 15 dakika geçerli bir imza üretir. `FeeVault.claim` birikmiş ETH'yi bu cüzdana gönderir.
+5. **Grafik ve işlem geçmişi:** Her işlem zincir üstüne kaydedilir. Mum grafiği, işlem listesi ve canlı işlem şeridi indexer gerektirmeden doğrudan kontrattan okunur.
 
 ### Güvenlik notları
 
-- **Handle doğrulaması zincir üstünde yapılır.** Kullanıcı adları küçük harf, `a-z0-9_`, 1–15 karakter olmalı. Büyük harf ya da `@` içeren bir handle reddedilir, böylece hiç kimsenin claim edemeyeceği bir hash'e fon gitmez.
-- **Eğri aşamasında token transferleri kilitlidir.** Token yalnızca launchpad'e ve launchpad'den hareket eder (al/sat). Bu, birinin migration'dan önce DEX havuzu açıp liste fiyatını manipüle etmesini engeller. Migration ile transferler açılır.
-- **Claim imzaları hedef cüzdana bağlıdır.** Nonce ve 15 dakikalık süre ile korunur. İmzayı başkası relay etse bile para yalnızca imzadaki adrese gider.
-- **Handle ID değil, kullanıcı adıdır.** Bir X hesabı adını değiştirir ve eski adı başkası alırsa, eski adın birikmiş payını yeni sahibi claim edebilir. X API'den kullanıcı ID'sine çözümleme yapılarak bu risk kapatılabilir; bu MVP'de yok.
-- **Eğri sonrası fee yok.** Migration'dan sonra DEX'teki işlemlerden creator fee alınmaz, LP yakıldığı için DEX swap fee'leri havuzda kalır.
-- `SIGNER_PRIVATE_KEY` claim'lerin tek yetkilisidir. Sadece sunucuda tutulmalı, deployer anahtarından ayrı olmalı. Sızarsa kontrat sahibi `FeeVault.setSigner` ile değiştirir.
-- Kontratlar denetimden (audit) geçmedi. Mainnet'e çıkmadan önce bir audit ve hukuki kontrol önerilir.
+- Launch attestation'ı ve claim imzaları aynı `SIGNER_PRIVATE_KEY` ile atılır. Bu anahtar yalnızca sunucuda durmalı ve deployer anahtarından ayrı olmalı. Sızarsa kontrat sahibi `FeeVault.setSigner` ile değiştirir.
+- Attestation, coin'i oluşturan adrese bağlıdır ve 30 dakikada geçerliliğini yitirir.
+- X ID çözümlemesi resmi X API ile (`X_BEARER_TOKEN`, ücretli Basic plan) ya da ücretsiz, gayriresmî `api.fxtwitter.com` üzerinden yapılır. İkincisi "best effort" çalışır; ciddi kullanımda resmi API önerilir.
+- Kontratlar denetimden (audit) geçmedi. Mainnet öncesinde audit ve hukuki kontrol şart.
 
-## Kontratlar
+## Testnet'e çıkış (adım adım)
 
-| Kontrat | Görev |
-|---|---|
-| `SplitLaunchpad` | Token factory, bonding curve al/sat, fee dağıtımı, graduation, DEX migration |
-| `FeeVault` | X handle hash'i başına bakiye; EIP-712 imzalı claim |
-| `SplitToken` | Sabit arzlı ERC-20 (1B), migration'a kadar transfer kilidi |
+Robinhood Chain testnet: chain id `46630`, RPC `https://rpc.testnet.chain.robinhood.com`, explorer https://explorer.testnet.chain.robinhood.com, faucet https://faucet.testnet.chain.robinhood.com
+
+**1. İki cüzdan hazırla**
+```bash
+cd contracts && npm install
+node scripts/new-wallet.js   # CLAIM SIGNER: private key → web'de SIGNER_PRIVATE_KEY, adres → CLAIM_SIGNER_ADDRESS
+```
+Deployer için ayrı bir cüzdan kullan ve faucet'ten test ETH al.
+
+**2. Kontratları deploy et.** İki yoldan birini seç:
+- **GitHub Actions ile (önerilen):**
+  - Settings → Secrets and variables → Actions altına şunları ekle:
+    - secret `DEPLOYER_PRIVATE_KEY`
+    - variable `CLAIM_SIGNER_ADDRESS`
+    - istersen variable `OWNER_ADDRESS`
+  - Actions → **Deploy contracts** → Run workflow → `robinhoodTestnet`.
+  - Adresler job özetinde görünür.
+- **Kendi bilgisayarından:**
+  ```bash
+  DEPLOYER_PRIVATE_KEY=0x... CLAIM_SIGNER_ADDRESS=0x... npx hardhat run scripts/deploy.js --network robinhoodTestnet
+  ```
+  Adresler `contracts/deployments/robinhoodTestnet.json` dosyasına yazılır.
+
+**3. X uygulaması aç** (https://developer.x.com → Projects & Apps)
+- User authentication settings: **OAuth 2.0**, tip **Web App**
+- Callback URL: `https://<site-adresin>/api/auth/callback/twitter`
+- Client ID ve Client Secret'ı not al. İstersen Basic plan için `X_BEARER_TOKEN` da al.
+
+**4. Web uygulamasını Vercel'e deploy et**
+- https://vercel.com/new adresinde bu repoyu import et. **Root Directory: `web`**.
+- Environment Variables ekranına `web/.env.example` dosyasındaki değerleri gir. En azından şunlar gerekli:
+
+  | Değişken | Değer |
+  |---|---|
+  | `NEXT_PUBLIC_CHAIN` | `testnet` |
+  | `NEXT_PUBLIC_LAUNCHPAD_ADDRESS`, `NEXT_PUBLIC_FEE_VAULT_ADDRESS` | 2. adımdan |
+  | `SIGNER_PRIVATE_KEY` | 1. adımdan |
+  | `NEXTAUTH_URL` | `https://<site-adresin>` |
+  | `NEXTAUTH_SECRET` | `openssl rand -base64 32` çıktısı |
+  | `TWITTER_CLIENT_ID`, `TWITTER_CLIENT_SECRET` | 3. adımdan |
+  | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | opsiyonel (mobil cüzdanlar için), https://cloud.reown.com |
+  | `PINATA_JWT` | opsiyonel (görsel yükleme için) |
+
+**5. Kontrol et.** `https://<site-adresin>/api/config` şunu döndürmeli: `signer: true`, `xLogin: true`. Ardından cüzdanı bağla, bir coin çıkar, al/sat yap ve `/claim` sayfasından X ile giriş yapıp claim et.
+
+## Geliştirme
 
 ```bash
-cd contracts
-npm install
-npm test                 # 20 test
-npm run export-abi       # ABI'leri web/src/lib/abi.ts dosyasına yazar
+# kontratlar
+cd contracts && npm install
+npm test                  # 19 test
+npm run export-abi        # ABI'leri web/src/lib/abi.ts dosyasına yazar
+
+# yerel uçtan uca deneme (gerçek zincir ve X hesabı gerekmez)
+npx hardhat node                                            # terminal 1
+npx hardhat run scripts/local-demo.js --network localhost   # terminal 2: 4 örnek coin + işlemler
+cd ../web && cp .env.example .env.local                     # sonra düzenle:
+#   NEXT_PUBLIC_CHAIN=local, demo çıktısındaki adresler, X_RESOLVER=mock,
+#   ENABLE_DEV_LOGIN=true, SIGNER_PRIVATE_KEY=<Hardhat #1 anahtarı>
+npm install && npm run dev
 ```
 
-### Deploy (Robinhood Chain testnet)
+`ENABLE_DEV_LOGIN` yalnızca `X_RESOLVER=mock` iken çalışır. Claim sayfasına sahte bir "Dev login" ekler ve production'da kapalı kalır.
 
-Testnet ETH: https://faucet.testnet.chain.robinhood.com
+## Parametreler
 
-```bash
-cd contracts
-DEPLOYER_PRIVATE_KEY=0x... \
-CLAIM_SIGNER_ADDRESS=0x...   \  # web'deki SIGNER_PRIVATE_KEY'in adresi
-DEX_FACTORY=0x... WETH=0x... \  # opsiyonel: Uniswap V2 uyumlu factory + WETH
-npx hardhat run scripts/deploy.js --network robinhoodTestnet
-```
+Kontrat sahibi bu değerleri `setFees` ve `setCurveConfig` ile değiştirebilir. Değişiklikler yeni coin'lere uygulanır.
 
-Mainnet için `--network robinhood` kullan. Adresler `contracts/deployments/<network>.json` dosyasına yazılır.
-
-> **DEX:** Migration için zincirdeki Uniswap V2 uyumlu bir factory ve WETH adresi gerekir. Deploy sırasında verilmezse sonradan `launchpad.setDex(factory, weth)` ile ayarlanabilir. Ayarlanmadan graduate olan token'lar ayar yapılana kadar bekler.
-
-Varsayılan parametreler (`setCurveConfig` / `setFees` ile değişir, yeni token'lara uygulanır):
-
-| Parametre | Değer |
+| Parametre | Varsayılan |
 |---|---|
-| Sanal ETH / sanal token | 1.5 ETH / 1.073B |
-| Eğri arzı / LP arzı | 793.1M / 206.9M |
 | İşlem fee'si | %1 (en fazla %5) |
-| Protokol payı | fee'nin %20'si |
-| Oluşturma ücreti / migration ücreti | 0 / %0 |
+| Fee'nin protokol payı | %20 (kalan %80 X hesaplarına) |
+| Oluşturma ücreti / mezuniyet ücreti | 0 / %0 (en fazla %10) |
+| Sanal ETH / sanal token | 1.5 ETH / 1.073B |
+| Eğri arzı / havuz arzı | 793.1M / 206.9M (toplam 1B) |
 
-## Web uygulaması
+## Tasarım
 
-```bash
-cd web
-cp .env.example .env.local   # değerleri doldur
-npm install
-npm run dev
-```
+Arayüz, Apple'ın sade düzenini (açık gri zemin, büyük tipografi, buzlu cam navigasyon, 24px kartlar) pump.fun'ın oyunbazlığıyla (canlı işlem şeridi, "King of the hill", yoğun coin ızgarası) birleştiriyor.
 
-Gerekli ortam değişkenleri (`web/.env.example` içinde açıklamalı):
-
-- `NEXT_PUBLIC_CHAIN`: `testnet`, `mainnet` ya da `local`
-- `NEXT_PUBLIC_LAUNCHPAD_ADDRESS`, `NEXT_PUBLIC_FEE_VAULT_ADDRESS`: deploy çıktısından
-- `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`: https://cloud.reown.com (tarayıcı cüzdanları bu olmadan da çalışır)
-- `NEXTAUTH_URL`, `NEXTAUTH_SECRET`: `openssl rand -base64 32` ile secret üretebilirsin
-- `TWITTER_CLIENT_ID`, `TWITTER_CLIENT_SECRET`: https://developer.x.com üzerinde OAuth 2.0 uygulaması. Callback URL: `{NEXTAUTH_URL}/api/auth/callback/twitter`
-- `SIGNER_PRIVATE_KEY`: adresi `FeeVault.signer` ile aynı olmalı
-
-Sayfalar: `/` (keşfet ve ara), `/create` (token çıkar), `/token/[address]` (grafik bilgileri, al/sat, split, migrate), `/claim` (X ile giriş ve claim, herhangi bir handle'ın kazancını sorgulama).
-
-### Yerel deneme (gerçek zincir gerekmez)
-
-```bash
-cd contracts && npx hardhat node                                       # terminal 1
-cd contracts && npx hardhat run scripts/local-demo.js --network localhost   # terminal 2: mock DEX + 3 örnek token
-cd web && npm run dev                                                  # NEXT_PUBLIC_CHAIN=local
-```
-
-`local-demo.js` çıktısındaki adresleri `web/.env.local` dosyasına yaz. `SIGNER_PRIVATE_KEY` olarak Hardhat hesabı #1'in anahtarını kullan. MetaMask'e `http://127.0.0.1:8545` (chain 31337) ağını ekleyip Hardhat test hesaplarından birini import edebilirsin.
+İllüstrasyonlar "chunky sticker" tarzında: düz parlak renkler, kalın yuvarlak mürekkep konturlar ve sert ofset gölgeler. Logo çapraz ikiye bölünmüş bir coin. Görseli olmayan her coin, adresinden türetilen benzersiz bir sticker avatar alır. Tüm çizimler `web/src/components/art/` altında SVG React bileşenleri olarak durur. Açık ve karanlık mod desteklenir.

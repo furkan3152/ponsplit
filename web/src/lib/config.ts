@@ -15,3 +15,4 @@ export const isConfigured = Boolean(LAUNCHPAD_ADDRESS && FEE_VAULT_ADDRESS);
 
 export const MAX_RECIPIENTS = 10;
 export const BPS = 10_000;
+export const FAUCET_URL = "https://faucet.testnet.chain.robinhood.com";
