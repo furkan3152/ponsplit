@@ -46,21 +46,6 @@ export const launchpadAbi = [
   },
   {
     "inputs": [],
-    "name": "AlreadyMigrated",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "CurveComplete",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "DexNotSet",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "InsufficientPayment",
     "type": "error"
   },
@@ -71,17 +56,7 @@ export const launchpadAbi = [
   },
   {
     "inputs": [],
-    "name": "InvalidHandle",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "InvalidMetadata",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "NotGraduated",
     "type": "error"
   },
   {
@@ -167,25 +142,6 @@ export const launchpadAbi = [
     "inputs": [
       {
         "indexed": false,
-        "internalType": "address",
-        "name": "factory",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "weth",
-        "type": "address"
-      }
-    ],
-    "name": "DexSet",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
         "internalType": "uint256",
         "name": "feeBps",
         "type": "uint256"
@@ -199,7 +155,7 @@ export const launchpadAbi = [
       {
         "indexed": false,
         "internalType": "uint256",
-        "name": "migrationFeeBps",
+        "name": "graduationFeeBps",
         "type": "uint256"
       },
       {
@@ -224,48 +180,17 @@ export const launchpadAbi = [
       {
         "indexed": false,
         "internalType": "uint256",
-        "name": "realEth",
+        "name": "poolEth",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "poolTokens",
         "type": "uint256"
       }
     ],
     "name": "Graduated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "pair",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "ethAmount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "tokenAmount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "liquidity",
-        "type": "uint256"
-      }
-    ],
-    "name": "Migrated",
     "type": "event"
   },
   {
@@ -317,14 +242,14 @@ export const launchpadAbi = [
       {
         "indexed": false,
         "internalType": "string",
-        "name": "imageUrl",
+        "name": "metadata",
         "type": "string"
       },
       {
         "indexed": false,
-        "internalType": "string",
-        "name": "description",
-        "type": "string"
+        "internalType": "uint64[]",
+        "name": "xIds",
+        "type": "uint64[]"
       },
       {
         "indexed": false,
@@ -412,19 +337,6 @@ export const launchpadAbi = [
   },
   {
     "inputs": [],
-    "name": "DEAD",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
     "name": "MAX_FEE_BPS",
     "outputs": [
       {
@@ -438,7 +350,20 @@ export const launchpadAbi = [
   },
   {
     "inputs": [],
-    "name": "MAX_MIGRATION_FEE_BPS",
+    "name": "MAX_GRADUATION_FEE_BPS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_METADATA_BYTES",
     "outputs": [
       {
         "internalType": "uint256",
@@ -506,23 +431,40 @@ export const launchpadAbi = [
       },
       {
         "internalType": "string",
-        "name": "imageUrl",
+        "name": "metadata",
         "type": "string"
       },
       {
-        "internalType": "string",
-        "name": "description",
-        "type": "string"
-      },
-      {
-        "internalType": "string[]",
-        "name": "handles",
-        "type": "string[]"
-      },
-      {
-        "internalType": "uint16[]",
-        "name": "bps",
-        "type": "uint16[]"
+        "components": [
+          {
+            "internalType": "uint64[]",
+            "name": "xIds",
+            "type": "uint64[]"
+          },
+          {
+            "internalType": "string[]",
+            "name": "handles",
+            "type": "string[]"
+          },
+          {
+            "internalType": "uint16[]",
+            "name": "bps",
+            "type": "uint16[]"
+          },
+          {
+            "internalType": "uint256",
+            "name": "deadline",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bytes",
+            "name": "attestation",
+            "type": "bytes"
+          }
+        ],
+        "internalType": "struct SplitLaunchpad.Split",
+        "name": "split",
+        "type": "tuple"
       },
       {
         "internalType": "uint256",
@@ -602,97 +544,6 @@ export const launchpadAbi = [
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      }
-    ],
-    "name": "curves",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "virtualEth",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "virtualToken",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "realEth",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "realToken",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "lpSupply",
-        "type": "uint256"
-      },
-      {
-        "internalType": "address",
-        "name": "creator",
-        "type": "address"
-      },
-      {
-        "internalType": "uint64",
-        "name": "createdAt",
-        "type": "uint64"
-      },
-      {
-        "internalType": "bool",
-        "name": "graduated",
-        "type": "bool"
-      },
-      {
-        "internalType": "bool",
-        "name": "migrated",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "token",
-        "type": "address"
-      }
-    ],
-    "name": "descriptionOf",
-    "outputs": [
-      {
-        "internalType": "string",
-        "name": "",
-        "type": "string"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "dexFactory",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [],
     "name": "feeBps",
     "outputs": [
@@ -700,6 +551,74 @@ export const launchpadAbi = [
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "limit",
+        "type": "uint256"
+      }
+    ],
+    "name": "getRecentTrades",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "token",
+            "type": "address"
+          },
+          {
+            "internalType": "string",
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "components": [
+              {
+                "internalType": "address",
+                "name": "trader",
+                "type": "address"
+              },
+              {
+                "internalType": "uint40",
+                "name": "timestamp",
+                "type": "uint40"
+              },
+              {
+                "internalType": "bool",
+                "name": "isBuy",
+                "type": "bool"
+              },
+              {
+                "internalType": "uint128",
+                "name": "ethAmount",
+                "type": "uint128"
+              },
+              {
+                "internalType": "uint128",
+                "name": "tokenAmount",
+                "type": "uint128"
+              },
+              {
+                "internalType": "uint128",
+                "name": "price",
+                "type": "uint128"
+              }
+            ],
+            "internalType": "struct SplitLaunchpad.TradeRecord",
+            "name": "trade",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct SplitLaunchpad.RecentTrade[]",
+        "name": "page",
+        "type": "tuple[]"
       }
     ],
     "stateMutability": "view",
@@ -734,12 +653,7 @@ export const launchpadAbi = [
           },
           {
             "internalType": "string",
-            "name": "imageUrl",
-            "type": "string"
-          },
-          {
-            "internalType": "string",
-            "name": "description",
+            "name": "metadata",
             "type": "string"
           },
           {
@@ -780,18 +694,18 @@ export const launchpadAbi = [
                 "type": "uint64"
               },
               {
-                "internalType": "bool",
-                "name": "graduated",
-                "type": "bool"
+                "internalType": "uint64",
+                "name": "graduatedAt",
+                "type": "uint64"
               },
               {
                 "internalType": "bool",
-                "name": "migrated",
+                "name": "graduated",
                 "type": "bool"
               }
             ],
-            "internalType": "struct SplitLaunchpad.Curve",
-            "name": "curve",
+            "internalType": "struct SplitLaunchpad.Market",
+            "name": "market",
             "type": "tuple"
           },
           {
@@ -801,8 +715,28 @@ export const launchpadAbi = [
           },
           {
             "internalType": "uint256",
+            "name": "totalSupply",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
             "name": "creatorFees",
             "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "tradeCount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint64",
+            "name": "lastTradeAt",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64[]",
+            "name": "xIds",
+            "type": "uint64[]"
           },
           {
             "internalType": "string[]",
@@ -857,12 +791,7 @@ export const launchpadAbi = [
           },
           {
             "internalType": "string",
-            "name": "imageUrl",
-            "type": "string"
-          },
-          {
-            "internalType": "string",
-            "name": "description",
+            "name": "metadata",
             "type": "string"
           },
           {
@@ -903,18 +832,18 @@ export const launchpadAbi = [
                 "type": "uint64"
               },
               {
-                "internalType": "bool",
-                "name": "graduated",
-                "type": "bool"
+                "internalType": "uint64",
+                "name": "graduatedAt",
+                "type": "uint64"
               },
               {
                 "internalType": "bool",
-                "name": "migrated",
+                "name": "graduated",
                 "type": "bool"
               }
             ],
-            "internalType": "struct SplitLaunchpad.Curve",
-            "name": "curve",
+            "internalType": "struct SplitLaunchpad.Market",
+            "name": "market",
             "type": "tuple"
           },
           {
@@ -924,8 +853,28 @@ export const launchpadAbi = [
           },
           {
             "internalType": "uint256",
+            "name": "totalSupply",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
             "name": "creatorFees",
             "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "tradeCount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint64",
+            "name": "lastTradeAt",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64[]",
+            "name": "xIds",
+            "type": "uint64[]"
           },
           {
             "internalType": "string[]",
@@ -952,14 +901,82 @@ export const launchpadAbi = [
         "internalType": "address",
         "name": "token",
         "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "offset",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "limit",
+        "type": "uint256"
       }
     ],
-    "name": "imageUrlOf",
+    "name": "getTrades",
     "outputs": [
       {
-        "internalType": "string",
+        "components": [
+          {
+            "internalType": "address",
+            "name": "trader",
+            "type": "address"
+          },
+          {
+            "internalType": "uint40",
+            "name": "timestamp",
+            "type": "uint40"
+          },
+          {
+            "internalType": "bool",
+            "name": "isBuy",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint128",
+            "name": "ethAmount",
+            "type": "uint128"
+          },
+          {
+            "internalType": "uint128",
+            "name": "tokenAmount",
+            "type": "uint128"
+          },
+          {
+            "internalType": "uint128",
+            "name": "price",
+            "type": "uint128"
+          }
+        ],
+        "internalType": "struct SplitLaunchpad.TradeRecord[]",
+        "name": "page",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "globalTradeCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
         "name": "",
-        "type": "string"
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "graduationFeeBps",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -973,25 +990,71 @@ export const launchpadAbi = [
         "type": "address"
       }
     ],
-    "name": "migrate",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "pair",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "migrationFeeBps",
+    "name": "markets",
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "virtualEth",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "virtualToken",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "realEth",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "realToken",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "lpSupply",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "creator",
+        "type": "address"
+      },
+      {
+        "internalType": "uint64",
+        "name": "createdAt",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
+        "name": "graduatedAt",
+        "type": "uint64"
+      },
+      {
+        "internalType": "bool",
+        "name": "graduated",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "metadataOf",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
       }
     ],
     "stateMutability": "view",
@@ -1173,24 +1236,6 @@ export const launchpadAbi = [
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "factory_",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "weth_",
-        "type": "address"
-      }
-    ],
-    "name": "setDex",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "uint256",
         "name": "feeBps_",
         "type": "uint256"
@@ -1202,7 +1247,7 @@ export const launchpadAbi = [
       },
       {
         "internalType": "uint256",
-        "name": "migrationFeeBps_",
+        "name": "graduationFeeBps_",
         "type": "uint256"
       },
       {
@@ -1233,6 +1278,25 @@ export const launchpadAbi = [
     "inputs": [
       {
         "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "tradeCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
         "name": "newOwner",
         "type": "address"
       }
@@ -1248,19 +1312,6 @@ export const launchpadAbi = [
     "outputs": [
       {
         "internalType": "contract FeeVault",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "weth",
-    "outputs": [
-      {
-        "internalType": "address",
         "name": "",
         "type": "address"
       }
@@ -1425,9 +1476,9 @@ export const feeVaultAbi = [
     "inputs": [
       {
         "indexed": true,
-        "internalType": "bytes32",
-        "name": "handleHash",
-        "type": "bytes32"
+        "internalType": "uint64",
+        "name": "xId",
+        "type": "uint64"
       },
       {
         "indexed": true,
@@ -1526,9 +1577,9 @@ export const feeVaultAbi = [
       },
       {
         "indexed": false,
-        "internalType": "bytes32[]",
-        "name": "handleHashes",
-        "type": "bytes32[]"
+        "internalType": "uint64[]",
+        "name": "xIds",
+        "type": "uint64[]"
       },
       {
         "indexed": false,
@@ -1539,6 +1590,19 @@ export const feeVaultAbi = [
     ],
     "name": "SplitSet",
     "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "ATTESTATION_TYPEHASH",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   },
   {
     "inputs": [],
@@ -1582,9 +1646,9 @@ export const feeVaultAbi = [
   {
     "inputs": [
       {
-        "internalType": "bytes32",
-        "name": "handleHash",
-        "type": "bytes32"
+        "internalType": "uint64",
+        "name": "xId",
+        "type": "uint64"
       },
       {
         "internalType": "address",
@@ -1616,9 +1680,9 @@ export const feeVaultAbi = [
   {
     "inputs": [
       {
-        "internalType": "bytes32",
-        "name": "handleHash",
-        "type": "bytes32"
+        "internalType": "uint64",
+        "name": "xId",
+        "type": "uint64"
       }
     ],
     "name": "claimable",
@@ -1653,6 +1717,30 @@ export const feeVaultAbi = [
         "internalType": "bytes32",
         "name": "",
         "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint64[]",
+        "name": "xIds",
+        "type": "uint64[]"
+      }
+    ],
+    "name": "earningsOf",
+    "outputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "claimable_",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "earned_",
+        "type": "uint256[]"
       }
     ],
     "stateMutability": "view",
@@ -1714,9 +1802,9 @@ export const feeVaultAbi = [
       {
         "components": [
           {
-            "internalType": "bytes32",
-            "name": "handleHash",
-            "type": "bytes32"
+            "internalType": "uint64",
+            "name": "xId",
+            "type": "uint64"
           },
           {
             "internalType": "uint16",
@@ -1748,9 +1836,9 @@ export const feeVaultAbi = [
   {
     "inputs": [
       {
-        "internalType": "bytes32",
-        "name": "handleHash",
-        "type": "bytes32"
+        "internalType": "uint64",
+        "name": "xId",
+        "type": "uint64"
       }
     ],
     "name": "nonces",
@@ -1818,14 +1906,34 @@ export const feeVaultAbi = [
         "type": "address"
       },
       {
-        "internalType": "bytes32[]",
-        "name": "handleHashes",
-        "type": "bytes32[]"
+        "internalType": "address",
+        "name": "creator",
+        "type": "address"
+      },
+      {
+        "internalType": "uint64[]",
+        "name": "xIds",
+        "type": "uint64[]"
+      },
+      {
+        "internalType": "string[]",
+        "name": "handles",
+        "type": "string[]"
       },
       {
         "internalType": "uint16[]",
         "name": "bps",
         "type": "uint16[]"
+      },
+      {
+        "internalType": "uint256",
+        "name": "deadline",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "attestation",
+        "type": "bytes"
       }
     ],
     "name": "setSplit",
@@ -1868,9 +1976,9 @@ export const feeVaultAbi = [
   {
     "inputs": [
       {
-        "internalType": "bytes32",
-        "name": "handleHash",
-        "type": "bytes32"
+        "internalType": "uint64",
+        "name": "xId",
+        "type": "uint64"
       }
     ],
     "name": "totalEarned",
@@ -2005,16 +2113,6 @@ export const splitTokenAbi = [
       }
     ],
     "name": "ERC20InvalidSpender",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "OnlyLaunchpad",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "TransfersLocked",
     "type": "error"
   },
   {
@@ -2175,13 +2273,6 @@ export const splitTokenAbi = [
   },
   {
     "inputs": [],
-    "name": "openTrading",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
     "name": "symbol",
     "outputs": [
       {
@@ -2201,19 +2292,6 @@ export const splitTokenAbi = [
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "tradingOpen",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
       }
     ],
     "stateMutability": "view",

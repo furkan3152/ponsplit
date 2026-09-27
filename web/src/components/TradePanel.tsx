@@ -2,32 +2,34 @@
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { useState } from "react";
-import { formatEther, formatUnits, parseEther, parseUnits, type Address } from "viem";
-import { useAccount, useBalance, usePublicClient, useReadContract, useWriteContract } from "wagmi";
+import { formatUnits, parseEther, type Address } from "viem";
+import { useAccount, useBalance, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { launchpadAbi, splitTokenAbi } from "@/lib/abi";
 import { activeChain } from "@/lib/chains";
-import { LAUNCHPAD_ADDRESS } from "@/lib/config";
+import { FAUCET_URL, LAUNCHPAD_ADDRESS } from "@/lib/config";
 import { errorMessage, formatEth, formatTokens } from "@/lib/format";
 
-const SLIPPAGE_BPS = 200n; // 2%
+const SLIPPAGES = [50n, 100n, 200n, 500n]; // bps
 
-function parse(v: string, decimals: number): bigint | undefined {
+function parse(v: string): bigint | undefined {
   try {
-    const n = decimals === 18 ? parseEther(v.trim()) : parseUnits(v.trim(), decimals);
+    const n = parseEther(v.trim());
     return n > 0n ? n : undefined;
   } catch {
     return undefined;
   }
 }
 
-export function TradePanel({ token, symbol, onTraded }: { token: Address; symbol: string; onTraded: () => void }) {
+export function TradePanel({ token, symbol, graduated, onTraded }: { token: Address; symbol: string; graduated: boolean; onTraded: () => void }) {
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState("");
+  const [slippage, setSlippage] = useState(200n);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const { openConnectModal } = useConnectModal();
+  const { switchChainAsync } = useSwitchChain();
   const publicClient = usePublicClient({ chainId: activeChain.id });
   const { writeContractAsync } = useWriteContract();
 
@@ -41,7 +43,7 @@ export function TradePanel({ token, symbol, onTraded }: { token: Address; symbol
     query: { enabled: Boolean(address) },
   });
 
-  const parsed = parse(amount, 18);
+  const parsed = parse(amount);
   const { data: buyQuote } = useReadContract({
     address: LAUNCHPAD_ADDRESS,
     abi: launchpadAbi,
@@ -62,17 +64,14 @@ export function TradePanel({ token, symbol, onTraded }: { token: Address; symbol
   const out = side === "buy" ? buyQuote?.[0] : sellQuote?.[0];
   const fee = side === "buy" ? buyQuote?.[1] : sellQuote?.[1];
   const refund = side === "buy" ? buyQuote?.[2] : 0n;
-  const insufficient =
-    parsed !== undefined &&
-    (side === "buy" ? ethBalance !== undefined && parsed > ethBalance.value : tokenBalance !== undefined && parsed > tokenBalance);
+  const balance = side === "buy" ? ethBalance?.value : tokenBalance;
+  const insufficient = parsed !== undefined && balance !== undefined && parsed > balance;
+  const noEth = isConnected && side === "buy" && ethBalance?.value === 0n;
 
   const presets =
     side === "buy"
       ? ["0.01", "0.05", "0.1", "0.5"].map((v) => ({ label: `${v} Ξ`, value: v }))
-      : [25, 50, 75, 100].map((p) => ({
-          label: `${p}%`,
-          value: tokenBalance ? formatUnits((tokenBalance * BigInt(p)) / 100n, 18) : "",
-        }));
+      : [25, 50, 75, 100].map((p) => ({ label: p === 100 ? "Max" : `${p}%`, value: tokenBalance ? formatUnits((tokenBalance * BigInt(p)) / 100n, 18) : "" }));
 
   async function trade() {
     setMsg(null);
@@ -80,24 +79,12 @@ export function TradePanel({ token, symbol, onTraded }: { token: Address; symbol
     if (!LAUNCHPAD_ADDRESS || !publicClient || !parsed || !out) return;
     setBusy(true);
     try {
-      const min = (out * (10_000n - SLIPPAGE_BPS)) / 10_000n;
+      if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
+      const min = (out * (10_000n - slippage)) / 10_000n;
       const hash =
         side === "buy"
-          ? await writeContractAsync({
-              address: LAUNCHPAD_ADDRESS,
-              abi: launchpadAbi,
-              chainId: activeChain.id,
-              functionName: "buy",
-              args: [token, min],
-              value: parsed,
-            })
-          : await writeContractAsync({
-              address: LAUNCHPAD_ADDRESS,
-              abi: launchpadAbi,
-              chainId: activeChain.id,
-              functionName: "sell",
-              args: [token, parsed, min],
-            });
+          ? await writeContractAsync({ address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, chainId: activeChain.id, functionName: "buy", args: [token, min], value: parsed })
+          : await writeContractAsync({ address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, chainId: activeChain.id, functionName: "sell", args: [token, parsed, min] });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("Transaction reverted");
       setMsg({ kind: "ok", text: side === "buy" ? `Bought ${formatTokens(out)} ${symbol}` : `Sold for ${formatEth(out)} ETH` });
@@ -114,7 +101,7 @@ export function TradePanel({ token, symbol, onTraded }: { token: Address; symbol
 
   return (
     <div className="card space-y-4 p-4">
-      <div className="grid grid-cols-2 gap-1 rounded-xl bg-ink-800 p-1">
+      <div className="grid grid-cols-2 gap-1 rounded-full bg-card-2 p-1">
         {(["buy", "sell"] as const).map((s) => (
           <button
             key={s}
@@ -123,8 +110,8 @@ export function TradePanel({ token, symbol, onTraded }: { token: Address; symbol
               setAmount("");
               setMsg(null);
             }}
-            className={`rounded-lg py-2 text-sm font-semibold capitalize transition ${
-              side === s ? (s === "buy" ? "bg-lime text-ink" : "bg-red-400 text-ink") : "text-mute hover:text-white"
+            className={`rounded-full py-2 text-[14px] font-semibold capitalize transition ${
+              side === s ? (s === "buy" ? "bg-up text-white dark:text-black" : "bg-down text-white") : "text-ink-2 hover:text-ink"
             }`}
           >
             {s}
@@ -133,53 +120,73 @@ export function TradePanel({ token, symbol, onTraded }: { token: Address; symbol
       </div>
 
       <div>
-        <div className="mb-1.5 flex justify-between text-xs text-mute">
+        <div className="mb-2 flex justify-between text-[12px] text-ink-2">
           <span>{side === "buy" ? "You pay" : "You sell"}</span>
           {isConnected ? (
-            <span className="font-mono">
-              bal{" "}
-              {side === "buy"
-                ? `${ethBalance ? formatEth(ethBalance.value) : "–"} ETH`
-                : `${tokenBalance !== undefined ? formatTokens(tokenBalance) : "–"} ${symbol}`}
-            </span>
+            <button className="num hover:text-ink" onClick={() => balance !== undefined && setAmount(formatUnits(balance, 18))}>
+              Balance {side === "buy" ? `${ethBalance ? formatEth(ethBalance.value) : "–"} ETH` : `${tokenBalance !== undefined ? formatTokens(tokenBalance) : "–"} ${symbol}`}
+            </button>
           ) : null}
         </div>
         <div className="relative">
           <input
-            className="input pr-20 font-mono text-lg"
+            className="input num py-3.5 pr-20 text-[22px] font-semibold"
             inputMode="decimal"
-            placeholder="0.0"
+            placeholder="0"
+            aria-label={side === "buy" ? "ETH amount" : `${symbol} amount`}
             value={amount}
             onChange={(e) => setAmount(e.target.value.replace(",", "."))}
           />
-          <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 font-mono text-sm text-mute">
+          <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[14px] font-semibold text-ink-2">
             {side === "buy" ? "ETH" : symbol}
           </span>
         </div>
         <div className="mt-2 grid grid-cols-4 gap-1.5">
           {presets.map((p) => (
-            <button key={p.label} className="rounded-lg bg-ink-800 py-1 font-mono text-xs text-mute hover:text-white" onClick={() => setAmount(p.value)}>
+            <button key={p.label} className="rounded-full bg-card-2 py-1.5 text-[12px] font-medium text-ink-2 transition hover:text-ink" onClick={() => setAmount(p.value)}>
               {p.label}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="space-y-1 rounded-xl bg-ink-800 p-3 font-mono text-xs text-mute">
+      <dl className="space-y-1.5 rounded-2xl bg-card-2 p-3.5 text-[13px]">
         <Row label="You receive" value={out ? (side === "buy" ? `${formatTokens(out)} ${symbol}` : `${formatEth(out, 6)} ETH`) : "–"} strong />
-        <Row label="Fee (split to X accounts + protocol)" value={fee ? `${formatEth(fee, 6)} ETH` : "–"} />
-        {refund ? <Row label="Refund (curve sells out)" value={`${formatEther(refund)} ETH`} /> : null}
-        <Row label="Max slippage" value={`${Number(SLIPPAGE_BPS) / 100}%`} />
-      </div>
+        <Row label="Fee to X accounts + protocol" value={fee ? `${formatEth(fee, 6)} ETH` : "–"} />
+        {refund ? <Row label="Refund (curve sells out)" value={`${formatEth(refund, 6)} ETH`} /> : null}
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <dt className="text-ink-2">Slippage</dt>
+          <dd className="segmented p-0.5">
+            {SLIPPAGES.map((s) => (
+              <button key={s.toString()} data-active={slippage === s} onClick={() => setSlippage(s)} className="!px-2 !py-0.5 !text-[11px]">
+                {Number(s) / 100}%
+              </button>
+            ))}
+          </dd>
+        </div>
+      </dl>
 
       <button
-        className={`w-full py-3 ${side === "buy" ? "btn-primary" : "btn bg-red-400 text-ink hover:bg-red-300"}`}
+        className={`w-full py-3.5 ${side === "buy" ? "btn-buy" : "btn-sell"}`}
         disabled={isConnected && (busy || !parsed || !out || insufficient)}
         onClick={trade}
       >
-        {!isConnected ? "Connect wallet" : busy ? "Confirming…" : insufficient ? "Insufficient balance" : side === "buy" ? `Buy ${symbol}` : `Sell ${symbol}`}
+        {!isConnected ? "Connect wallet" : busy ? "Confirming…" : insufficient ? "Insufficient balance" : `${side === "buy" ? "Buy" : "Sell"} ${symbol}`}
       </button>
-      {msg ? <p className={`text-sm ${msg.kind === "ok" ? "text-lime" : "text-red-300"}`}>{msg.text}</p> : null}
+      {noEth && activeChain.testnet ? (
+        <p className="text-center text-[12px] text-ink-2">
+          No test ETH yet?{" "}
+          <a className="font-medium text-ink underline" href={FAUCET_URL} target="_blank" rel="noreferrer">
+            Get some from the faucet
+          </a>
+        </p>
+      ) : null}
+      {msg ? (
+        <p role="status" className={`animate-pop text-center text-[13px] font-medium ${msg.kind === "ok" ? "text-up-ink" : "text-down-ink"}`}>
+          {msg.text}
+        </p>
+      ) : null}
+      <p className="text-center text-[11px] text-ink-3">{graduated ? "Trading in the PonSwap pool · liquidity locked forever" : "Trading on the bonding curve"}</p>
     </div>
   );
 }
@@ -187,8 +194,8 @@ export function TradePanel({ token, symbol, onTraded }: { token: Address; symbol
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div className="flex justify-between gap-3">
-      <span>{label}</span>
-      <span className={strong ? "text-white" : ""}>{value}</span>
+      <dt className="text-ink-2">{label}</dt>
+      <dd className={`num ${strong ? "font-semibold text-ink" : "text-ink-2"}`}>{value}</dd>
     </div>
   );
 }

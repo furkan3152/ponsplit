@@ -8,18 +8,20 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /// @title FeeVault
 /// @notice Holds creator fees for X (Twitter) accounts until their owners claim them.
-/// @dev Recipients are identified by `handleHash = keccak256(bytes(lowercaseHandle))`, where the
-///      handle is stored without its leading at-sign. A claim needs an EIP-712 signature from `signer`, an off-chain
-///      service that only signs after the caller proves ownership of the handle via X OAuth.
+/// @dev Recipients are keyed by their numeric X user id, which never changes when an account is
+///      renamed. `signer` is an off-chain service that
+///        1. attests that a list of usernames maps to a list of X user ids when a token is created, and
+///        2. signs a claim once the caller has proven ownership of an X account via OAuth.
 contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
     uint256 public constant BPS = 10_000;
     uint256 public constant MAX_RECIPIENTS = 10;
 
-    bytes32 public constant CLAIM_TYPEHASH =
-        keccak256("Claim(bytes32 handleHash,address to,uint256 nonce,uint256 deadline)");
+    bytes32 public constant CLAIM_TYPEHASH = keccak256("Claim(uint64 xId,address to,uint256 nonce,uint256 deadline)");
+    bytes32 public constant ATTESTATION_TYPEHASH =
+        keccak256("SplitAttestation(address creator,uint64[] xIds,string[] handles,uint256 deadline)");
 
     struct Recipient {
-        bytes32 handleHash;
+        uint64 xId;
         uint16 bps;
     }
 
@@ -28,15 +30,15 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
 
     mapping(address token => Recipient[]) private _splits;
     mapping(address token => uint256) public tokenFees;
-    mapping(bytes32 handleHash => uint256) public claimable;
-    mapping(bytes32 handleHash => uint256) public totalEarned;
-    mapping(bytes32 handleHash => uint256) public nonces;
+    mapping(uint64 xId => uint256) public claimable;
+    mapping(uint64 xId => uint256) public totalEarned;
+    mapping(uint64 xId => uint256) public nonces;
 
     event LaunchpadSet(address indexed launchpad);
     event SignerSet(address indexed signer);
-    event SplitSet(address indexed token, bytes32[] handleHashes, uint16[] bps);
+    event SplitSet(address indexed token, uint64[] xIds, uint16[] bps);
     event FeesDeposited(address indexed token, uint256 amount);
-    event Claimed(bytes32 indexed handleHash, address indexed to, uint256 amount);
+    event Claimed(uint64 indexed xId, address indexed to, uint256 amount);
 
     error OnlyLaunchpad();
     error LaunchpadAlreadySet();
@@ -49,7 +51,7 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
     error NothingToClaim();
     error TransferFailed();
 
-    constructor(address owner_, address signer_) Ownable(owner_) EIP712("PonSplit FeeVault", "1") {
+    constructor(address owner_, address signer_) Ownable(owner_) EIP712("PonSplit FeeVault", "2") {
         if (signer_ == address(0)) revert ZeroAddress();
         signer = signer_;
         emit SignerSet(signer_);
@@ -77,23 +79,46 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
 
     // ------------------------------------------------------------- launchpad
 
-    function setSplit(address token, bytes32[] calldata handleHashes, uint16[] calldata bps) external onlyLaunchpad {
-        uint256 n = handleHashes.length;
-        if (n == 0 || n > MAX_RECIPIENTS || n != bps.length) revert InvalidSplit();
+    /// @notice Registers a token's split after checking the signer's username → id attestation.
+    function setSplit(
+        address token,
+        address creator,
+        uint64[] calldata xIds,
+        string[] calldata handles,
+        uint16[] calldata bps,
+        uint256 deadline,
+        bytes calldata attestation
+    ) external onlyLaunchpad {
+        uint256 n = xIds.length;
+        if (n == 0 || n > MAX_RECIPIENTS || n != bps.length || n != handles.length) revert InvalidSplit();
         if (_splits[token].length != 0) revert SplitExists();
+        if (block.timestamp > deadline) revert Expired();
 
+        bytes32[] memory handleHashes = new bytes32[](n);
         uint256 sum;
         for (uint256 i; i < n; ++i) {
-            if (handleHashes[i] == bytes32(0) || bps[i] == 0) revert InvalidSplit();
+            if (xIds[i] == 0 || bps[i] == 0) revert InvalidSplit();
             for (uint256 j; j < i; ++j) {
-                if (handleHashes[j] == handleHashes[i]) revert InvalidSplit();
+                if (xIds[j] == xIds[i]) revert InvalidSplit();
             }
             sum += bps[i];
-            _splits[token].push(Recipient(handleHashes[i], bps[i]));
+            handleHashes[i] = keccak256(bytes(handles[i]));
+            _splits[token].push(Recipient(xIds[i], bps[i]));
         }
         if (sum != BPS) revert InvalidSplit();
 
-        emit SplitSet(token, handleHashes, bps);
+        bytes32 structHash = keccak256(
+            abi.encode(
+                ATTESTATION_TYPEHASH,
+                creator,
+                keccak256(abi.encodePacked(xIds)),
+                keccak256(abi.encodePacked(handleHashes)),
+                deadline
+            )
+        );
+        if (ECDSA.recover(_hashTypedDataV4(structHash), attestation) != signer) revert BadSignature();
+
+        emit SplitSet(token, xIds, bps);
     }
 
     /// @notice Credits `msg.value` to the token's recipients according to its split.
@@ -109,8 +134,8 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
             // Last recipient takes the rounding remainder so no wei is stranded.
             uint256 share = i == n - 1 ? remaining : (msg.value * split[i].bps) / BPS;
             remaining -= share;
-            claimable[split[i].handleHash] += share;
-            totalEarned[split[i].handleHash] += share;
+            claimable[split[i].xId] += share;
+            totalEarned[split[i].xId] += share;
         }
         tokenFees[token] += msg.value;
         emit FeesDeposited(token, msg.value);
@@ -118,9 +143,9 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
 
     // ------------------------------------------------------------------ claim
 
-    /// @notice Sends everything owed to `handleHash` to `to`.
+    /// @notice Sends everything owed to X account `xId` to `to`.
     /// @dev Anyone may submit the transaction; the signature binds the destination.
-    function claim(bytes32 handleHash, address to, uint256 deadline, bytes calldata signature)
+    function claim(uint64 xId, address to, uint256 deadline, bytes calldata signature)
         external
         nonReentrant
         returns (uint256 amount)
@@ -128,24 +153,38 @@ contract FeeVault is Ownable, ReentrancyGuard, EIP712 {
         if (to == address(0)) revert ZeroAddress();
         if (block.timestamp > deadline) revert Expired();
 
-        bytes32 structHash = keccak256(abi.encode(CLAIM_TYPEHASH, handleHash, to, nonces[handleHash], deadline));
+        bytes32 structHash = keccak256(abi.encode(CLAIM_TYPEHASH, xId, to, nonces[xId], deadline));
         if (ECDSA.recover(_hashTypedDataV4(structHash), signature) != signer) revert BadSignature();
 
-        amount = claimable[handleHash];
+        amount = claimable[xId];
         if (amount == 0) revert NothingToClaim();
 
-        nonces[handleHash]++;
-        claimable[handleHash] = 0;
+        nonces[xId]++;
+        claimable[xId] = 0;
 
         (bool ok,) = to.call{value: amount}("");
         if (!ok) revert TransferFailed();
-        emit Claimed(handleHash, to, amount);
+        emit Claimed(xId, to, amount);
     }
 
     // ------------------------------------------------------------------ views
 
     function getSplit(address token) external view returns (Recipient[] memory) {
         return _splits[token];
+    }
+
+    /// @notice Claimable and lifetime earnings for several accounts in one call.
+    function earningsOf(uint64[] calldata xIds)
+        external
+        view
+        returns (uint256[] memory claimable_, uint256[] memory earned_)
+    {
+        claimable_ = new uint256[](xIds.length);
+        earned_ = new uint256[](xIds.length);
+        for (uint256 i; i < xIds.length; ++i) {
+            claimable_[i] = claimable[xIds[i]];
+            earned_[i] = totalEarned[xIds[i]];
+        }
     }
 
     function domainSeparator() external view returns (bytes32) {

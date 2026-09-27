@@ -1,58 +1,91 @@
-// Local playground: deploys everything (with mock WETH + Uniswap V2 factory) to a running
-// `npx hardhat node`, then launches a few tokens with trades so the web app has data.
+// Local playground: deploys everything to a running `npx hardhat node`, then launches a few
+// tokens with trades (one graduates to the PonSwap pool) so the web app has data.
 //
-//   npx hardhat node                                   # terminal 1
-//   npx hardhat run scripts/local-demo.js --network localhost   # terminal 2
+//   npx hardhat node                                             # terminal 1
+//   npx hardhat run scripts/local-demo.js --network localhost    # terminal 2
 //
-// The claim signer is Hardhat account #1; put its well-known private key in web/.env.local as
-// SIGNER_PRIVATE_KEY when running the web app against this node.
+// Uses Hardhat account #1 as the attestation/claim signer and the web app's "mock" X resolver
+// ids, so run the web app with X_RESOLVER=mock and SIGNER_PRIVATE_KEY = account #1's key.
 const { ethers } = require("hardhat");
 
-const CURVE = {
-  virtualEth: ethers.parseEther("1.5"),
-  virtualToken: ethers.parseEther("1073000000"),
-  curveSupply: ethers.parseEther("793100000"),
-  lpSupply: ethers.parseEther("206900000"),
-};
+// Must match mockXId() in web/src/lib/x.ts.
+const mockXId = (handle) => (BigInt(ethers.keccak256(ethers.toUtf8Bytes(`mock-x:${handle}`))) >> 200n) + 1n;
 
 async function main() {
-  const [owner, signer, alice, bob, carol] = await ethers.getSigners();
+  const [owner, signer, alice, bob, carol, dave] = await ethers.getSigners();
 
   const vault = await ethers.deployContract("FeeVault", [owner.address, signer.address]);
-  const launchpad = await ethers.deployContract("SplitLaunchpad", [owner.address, await vault.getAddress(), CURVE]);
+  const launchpad = await ethers.deployContract("SplitLaunchpad", [
+    owner.address,
+    await vault.getAddress(),
+    {
+      virtualEth: ethers.parseEther("1.5"),
+      virtualToken: ethers.parseEther("1073000000"),
+      curveSupply: ethers.parseEther("793100000"),
+      lpSupply: ethers.parseEther("206900000"),
+    },
+  ]);
   await vault.setLaunchpad(await launchpad.getAddress());
-  const weth = await ethers.deployContract("MockWETH");
-  const factory = await ethers.deployContract("MockFactory");
-  await launchpad.setDex(await factory.getAddress(), await weth.getAddress());
+
+  const { chainId } = await ethers.provider.getNetwork();
+  const domain = { name: "PonSplit FeeVault", version: "2", chainId, verifyingContract: await vault.getAddress() };
+  const types = {
+    SplitAttestation: [
+      { name: "creator", type: "address" },
+      { name: "xIds", type: "uint64[]" },
+      { name: "handles", type: "string[]" },
+      { name: "deadline", type: "uint256" },
+    ],
+  };
 
   const launches = [
-    ["Pon Coin", "PON", "The original split coin.", ["ponsplit", "alice_dev"], [7000, 3000], "0.2"],
-    ["Robin Frog", "RFROG", "Green frog, green candles.", ["frogmaxi", "hoodlum", "gm_eth"], [4000, 3000, 3000], "0.05"],
-    ["Split Cat", "SCAT", "Cats share. Sometimes.", ["catdao"], [10000], "0"],
+    ["Pon Coin", "PON", { description: "The original split coin. Two devs, one bag." }, ["ponsplit", "alice_dev"], [7000, 3000], "0.2"],
+    ["Robin Frog", "RFROG", { description: "Green frog, green candles.", website: "https://example.com" }, ["frogmaxi", "hoodlum", "gm_eth"], [4000, 3000, 3000], "0.05"],
+    ["Split Cat", "SCAT", { description: "Cats share. Sometimes." }, ["catdao"], [10000], "0"],
+    ["Moon Pie", "MPIE", { description: "Half for me, half for you." }, ["piechef", "moonboi"], [5000, 5000], "0.02"],
   ];
 
   const tokens = [];
-  for (const [name, symbol, desc, handles, bps, devBuy] of launches) {
+  for (const [name, symbol, meta, handles, bps, devBuy] of launches) {
+    const xIds = handles.map(mockXId);
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+    const attestation = await signer.signTypedData(domain, types, { creator: alice.address, xIds, handles, deadline });
     const tx = await launchpad
       .connect(alice)
-      .createToken(name, symbol, "", desc, handles, bps, 0, { value: ethers.parseEther(devBuy) });
+      .createToken(name, symbol, JSON.stringify(meta), { xIds, handles, bps, deadline, attestation }, 0, {
+        value: ethers.parseEther(devBuy),
+      });
     const receipt = await tx.wait();
     const ev = receipt.logs.map((l) => launchpad.interface.parseLog(l)).find((l) => l?.name === "TokenCreated");
     tokens.push(ev.args.token);
     console.log(`${symbol}: ${ev.args.token}`);
   }
 
-  await launchpad.connect(bob).buy(tokens[0], 0, { value: ethers.parseEther("1.3") });
-  await launchpad.connect(carol).buy(tokens[1], 0, { value: ethers.parseEther("0.4") });
-  // Push SCAT through the whole curve and migrate it.
+  // Some price action: alternating buys and sells so charts have candles.
+  const traders = [bob, carol, dave];
+  for (let i = 0; i < 24; i++) {
+    const who = traders[i % 3];
+    const t = tokens[i % 2 === 0 ? 0 : 1];
+    if (i % 4 === 3) {
+      const token = await ethers.getContractAt("SplitToken", t);
+      const bal = await token.balanceOf(who.address);
+      if (bal > 0n) await launchpad.connect(who).sell(t, bal / 3n, 0);
+    } else {
+      await launchpad.connect(who).buy(t, 0, { value: ethers.parseEther((0.05 + (i % 5) * 0.04).toFixed(2)) });
+    }
+    await ethers.provider.send("evm_increaseTime", [90]);
+    await ethers.provider.send("evm_mine", []);
+  }
+  // SCAT sells out its curve and keeps trading in the pool.
   await launchpad.connect(carol).buy(tokens[2], 0, { value: ethers.parseEther("6") });
-  await launchpad.migrate(tokens[2]);
+  await launchpad.connect(dave).buy(tokens[2], 0, { value: ethers.parseEther("0.5") });
 
   console.log("\nweb/.env.local:");
   console.log("NEXT_PUBLIC_CHAIN=local");
   console.log(`NEXT_PUBLIC_LAUNCHPAD_ADDRESS=${await launchpad.getAddress()}`);
   console.log(`NEXT_PUBLIC_FEE_VAULT_ADDRESS=${await vault.getAddress()}`);
-  console.log("SIGNER_PRIVATE_KEY=<Hardhat account #1 private key, printed by `npx hardhat node`>");
+  console.log("X_RESOLVER=mock");
+  console.log("SIGNER_PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d  # Hardhat #1");
 }
 
 main().catch((e) => {
