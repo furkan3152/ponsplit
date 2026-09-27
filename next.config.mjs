@@ -17,7 +17,9 @@ function adminKeyFromEnv() {
 function predictedAddresses() {
   const deployment = JSON.parse(readFileSync(new URL("./src/deployment.json", import.meta.url), "utf8"));
   const key = adminKeyFromEnv();
-  if (deployment.launchpad || process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS || !key) return {};
+  const chain = process.env.NEXT_PUBLIC_CHAIN || deployment.chain;
+  const committed = deployment.chain === chain && deployment.launchpad;
+  if (committed || process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS || !key) return {};
   try {
     const admin = privateKeyToAccount(key).address;
     return {
@@ -55,7 +57,22 @@ const X402_MODULES = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  poweredByHeader: false,
   env: predictedAddresses(),
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+        ],
+      },
+    ];
+  },
   webpack: (config) => {
     // Optional deps pulled in by WalletConnect / MetaMask SDK that are not needed in the browser.
     config.externals.push("pino-pretty", "lokijs", "encoding");

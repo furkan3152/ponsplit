@@ -14,7 +14,7 @@ import { activeChain, explorerUrl } from "@/lib/chains";
 import { FEE_VAULT_ADDRESS } from "@/lib/config";
 import { errorMessage, formatEth, pct, shortAddress } from "@/lib/format";
 import { isValidHandle, normalizeHandle } from "@/lib/handles";
-import { useTokens, useXProfiles } from "@/lib/hooks";
+import { useClaimsPaused, useTokens, useXProfiles } from "@/lib/hooks";
 import { describe } from "@/lib/market";
 import { useServerConfig } from "@/lib/useServerConfig";
 
@@ -82,6 +82,7 @@ function useClaim(onDone: () => void) {
 export default function ClaimPage() {
   const { data: session, status } = useSession();
   const x = session?.x;
+  const paused = useClaimsPaused();
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pt-4">
@@ -93,6 +94,11 @@ export default function ClaimPage() {
         </div>
       </div>
 
+      {paused ? (
+        <p className="card p-4 text-[14px] font-medium text-down-ink">
+          Claims are paused by the owner for maintenance. Your balance is safe in the vault and can be claimed once they resume.
+        </p>
+      ) : null}
       {status === "loading" ? <div className="card h-56 animate-pulse" /> : x ? <SessionClaim x={x} /> : <ProofClaim />}
       <Lookup />
     </div>

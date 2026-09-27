@@ -15,15 +15,13 @@ import { TradePanel } from "@/components/TradePanel";
 import { TradesTable } from "@/components/TradesTable";
 import { explorerUrl } from "@/lib/chains";
 import { compact, formatEth, formatPrice, formatTokens, shortAddress, timeAgo } from "@/lib/format";
-import { useLaunchpadNumber, useNow, useToken, useTrades } from "@/lib/hooks";
+import { useNow, useToken, useTrades } from "@/lib/hooks";
 import { describe } from "@/lib/market";
 
 export default function TokenPage({ params }: { params: { address: string } }) {
   const token = isAddress(params.address) ? getAddress(params.address) : undefined;
   const { data: t, isLoading, refetch } = useToken(token);
   const trades = useTrades(token, t?.tradeCount);
-  const feeBps = useLaunchpadNumber("feeBps");
-  const protocolShareBps = useLaunchpadNumber("protocolShareBps");
   const { address } = useAccount();
   const launched = useSearchParams().get("launched") === "1";
   useNow(15_000);
@@ -42,18 +40,20 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   return (
     <div className="space-y-5 pt-2">
       {launched ? (
-        <div className="animate-pop rounded-3xl border-2 border-outline bg-lime px-5 py-3 text-[15px] font-semibold text-[#1d1d1f] shadow-sticker">
-          🎉 ${t.symbol} is live. Share the link, and every trade pays your X accounts.
+        <div className="flex animate-pop flex-col gap-3 rounded-3xl border-2 border-outline bg-lime px-5 py-3 text-[15px] font-semibold text-[#1d1d1f] shadow-sticker sm:flex-row sm:items-center">
+          <span className="flex-1">🎉 ${t.symbol} is live. Share it: every trade pays your X accounts.</span>
+          <ShareButton t={t} className="!border-outline !bg-white" />
         </div>
       ) : null}
 
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <TokenAvatar src={meta.image} seed={t.token} size={76} />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-2.5">
+          <div className="flex flex-wrap items-center gap-x-2.5">
             <h1 className="font-display text-[30px] font-bold tracking-tight">{t.name}</h1>
             <span className="text-[17px] font-semibold text-ink-2">${t.symbol}</span>
             {t.market.graduated ? <span className="chip !bg-up-soft !text-up-ink">Graduated</span> : null}
+            <ShareButton t={t} className="ml-auto" />
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-2">
             <CopyAddress value={token} />
@@ -92,7 +92,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
           ) : null}
         </div>
 
-        <aside className="space-y-5 lg:sticky lg:top-20 lg:self-start">
+        <aside className="order-first space-y-5 lg:sticky lg:top-20 lg:order-none lg:self-start">
           <TradePanel token={token} symbol={t.symbol} graduated={t.market.graduated} onTraded={() => refetch()} />
 
           <div className="card p-4">
@@ -123,10 +123,28 @@ export default function TokenPage({ params }: { params: { address: string } }) {
             )}
           </div>
 
-          <SplitCard t={t} feeBps={feeBps} protocolShareBps={protocolShareBps} />
+          <SplitCard t={t} />
         </aside>
       </div>
     </div>
+  );
+}
+
+/** Opens an X post with the coin, its fee split and a link that unfurls into the coin's card. */
+function ShareButton({ t, className = "" }: { t: { name: string; symbol: string; handles: readonly string[]; token: string }; className?: string }) {
+  function share() {
+    const who = t.handles.map((h) => `@${h}`).join(" ");
+    const text = `${t.name} ($${t.symbol}) on PonSplit: every trade splits fees to ${who}`;
+    const url = `${location.origin}/token/${t.token}`;
+    window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, "_blank", "noopener,noreferrer");
+  }
+  return (
+    <button className={`btn-secondary px-3.5 py-1.5 text-[13px] ${className}`} onClick={share}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v14" />
+      </svg>
+      Share
+    </button>
   );
 }
 

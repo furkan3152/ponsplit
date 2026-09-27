@@ -4,9 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { Address } from "viem";
 import { usePublicClient, useReadContract } from "wagmi";
-import { launchpadAbi } from "./abi";
+import { feeVaultAbi, launchpadAbi } from "./abi";
 import { activeChain } from "./chains";
-import { LAUNCHPAD_ADDRESS } from "./config";
+import { FEE_VAULT_ADDRESS, LAUNCHPAD_ADDRESS } from "./config";
 import type { TradeRecord } from "./types";
 
 const base = { address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, chainId: activeChain.id } as const;
@@ -40,6 +40,22 @@ export function useRecentTrades(limit = 30) {
 
 export function useLaunchpadNumber(functionName: "feeBps" | "protocolShareBps" | "creationFee") {
   const { data } = useReadContract({ ...base, functionName, query: { enabled: Boolean(LAUNCHPAD_ADDRESS) } });
+  return data;
+}
+
+export function useLaunchesPaused() {
+  const { data } = useReadContract({ ...base, functionName: "launchesPaused", query: { enabled: Boolean(LAUNCHPAD_ADDRESS), refetchInterval: 30_000 } });
+  return data;
+}
+
+export function useClaimsPaused() {
+  const { data } = useReadContract({
+    address: FEE_VAULT_ADDRESS,
+    abi: feeVaultAbi,
+    chainId: activeChain.id,
+    functionName: "claimsPaused",
+    query: { enabled: Boolean(FEE_VAULT_ADDRESS), refetchInterval: 30_000 },
+  });
   return data;
 }
 

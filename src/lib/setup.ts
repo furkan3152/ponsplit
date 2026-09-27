@@ -1,5 +1,5 @@
 import "server-only";
-import { createPublicClient, createWalletClient, getContractAddress, http, parseEther, zeroAddress, type Address, type Hex } from "viem";
+import { createPublicClient, createWalletClient, getAddress, getContractAddress, http, isAddress, parseEther, zeroAddress, type Address, type Hex } from "viem";
 import { feeVaultAbi, launchpadAbi } from "./abi";
 import { feeVaultBytecode, launchpadBytecode } from "./bytecode";
 import { activeChain, rpcUrl } from "./chains";
@@ -27,13 +27,36 @@ export type SetupStatus = {
   /** True when the app's configured addresses are the ones this admin key deploys. */
   addressesMatch: boolean;
   done: boolean;
+  testnet: boolean;
+  /** OWNER_ADDRESS: the wallet that should end up owning both contracts (recommended on mainnet). */
+  ownerTarget?: Address;
+  owner?: Address;
+  pendingOwner?: Address;
+  ownershipDone: boolean;
+  launchesPaused?: boolean;
+  claimsPaused?: boolean;
 };
+
+function ownerTarget(): Address | undefined {
+  const v = process.env.OWNER_ADDRESS;
+  return v && isAddress(v) ? getAddress(v) : undefined;
+}
 
 const publicClient = () => createPublicClient({ chain: activeChain, transport: http(rpcUrl) });
 
 export async function setupStatus(): Promise<SetupStatus> {
   const account = signerAccount();
-  const base = { chain: activeChain.name, vaultDeployed: false, launchpadDeployed: false, wired: false, addressesMatch: false, done: false };
+  const base = {
+    chain: activeChain.name,
+    testnet: Boolean(activeChain.testnet),
+    vaultDeployed: false,
+    launchpadDeployed: false,
+    wired: false,
+    addressesMatch: false,
+    done: false,
+    ownerTarget: ownerTarget(),
+    ownershipDone: false,
+  };
   if (!account) return base;
 
   const client = publicClient();
@@ -53,6 +76,21 @@ export async function setupStatus(): Promise<SetupStatus> {
     : false;
   const addressesMatch = LAUNCHPAD_ADDRESS === launchpad && FEE_VAULT_ADDRESS === vault;
 
+  let owner: Address | undefined;
+  let pendingOwner: Address | undefined;
+  let launchesPaused: boolean | undefined;
+  let claimsPaused: boolean | undefined;
+  if (vaultDeployed && launchpadDeployed) {
+    [owner, pendingOwner, launchesPaused, claimsPaused] = await Promise.all([
+      client.readContract({ address: launchpad, abi: launchpadAbi, functionName: "owner" }),
+      client.readContract({ address: launchpad, abi: launchpadAbi, functionName: "pendingOwner" }),
+      client.readContract({ address: launchpad, abi: launchpadAbi, functionName: "launchesPaused" }),
+      client.readContract({ address: vault, abi: feeVaultAbi, functionName: "claimsPaused" }),
+    ]);
+  }
+  const target = ownerTarget();
+  const ownershipDone = !target || owner === target;
+
   return {
     ...base,
     admin,
@@ -65,6 +103,11 @@ export async function setupStatus(): Promise<SetupStatus> {
     wired,
     addressesMatch,
     done: vaultDeployed && launchpadDeployed && wired,
+    owner,
+    pendingOwner,
+    ownershipDone,
+    launchesPaused,
+    claimsPaused,
   };
 }
 
@@ -79,9 +122,22 @@ export async function runSetup(): Promise<{ status: SetupStatus; txs: Hex[] }> {
   const wallet = createWalletClient({ account, chain: activeChain, transport: http(rpcUrl) });
   const txs: Hex[] = [];
 
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const s = await setupStatus();
-    if (s.done) return { status: s, txs };
+    if (s.done) {
+      // Hand ownership to OWNER_ADDRESS (two-step: that wallet accepts on /setup).
+      const target = s.ownerTarget;
+      if (!target || s.owner !== account.address || s.pendingOwner === target) return { status: s, txs };
+      for (const address of [s.vault!, s.launchpad!]) {
+        const abi = address === s.vault ? feeVaultAbi : launchpadAbi;
+        const pending = await client.readContract({ address, abi, functionName: "pendingOwner" });
+        if (pending === target) continue;
+        const hash = await wallet.writeContract({ address, abi, functionName: "transferOwnership", args: [target] });
+        txs.push(hash);
+        await client.waitForTransactionReceipt({ hash, timeout: 45_000 });
+      }
+      continue;
+    }
     if (s.balance === "0") throw new Error(`Fund ${s.admin} with test ETH first.`);
 
     let hash: Hex;

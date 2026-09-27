@@ -12,7 +12,8 @@ import { activeChain } from "@/lib/chains";
 import { BPS, LAUNCHPAD_ADDRESS, MAX_RECIPIENTS } from "@/lib/config";
 import { errorMessage, pct } from "@/lib/format";
 import { isValidHandle, normalizeHandle } from "@/lib/handles";
-import { useLaunchpadNumber, useXProfiles } from "@/lib/hooks";
+import { useLaunchesPaused, useLaunchpadNumber, useXProfiles } from "@/lib/hooks";
+import { useRiskGate } from "@/components/RiskNotice";
 import { encodeMetadata, safeUrl } from "@/lib/metadata";
 import { useServerConfig } from "@/lib/useServerConfig";
 
@@ -54,6 +55,10 @@ export default function CreatePage() {
   const { writeContractAsync } = useWriteContract();
   const server = useServerConfig();
   const creationFee = useLaunchpadNumber("creationFee");
+  const feeBps = useLaunchpadNumber("feeBps");
+  const protocolShareBps = useLaunchpadNumber("protocolShareBps");
+  const paused = useLaunchesPaused();
+  const { guard, dialog } = useRiskGate();
 
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
@@ -316,9 +321,17 @@ export default function CreatePage() {
         {error ? <p role="alert" className="text-[14px] font-medium text-down-ink">{error}</p> : null}
         {server && !server.signer ? <p className="text-[13px] text-down-ink">This server has no signer configured, so launches are disabled.</p> : null}
 
-        <button className="btn-sticker w-full py-4 text-[17px]" disabled={Boolean(status) || (isConnected && problems.length > 0)} onClick={submit}>
+        {feeBps !== undefined && protocolShareBps !== undefined ? (
+          <p className="text-center text-[13px] text-ink-2">
+            Terms locked in at launch: {Number(feeBps) / 100}% fee on every trade, of which{" "}
+            <b className="text-ink">{(10_000 - Number(protocolShareBps)) / 100}% goes to your X accounts</b>.
+          </p>
+        ) : null}
+        {paused ? <p className="text-center text-[14px] font-medium text-down-ink">New launches are paused by the owner for now.</p> : null}
+        <button className="btn-sticker w-full py-4 text-[17px]" disabled={Boolean(status) || paused === true || (isConnected && problems.length > 0)} onClick={() => guard(submit)}>
           {!isConnected ? "Connect wallet to launch" : status ?? "Launch coin"}
         </button>
+        {dialog}
       </div>
 
       <aside className="space-y-3 lg:sticky lg:top-24 lg:self-start">

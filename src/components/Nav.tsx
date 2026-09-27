@@ -21,7 +21,8 @@ export function Nav() {
         <Link href="/" className="shrink-0" aria-label="PonSplit home">
           <Wordmark />
         </Link>
-        <nav className="no-scrollbar ml-2 flex flex-1 items-center gap-0.5 overflow-x-auto sm:ml-6">
+        <div className="flex-1 sm:hidden" />
+        <nav className="no-scrollbar ml-6 hidden flex-1 items-center gap-0.5 overflow-x-auto sm:flex">
           {NAV.map((n) => {
             const active = n.href === "/" ? pathname === "/" : pathname.startsWith(n.href);
             return (
