@@ -37,3 +37,4 @@ jobs:
         run: |
           curl -s -m 20 https://api.fxtwitter.com/jack | head -c 600; echo
           curl -s -m 20 -o /dev/null -w "unavatar %{http_code}\n" "https://unavatar.io/x/jack?fallback=false"
+          echo "--- status"; curl -s -m 20 https://api.fxtwitter.com/status/20 | jq -c '{code, text: .tweet.text, author: {id: .tweet.author.id, screen_name: .tweet.author.screen_name}}' 

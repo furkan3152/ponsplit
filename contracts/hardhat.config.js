@@ -1,5 +1,6 @@
 require("@nomicfoundation/hardhat-ethers");
 require("@nomicfoundation/hardhat-chai-matchers");
+require("@nomicfoundation/hardhat-verify");
 const path = require("path");
 const { subtask } = require("hardhat/config");
 const { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } = require("hardhat/builtin-tasks/task-names");
@@ -35,4 +36,21 @@ module.exports = {
       accounts,
     },
   },
+  // Blockscout explorers accept any API key.
+  etherscan: {
+    apiKey: { robinhoodTestnet: "blockscout", robinhood: "blockscout" },
+    customChains: [
+      {
+        network: "robinhoodTestnet",
+        chainId: 46630,
+        urls: { apiURL: "https://explorer.testnet.chain.robinhood.com/api", browserURL: "https://explorer.testnet.chain.robinhood.com" },
+      },
+      {
+        network: "robinhood",
+        chainId: 4663,
+        urls: { apiURL: "https://robinhoodchain.blockscout.com/api", browserURL: "https://robinhoodchain.blockscout.com" },
+      },
+    ],
+  },
+  sourcify: { enabled: false },
 };
