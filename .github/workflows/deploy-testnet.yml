@@ -1,0 +1,55 @@
+name: Deploy contracts
+
+# Run from the Actions tab. Needs these repository secrets / variables:
+#   secrets.DEPLOYER_PRIVATE_KEY   funded deployer key (testnet ETH: https://faucet.testnet.chain.robinhood.com)
+#   vars.CLAIM_SIGNER_ADDRESS      address of the web app's SIGNER_PRIVATE_KEY
+#   vars.OWNER_ADDRESS             optional final owner of both contracts
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: Target network
+        type: choice
+        options: [robinhoodTestnet, robinhood]
+        default: robinhoodTestnet
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.network }}
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - run: npm ci
+      - run: npx hardhat test
+      - name: Deploy
+        run: npx hardhat run scripts/deploy.js --network ${{ inputs.network }}
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          CLAIM_SIGNER_ADDRESS: ${{ vars.CLAIM_SIGNER_ADDRESS }}
+          OWNER_ADDRESS: ${{ vars.OWNER_ADDRESS }}
+          ROBINHOOD_TESTNET_RPC_URL: ${{ vars.ROBINHOOD_TESTNET_RPC_URL }}
+          ROBINHOOD_RPC_URL: ${{ vars.ROBINHOOD_RPC_URL }}
+      - name: Summary
+        run: |
+          f=deployments/${{ inputs.network }}.json
+          {
+            echo "### Deployed to ${{ inputs.network }}"
+            echo '```json'; cat "$f"; echo '```'
+            echo "Set these in Vercel (web project):"
+            echo '```'
+            echo "NEXT_PUBLIC_LAUNCHPAD_ADDRESS=$(jq -r .launchpad $f)"
+            echo "NEXT_PUBLIC_FEE_VAULT_ADDRESS=$(jq -r .feeVault $f)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deployment-${{ inputs.network }}
+          path: contracts/deployments/${{ inputs.network }}.json

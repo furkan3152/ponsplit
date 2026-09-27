@@ -1,26 +1,38 @@
-import type { Metadata } from "next";
-import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
-import { Header } from "@/components/Header";
+import type { Metadata, Viewport } from "next";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import { ConfigBanner } from "@/components/ConfigBanner";
+import { Footer } from "@/components/Footer";
+import { Nav } from "@/components/Nav";
+import { Ticker } from "@/components/Ticker";
 import { Providers } from "./providers";
 import "./globals.css";
 
-const sans = Space_Grotesk({ subsets: ["latin"], variable: "--font-sans" });
+const sans = Inter({ subsets: ["latin"], variable: "--font-sans" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  title: "PonSplit · Split creator fees on Robinhood Chain",
-  description: "Launch a token on Robinhood Chain and split its creator fees across X accounts.",
+  metadataBase: new URL(process.env.NEXTAUTH_URL || "http://localhost:3000"),
+  title: { default: "PonSplit · One coin, many X accounts", template: "%s · PonSplit" },
+  description: "Launch a coin on Robinhood Chain and split its trading fees across any set of X accounts.",
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f5f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`}>
-      <body className="min-h-screen font-sans">
+      <body className="min-h-screen">
         <Providers>
-          <Header />
+          <Nav />
+          <Ticker />
           <ConfigBanner />
           <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-6 sm:px-6">{children}</main>
+          <Footer />
         </Providers>
       </body>
     </html>
