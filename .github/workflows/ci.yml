@@ -20,6 +20,55 @@ jobs:
       - run: npm ci
       - run: npx hardhat test
 
+  security:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: pip install slither-analyzer
+      - name: Slither (fails on medium or higher)
+        run: slither . --fail-medium
+
+  # Runs the full lifecycle (deploy, launch, curve, graduation, pool, claim) against the real
+  # Robinhood Chain networks in a single eth_call. Read-only: nothing is sent or spent.
+  chain-simulation:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - network: testnet
+            rpc: https://rpc.testnet.chain.robinhood.com
+          - network: mainnet
+            rpc: https://rpc.mainnet.chain.robinhood.com
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: contracts/package-lock.json
+      - run: npm ci
+      - run: npx hardhat compile
+      - name: Simulate on Robinhood Chain ${{ matrix.network }}
+        run: node scripts/simulate.js
+        env:
+          RPC_URL: ${{ matrix.rpc }}
+
   web:
     runs-on: ubuntu-latest
     steps:

@@ -411,6 +411,93 @@ describe("SplitLaunchpad", () => {
     });
   });
 
+  describe("mainnet safety", () => {
+    it("snapshots fee terms per token so live tokens never change", async () => {
+      const fx = await loadFixture(deploy);
+      const { launchpad, vault, owner, alice, bob } = fx;
+      const tokenA = await createToken(fx, alice);
+      const a = await tokenA.getAddress();
+
+      await launchpad.connect(owner).setFees(500, 5000, 1000, 0);
+      const tokenB = await createToken(fx, alice);
+      const b = await tokenB.getAddress();
+
+      const [, feeA] = await launchpad.quoteBuy(a, E("1"));
+      const [, feeB] = await launchpad.quoteBuy(b, E("1"));
+      expect(feeA).to.equal(E("0.01"));
+      expect(feeB).to.equal(E("0.05"));
+
+      const before = await vault.tokenFees(a);
+      await launchpad.connect(bob).buy(a, 0, { value: E("1") });
+      // Old token still pays 80% of a 1% fee to the X accounts.
+      expect((await vault.tokenFees(a)) - before).to.equal(E("0.008"));
+
+      const m = await launchpad.markets(a);
+      expect([m.feeBps, m.protocolShareBps, m.graduationFeeBps]).to.deep.equal([100n, 2000n, 0n]);
+    });
+
+    it("caps the protocol share so X accounts always get at least half", async () => {
+      const { launchpad } = await loadFixture(deploy);
+      await expect(launchpad.setFees(100, 5001, 0, 0)).to.be.revertedWithCustomError(launchpad, "InvalidConfig");
+      await launchpad.setFees(100, 5000, 0, 0);
+    });
+
+    it("can pause new launches but never trading", async () => {
+      const fx = await loadFixture(deploy);
+      const { launchpad, vault, signer, owner, alice, bob } = fx;
+      const token = await createToken(fx, alice);
+      await expect(launchpad.connect(alice).setLaunchesPaused(true)).to.be.revertedWithCustomError(launchpad, "OwnableUnauthorizedAccount");
+      await expect(launchpad.connect(owner).setLaunchesPaused(true)).to.emit(launchpad, "LaunchesPausedSet").withArgs(true);
+
+      const s = await split(vault, signer, alice.address);
+      await expect(launchpad.connect(alice).createToken("A", "A", "", s, 0)).to.be.revertedWithCustomError(launchpad, "LaunchesPaused");
+      // Existing tokens keep trading.
+      await launchpad.connect(bob).buy(await token.getAddress(), 0, { value: E("0.1") });
+      await launchpad.connect(bob).sell(await token.getAddress(), await token.balanceOf(bob.address), 0);
+
+      await launchpad.connect(owner).setLaunchesPaused(false);
+      await launchpad.connect(alice).createToken("A", "A", "", s, 0);
+    });
+
+    it("lets the owner freeze claims and rotate a leaked signer", async () => {
+      const fx = await loadFixture(deploy);
+      const { launchpad, vault, signer, owner, alice, bob, carol } = fx;
+      const token = await createToken(fx, alice);
+      await launchpad.connect(bob).buy(await token.getAddress(), 0, { value: E("1") });
+      const deadline = (await time.latest()) + 3600;
+      const leaked = await signClaim(vault, signer, IDS.alice, bob.address, deadline);
+
+      await expect(vault.connect(alice).setClaimsPaused(true)).to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount");
+      await vault.connect(owner).setClaimsPaused(true);
+      await expect(vault.claim(IDS.alice, bob.address, deadline, leaked)).to.be.revertedWithCustomError(vault, "ClaimsPaused");
+
+      await vault.connect(owner).setSigner(carol.address);
+      await vault.connect(owner).setClaimsPaused(false);
+      await expect(vault.claim(IDS.alice, bob.address, deadline, leaked)).to.be.revertedWithCustomError(vault, "BadSignature");
+
+      const fresh = await signClaim(vault, carol, IDS.alice, alice.address, deadline);
+      await vault.claim(IDS.alice, alice.address, deadline, fresh);
+      expect(await vault.claimable(IDS.alice)).to.equal(0);
+    });
+
+    it("transfers ownership in two steps", async () => {
+      const { launchpad, vault, owner, alice, bob } = await loadFixture(deploy);
+      for (const c of [launchpad, vault]) {
+        await c.connect(owner).transferOwnership(alice.address);
+        expect(await c.owner()).to.equal(owner.address);
+        expect(await c.pendingOwner()).to.equal(alice.address);
+        await expect(c.connect(bob).acceptOwnership()).to.be.revertedWithCustomError(c, "OwnableUnauthorizedAccount");
+        await c.connect(alice).acceptOwnership();
+        expect(await c.owner()).to.equal(alice.address);
+      }
+    });
+
+    it("refuses to withdraw protocol fees to the zero address", async () => {
+      const { launchpad } = await loadFixture(deploy);
+      await expect(launchpad.withdrawProtocolFees(ethers.ZeroAddress)).to.be.revertedWithCustomError(launchpad, "ZeroAddress");
+    });
+  });
+
   describe("admin", () => {
     it("restricts privileged functions to their owners", async () => {
       const { launchpad, vault, alice } = await loadFixture(deploy);
