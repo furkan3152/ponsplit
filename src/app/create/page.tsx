@@ -24,6 +24,9 @@ function toBps(percent: string): number {
   return Math.round(parseFloat(percent) * 100);
 }
 
+/** The contract limits lengths in UTF-8 bytes, not characters (emoji and accents take more). */
+const byteLength = (v: string) => new TextEncoder().encode(v).length;
+
 function safeParseEther(v: string): bigint | undefined {
   try {
     return v.trim() ? parseEther(v.trim()) : 0n;
@@ -87,10 +90,17 @@ export default function CreatePage() {
 
   const imageUrl = image.trim() ? safeUrl(image.trim()) : undefined;
 
+  const metadata = useMemo(
+    () => encodeMetadata({ image: image.trim(), description: description.trim(), website: website.trim(), telegram: telegram.trim(), twitter: twitter.trim() }),
+    [image, description, website, telegram, twitter]
+  );
+
   const problems = useMemo(() => {
     const p: string[] = [];
-    if (!name.trim() || name.length > 32) p.push("Give your coin a name (up to 32 characters).");
-    if (!symbol.trim() || symbol.length > 10) p.push("Add a ticker (up to 10 characters).");
+    if (!name.trim()) p.push("Give your coin a name.");
+    else if (byteLength(name.trim()) > 32) p.push("The name is too long (32 bytes max; emoji and accented letters count double or more).");
+    if (!symbol.trim() || byteLength(symbol.trim()) > 10) p.push("Add a ticker (up to 10 letters or digits).");
+    if (byteLength(metadata) > 2000) p.push("Description and links are too long together; shorten the description.");
     if (image.trim() && !imageUrl) p.push("Image must be an https:// or ipfs:// link.");
     for (const [label, v] of [["Website", website], ["Telegram", telegram], ["X link", twitter]] as const) {
       if (v.trim() && !safeUrl(v.trim())) p.push(`${label} must be an https:// link.`);
@@ -104,7 +114,7 @@ export default function CreatePage() {
     else if (totalBps !== BPS) p.push(`Shares add up to ${pct(totalBps)}; they need to total 100%.`);
     if (safeParseEther(devBuy) === undefined) p.push("First buy must be a number.");
     return p;
-  }, [name, symbol, image, imageUrl, website, telegram, twitter, handles, bps, totalBps, devBuy, profiles.data]);
+  }, [name, symbol, metadata, image, imageUrl, website, telegram, twitter, handles, bps, totalBps, devBuy, profiles.data]);
 
   const value = (creationFee ?? 0n) + (safeParseEther(devBuy) ?? 0n);
   const touched = Boolean(name || symbol || handles.some(Boolean));
@@ -142,7 +152,6 @@ export default function CreatePage() {
       if (!res.ok) throw new Error(att.error || "Could not verify X accounts");
 
       setStatus("Confirm in your wallet…");
-      const metadata = encodeMetadata({ image: image.trim(), description: description.trim(), website: website.trim(), telegram: telegram.trim(), twitter: twitter.trim() });
       const hash = await writeContractAsync({
         address: LAUNCHPAD_ADDRESS,
         abi: launchpadAbi,

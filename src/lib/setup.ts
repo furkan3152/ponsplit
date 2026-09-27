@@ -30,9 +30,15 @@ export type SetupStatus = {
   testnet: boolean;
   /** OWNER_ADDRESS: the wallet that should end up owning both contracts (recommended on mainnet). */
   ownerTarget?: Address;
+  /** Launchpad owner / pending owner. */
   owner?: Address;
   pendingOwner?: Address;
+  vaultOwner?: Address;
+  vaultPendingOwner?: Address;
+  /** Both contracts owned by OWNER_ADDRESS (or no OWNER_ADDRESS configured). */
   ownershipDone: boolean;
+  /** Every contract not yet owned by OWNER_ADDRESS has it as pending owner. */
+  ownershipProposed: boolean;
   launchesPaused?: boolean;
   claimsPaused?: boolean;
 };
@@ -56,6 +62,7 @@ export async function setupStatus(): Promise<SetupStatus> {
     done: false,
     ownerTarget: ownerTarget(),
     ownershipDone: false,
+    ownershipProposed: false,
   };
   if (!account) return base;
 
@@ -78,18 +85,24 @@ export async function setupStatus(): Promise<SetupStatus> {
 
   let owner: Address | undefined;
   let pendingOwner: Address | undefined;
+  let vaultOwner: Address | undefined;
+  let vaultPendingOwner: Address | undefined;
   let launchesPaused: boolean | undefined;
   let claimsPaused: boolean | undefined;
   if (vaultDeployed && launchpadDeployed) {
-    [owner, pendingOwner, launchesPaused, claimsPaused] = await Promise.all([
+    [owner, pendingOwner, vaultOwner, vaultPendingOwner, launchesPaused, claimsPaused] = await Promise.all([
       client.readContract({ address: launchpad, abi: launchpadAbi, functionName: "owner" }),
       client.readContract({ address: launchpad, abi: launchpadAbi, functionName: "pendingOwner" }),
+      client.readContract({ address: vault, abi: feeVaultAbi, functionName: "owner" }),
+      client.readContract({ address: vault, abi: feeVaultAbi, functionName: "pendingOwner" }),
       client.readContract({ address: launchpad, abi: launchpadAbi, functionName: "launchesPaused" }),
       client.readContract({ address: vault, abi: feeVaultAbi, functionName: "claimsPaused" }),
     ]);
   }
   const target = ownerTarget();
-  const ownershipDone = !target || owner === target;
+  const settled = (o?: Address, p?: Address) => o === target || p === target;
+  const ownershipDone = !target || (owner === target && vaultOwner === target);
+  const ownershipProposed = Boolean(target) && settled(owner, pendingOwner) && settled(vaultOwner, vaultPendingOwner);
 
   return {
     ...base,
@@ -105,7 +118,10 @@ export async function setupStatus(): Promise<SetupStatus> {
     done: vaultDeployed && launchpadDeployed && wired,
     owner,
     pendingOwner,
+    vaultOwner,
+    vaultPendingOwner,
     ownershipDone,
+    ownershipProposed,
     launchesPaused,
     claimsPaused,
   };
@@ -127,12 +143,15 @@ export async function runSetup(): Promise<{ status: SetupStatus; txs: Hex[] }> {
     if (s.done) {
       // Hand ownership to OWNER_ADDRESS (two-step: that wallet accepts on /setup).
       const target = s.ownerTarget;
-      if (!target || s.owner !== account.address || s.pendingOwner === target) return { status: s, txs };
-      for (const address of [s.vault!, s.launchpad!]) {
-        const abi = address === s.vault ? feeVaultAbi : launchpadAbi;
-        const pending = await client.readContract({ address, abi, functionName: "pendingOwner" });
-        if (pending === target) continue;
-        const hash = await wallet.writeContract({ address, abi, functionName: "transferOwnership", args: [target] });
+      if (!target || s.ownershipDone || s.ownershipProposed) return { status: s, txs };
+      // Propose on each contract the admin still owns and hasn't proposed yet.
+      const pending = [
+        { address: s.vault!, abi: feeVaultAbi, owner: s.vaultOwner, pending: s.vaultPendingOwner },
+        { address: s.launchpad!, abi: launchpadAbi, owner: s.owner, pending: s.pendingOwner },
+      ].filter((c) => c.owner === account.address && c.pending !== target);
+      if (pending.length === 0) return { status: s, txs };
+      for (const c of pending) {
+        const hash = await wallet.writeContract({ address: c.address, abi: c.abi, functionName: "transferOwnership", args: [target] });
         txs.push(hash);
         await client.waitForTransactionReceipt({ hash, timeout: 45_000 });
       }

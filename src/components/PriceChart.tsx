@@ -31,6 +31,8 @@ export function PriceChart({ trades, loading }: { trades: readonly TradeRecord[]
   const series = useRef<ISeriesApi<"Candlestick">>();
   const [frame, setFrame] = useState(300);
   const [hover, setHover] = useState<{ o: number; h: number; l: number; c: number } | null>(null);
+  // Bumped whenever the chart is rebuilt (theme change) so the data effect repaints it.
+  const [epoch, setEpoch] = useState(0);
 
   const candles = useMemo(() => buildCandles(trades ?? [], frame), [trades, frame]);
   const last = candles[candles.length - 1];
@@ -73,7 +75,7 @@ export function PriceChart({ trades, loading }: { trades: readonly TradeRecord[]
     const onTheme = () => {
       chart.current?.remove();
       make();
-      setFrame((f) => f); // trigger data effect
+      setEpoch((e) => e + 1);
     };
     mq.addEventListener("change", onTheme);
     return () => {
@@ -87,7 +89,7 @@ export function PriceChart({ trades, loading }: { trades: readonly TradeRecord[]
     if (!series.current) return;
     series.current.setData(candles.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })));
     if (candles.length) chart.current?.timeScale().fitContent();
-  }, [candles]);
+  }, [candles, epoch]);
 
   const shown = hover ?? (last ? { o: last.open, h: last.high, l: last.low, c: last.close } : null);
 

@@ -16,7 +16,7 @@ import { describe } from "@/lib/market";
 export default function PortfolioPage() {
   const { address, isConnected } = useAccount();
   const { openConnectModal } = useConnectModal();
-  const { data: tokens } = useTokens();
+  const { data: tokens } = useTokens(200);
 
   const { data: balances } = useReadContracts({
     contracts: (tokens ?? []).map((t) => ({

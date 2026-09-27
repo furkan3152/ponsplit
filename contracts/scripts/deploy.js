@@ -36,7 +36,10 @@ async function main() {
 
   await (await vault.setLaunchpad(await launchpad.getAddress())).wait();
 
-  if (owner.toLowerCase() !== deployer.address.toLowerCase()) {
+  // Ownable2Step: this only *proposes* OWNER_ADDRESS. Until that wallet calls acceptOwnership()
+  // on both contracts, the deployer keeps full admin control.
+  const proposed = owner.toLowerCase() !== deployer.address.toLowerCase();
+  if (proposed) {
     await (await vault.transferOwnership(owner)).wait();
     await (await launchpad.transferOwnership(owner)).wait();
   }
@@ -48,7 +51,8 @@ async function main() {
     launchpad: await launchpad.getAddress(),
     feeVault: await vault.getAddress(),
     startBlock: receipt.blockNumber,
-    owner,
+    owner: deployer.address,
+    pendingOwner: proposed ? owner : null,
     claimSigner,
     deployedAt: new Date().toISOString(),
   };
@@ -63,6 +67,10 @@ async function main() {
   fs.writeFileSync(path.join(dir, `${network.name}.json`), JSON.stringify(out, null, 2) + "\n");
 
   console.log(JSON.stringify(out, null, 2));
+  if (proposed) {
+    console.log(`\nACTION NEEDED: ${owner} must call acceptOwnership() on both contracts`);
+    console.log(`(or open /setup on the site with that wallet). Until then ${deployer.address} remains the owner.`);
+  }
   console.log("\nWeb app env:");
   console.log(`NEXT_PUBLIC_LAUNCHPAD_ADDRESS=${out.launchpad}`);
   console.log(`NEXT_PUBLIC_FEE_VAULT_ADDRESS=${out.feeVault}`);

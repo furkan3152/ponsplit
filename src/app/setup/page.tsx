@@ -30,7 +30,10 @@ type Status = {
   ownerTarget?: `0x${string}`;
   owner?: `0x${string}`;
   pendingOwner?: `0x${string}`;
+  vaultOwner?: `0x${string}`;
+  vaultPendingOwner?: `0x${string}`;
   ownershipDone: boolean;
+  ownershipProposed: boolean;
   launchesPaused?: boolean;
   claimsPaused?: boolean;
 };
@@ -221,7 +224,7 @@ function Ownership({ s, onDone, onStart, busy }: { s?: Status; onDone: () => voi
       </p>
     );
   }
-  if (s.pendingOwner !== s.ownerTarget) {
+  if (!s.ownershipProposed) {
     return (
       <div className="space-y-3">
         <p className="text-[14px] text-ink-2">
@@ -235,6 +238,11 @@ function Ownership({ s, onDone, onStart, busy }: { s?: Status; onDone: () => voi
   }
 
   const isTarget = address?.toLowerCase() === s.ownerTarget.toLowerCase();
+  // Only contracts still waiting on this wallet, so a half-finished accept can simply be retried.
+  const waiting = [
+    { addr: s.vault, abi: feeVaultAbi, pending: s.vaultPendingOwner, owner: s.vaultOwner },
+    { addr: s.launchpad, abi: launchpadAbi, pending: s.pendingOwner, owner: s.owner },
+  ].filter((c) => c.addr && c.pending === s.ownerTarget && c.owner !== s.ownerTarget);
   async function accept() {
     setErr(null);
     if (!isConnected) return openConnectModal?.();
@@ -242,12 +250,10 @@ function Ownership({ s, onDone, onStart, busy }: { s?: Status; onDone: () => voi
     setAccepting(true);
     try {
       if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
-      for (const [addr, abi] of [
-        [s.vault, feeVaultAbi],
-        [s.launchpad, launchpadAbi],
-      ] as const) {
-        const hash = await writeContractAsync({ address: addr, abi, chainId: activeChain.id, functionName: "acceptOwnership" });
-        await publicClient.waitForTransactionReceipt({ hash });
+      for (const c of waiting) {
+        const hash = await writeContractAsync({ address: c.addr!, abi: c.abi, chainId: activeChain.id, functionName: "acceptOwnership" });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        if (receipt.status !== "success") throw new Error("Transaction reverted");
       }
       onDone();
     } catch (e) {
@@ -259,7 +265,8 @@ function Ownership({ s, onDone, onStart, busy }: { s?: Status; onDone: () => voi
   return (
     <div className="space-y-3">
       <p className="text-[14px] text-ink-2">
-        Connect <span className="num break-all text-ink">{s.ownerTarget}</span> and accept. Two transactions, one per contract.
+        Connect <span className="num break-all text-ink">{s.ownerTarget}</span> and accept.{" "}
+        {waiting.length === 2 ? "Two transactions, one per contract." : "One transaction left."}
       </p>
       <button className="btn-sticker" disabled={accepting || (isConnected && !isTarget)} onClick={accept}>
         {!isConnected ? "Connect owner wallet" : !isTarget ? "Switch to the owner wallet" : accepting ? "Accepting…" : "Accept ownership"}
