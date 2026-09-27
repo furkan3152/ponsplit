@@ -3,12 +3,15 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { formatEther } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
 import { GraduatedArt } from "@/components/art";
-import { explorerUrl } from "@/lib/chains";
+import { feeVaultAbi, launchpadAbi } from "@/lib/abi";
+import { activeChain, explorerUrl } from "@/lib/chains";
 import { FAUCET_URL } from "@/lib/config";
-import { errorMessage } from "@/lib/format";
+import { errorMessage, shortAddress } from "@/lib/format";
 
 type Status = {
   error?: string;
@@ -23,6 +26,13 @@ type Status = {
   wired: boolean;
   addressesMatch: boolean;
   done: boolean;
+  testnet: boolean;
+  ownerTarget?: `0x${string}`;
+  owner?: `0x${string}`;
+  pendingOwner?: `0x${string}`;
+  ownershipDone: boolean;
+  launchesPaused?: boolean;
+  claimsPaused?: boolean;
 };
 
 const STORAGE_KEY = "ponsplit:pending-admin-key";
@@ -54,7 +64,8 @@ export default function SetupPage() {
   const [txs, setTxs] = useState<string[]>([]);
 
   const funded = s?.balance !== undefined && s.balance !== "0";
-  const step = !s?.admin ? 1 : !funded && !s.done ? 2 : !s.done ? 3 : 4;
+  const step = !s?.admin ? 1 : !funded && !s.done ? 2 : !s.done ? 3 : !s.ownershipDone ? 4 : 5;
+  const testnet = s?.testnet ?? true;
 
   async function deploy() {
     setDeploying(true);
@@ -76,7 +87,7 @@ export default function SetupPage() {
     <div className="mx-auto max-w-2xl space-y-6 pt-4">
       <div>
         <h1 className="font-display text-[40px] font-bold tracking-[-0.03em]">Set up PonSplit</h1>
-        <p className="mt-1 text-[15px] text-ink-2">Three steps, all from your phone. Network: {s?.chain ?? "…"}.</p>
+        <p className="mt-1 text-[15px] text-ink-2">A few taps, all from your phone. Network: {s?.chain ?? "…"}.</p>
       </div>
 
       {isLoading ? <div className="card h-40 animate-pulse" /> : null}
@@ -92,15 +103,18 @@ export default function SetupPage() {
         )}
       </StepCard>
 
-      <StepCard n={2} title="Get free test ETH" state={step > 2 ? "done" : step === 2 ? "active" : "todo"}>
+      <StepCard n={2} title={testnet ? "Get free test ETH" : "Fund the admin address"} state={step > 2 ? "done" : step === 2 ? "active" : "todo"}>
         {s?.admin ? (
           <div className="space-y-3">
             <p className="text-[14px] text-ink-2">
-              Open the faucet, paste this address and request ETH. This page updates by itself.
+              {testnet
+                ? "Open the faucet, paste this address and request ETH."
+                : "Send about 0.01 ETH on Robinhood Chain to this address; it pays the gas for deployment and signs nothing else on-chain."}{" "}
+              This page updates by itself.
               {funded ? <span className="ml-1 font-semibold text-up-ink">Balance: {formatEther(BigInt(s.balance!))} ETH ✓</span> : null}
             </p>
             <CopyField value={s.admin} />
-            {!funded ? (
+            {!funded && testnet ? (
               <a className="btn-primary" href={FAUCET_URL} target="_blank" rel="noreferrer">
                 Open faucet ↗
               </a>
@@ -149,6 +163,16 @@ export default function SetupPage() {
         ) : null}
       </StepCard>
 
+      <StepCard n={4} title="Hand ownership to your wallet" state={step > 4 ? "done" : step === 4 ? "active" : "todo"}>
+        <Ownership s={s} onDone={() => refetch()} onStart={deploy} busy={deploying} />
+      </StepCard>
+
+      {s?.launchesPaused || s?.claimsPaused ? (
+        <p className="card p-4 text-[14px] font-medium text-down-ink">
+          Paused by the owner: {[s.launchesPaused && "new launches", s.claimsPaused && "claims"].filter(Boolean).join(" and ")}.
+        </p>
+      ) : null}
+
       {s?.done ? (
         <div className="card flex flex-col items-center gap-3 p-8 text-center">
           <GraduatedArt className="h-20 w-20" />
@@ -165,6 +189,82 @@ export default function SetupPage() {
           </Link>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Two-step transfer: the server proposes OWNER_ADDRESS, that wallet accepts here. */
+function Ownership({ s, onDone, onStart, busy }: { s?: Status; onDone: () => void; onStart: () => void; busy: boolean }) {
+  const { address, isConnected, chainId } = useAccount();
+  const { openConnectModal } = useConnectModal();
+  const { switchChainAsync } = useSwitchChain();
+  const publicClient = usePublicClient({ chainId: activeChain.id });
+  const { writeContractAsync } = useWriteContract();
+  const [accepting, setAccepting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!s?.done) return <p className="text-[14px] text-ink-2">After the contracts are deployed.</p>;
+  if (!s.ownerTarget) {
+    return (
+      <p className={`text-[14px] ${s.testnet ? "text-ink-2" : "font-medium text-down-ink"}`}>
+        {s.testnet ? "Optional on testnet. " : "Strongly recommended on mainnet. "}
+        The admin key on the server owns the contracts right now
+        {s.owner ? ` (${shortAddress(s.owner)})` : ""}. Set <code className="num rounded bg-card-2 px-1">OWNER_ADDRESS</code> on your host to a wallet you
+        control, ideally a multisig, redeploy, and come back here.
+      </p>
+    );
+  }
+  if (s.ownershipDone) {
+    return (
+      <p className="text-[14px] text-ink-2">
+        Owned by <span className="num break-all text-ink">{s.owner}</span>. The server key only signs launches and claims.
+      </p>
+    );
+  }
+  if (s.pendingOwner !== s.ownerTarget) {
+    return (
+      <div className="space-y-3">
+        <p className="text-[14px] text-ink-2">
+          Propose <span className="num break-all text-ink">{s.ownerTarget}</span> as the owner of both contracts.
+        </p>
+        <button className="btn-primary" disabled={busy} onClick={onStart}>
+          {busy ? "Proposing…" : "Propose new owner"}
+        </button>
+      </div>
+    );
+  }
+
+  const isTarget = address?.toLowerCase() === s.ownerTarget.toLowerCase();
+  async function accept() {
+    setErr(null);
+    if (!isConnected) return openConnectModal?.();
+    if (!publicClient || !s?.vault || !s.launchpad) return;
+    setAccepting(true);
+    try {
+      if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
+      for (const [addr, abi] of [
+        [s.vault, feeVaultAbi],
+        [s.launchpad, launchpadAbi],
+      ] as const) {
+        const hash = await writeContractAsync({ address: addr, abi, chainId: activeChain.id, functionName: "acceptOwnership" });
+        await publicClient.waitForTransactionReceipt({ hash });
+      }
+      onDone();
+    } catch (e) {
+      setErr(errorMessage(e));
+    } finally {
+      setAccepting(false);
+    }
+  }
+  return (
+    <div className="space-y-3">
+      <p className="text-[14px] text-ink-2">
+        Connect <span className="num break-all text-ink">{s.ownerTarget}</span> and accept. Two transactions, one per contract.
+      </p>
+      <button className="btn-sticker" disabled={accepting || (isConnected && !isTarget)} onClick={accept}>
+        {!isConnected ? "Connect owner wallet" : !isTarget ? "Switch to the owner wallet" : accepting ? "Accepting…" : "Accept ownership"}
+      </button>
+      {err ? <p className="text-[13px] text-down-ink">{err}</p> : null}
     </div>
   );
 }

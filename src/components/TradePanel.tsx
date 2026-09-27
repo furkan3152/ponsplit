@@ -8,6 +8,7 @@ import { launchpadAbi, splitTokenAbi } from "@/lib/abi";
 import { activeChain } from "@/lib/chains";
 import { FAUCET_URL, LAUNCHPAD_ADDRESS } from "@/lib/config";
 import { errorMessage, formatEth, formatTokens } from "@/lib/format";
+import { useRiskGate } from "./RiskNotice";
 
 const SLIPPAGES = [50n, 100n, 200n, 500n]; // bps
 
@@ -32,6 +33,7 @@ export function TradePanel({ token, symbol, graduated, onTraded }: { token: Addr
   const { switchChainAsync } = useSwitchChain();
   const publicClient = usePublicClient({ chainId: activeChain.id });
   const { writeContractAsync } = useWriteContract();
+  const { guard, dialog } = useRiskGate();
 
   const { data: ethBalance, refetch: refetchEth } = useBalance({ address, chainId: activeChain.id });
   const { data: tokenBalance, refetch: refetchToken } = useReadContract({
@@ -169,7 +171,7 @@ export function TradePanel({ token, symbol, graduated, onTraded }: { token: Addr
       <button
         className={`w-full py-3.5 ${side === "buy" ? "btn-buy" : "btn-sell"}`}
         disabled={isConnected && (busy || !parsed || !out || insufficient)}
-        onClick={trade}
+        onClick={() => guard(trade)}
       >
         {!isConnected ? "Connect wallet" : busy ? "Confirming…" : insufficient ? "Insufficient balance" : `${side === "buy" ? "Buy" : "Sell"} ${symbol}`}
       </button>
@@ -186,6 +188,7 @@ export function TradePanel({ token, symbol, graduated, onTraded }: { token: Addr
           {msg.text}
         </p>
       ) : null}
+      {dialog}
       <p className="text-center text-[11px] text-ink-3">{graduated ? "Trading in the PonSwap pool · liquidity locked forever" : "Trading on the bonding curve"}</p>
     </div>
   );

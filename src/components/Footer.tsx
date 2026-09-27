@@ -5,7 +5,7 @@ import { LogoMark } from "./art";
 
 export function Footer() {
   return (
-    <footer className="border-t border-line">
+    <footer className="border-t border-line pb-20 sm:pb-0">
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 text-[13px] text-ink-2 sm:flex-row sm:items-center sm:px-6">
         <div className="flex items-center gap-2">
           <LogoMark size={20} />
