@@ -308,7 +308,7 @@ function SessionClaim({ x }: { x: { id: string; username: string; name?: string;
 }
 
 function Streams({ xId, username }: { xId: bigint; username: string }) {
-  const { data: tokens } = useTokens();
+  const { data: tokens } = useTokens(200);
   const streams = useMemo(
     () =>
       (tokens ?? [])

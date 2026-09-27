@@ -11,12 +11,31 @@ import type { TradeRecord } from "./types";
 
 const base = { address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, chainId: activeChain.id } as const;
 
-export function useTokens(limit = 100) {
-  return useReadContract({
-    ...base,
-    functionName: "getTokens",
-    args: [0n, BigInt(limit)],
-    query: { enabled: Boolean(LAUNCHPAD_ADDRESS), refetchInterval: 10_000 },
+// getTokens costs ~105k gas per token in an eth_call; 60 per call stays far below RPC gas caps.
+const TOKEN_PAGE = 60;
+
+/** Newest `limit` tokens, fetched in parallel pages of 60. */
+export function useTokens(limit = 60) {
+  const client = usePublicClient({ chainId: activeChain.id });
+  return useQuery({
+    queryKey: ["tokens", limit],
+    enabled: Boolean(client && LAUNCHPAD_ADDRESS),
+    refetchInterval: 10_000,
+    placeholderData: (prev) => prev,
+    queryFn: async () => {
+      const pages = Math.ceil(limit / TOKEN_PAGE);
+      const results = await Promise.all(
+        Array.from({ length: pages }, (_, i) =>
+          client!.readContract({
+            address: LAUNCHPAD_ADDRESS!,
+            abi: launchpadAbi,
+            functionName: "getTokens",
+            args: [BigInt(i * TOKEN_PAGE), BigInt(Math.min(TOKEN_PAGE, limit - i * TOKEN_PAGE))],
+          })
+        )
+      );
+      return results.flat();
+    },
   });
 }
 

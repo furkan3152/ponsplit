@@ -36,7 +36,9 @@ function sortTokens(list: readonly TokenView[], sort: Sort): TokenView[] {
 }
 
 export default function Home() {
-  const { data: tokens, isLoading, error } = useTokens();
+  const [limit, setLimit] = useState(60);
+  const { data: tokens, isLoading, error } = useTokens(limit);
+  const hasMore = (tokens?.length ?? 0) >= limit;
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("trending");
   useNow(15_000);
@@ -134,11 +136,20 @@ export default function Home() {
             </Link>
           </EmptyState>
         ) : (
-          <Grid>
-            {list.map((t) => (
-              <TokenCard key={t.token} t={t} />
-            ))}
-          </Grid>
+          <>
+            <Grid>
+              {list.map((t) => (
+                <TokenCard key={t.token} t={t} />
+              ))}
+            </Grid>
+            {hasMore ? (
+              <div className="text-center">
+                <button className="btn-secondary" onClick={() => setLimit((l) => l + 60)}>
+                  Show more
+                </button>
+              </div>
+            ) : null}
+          </>
         )}
       </section>
 
