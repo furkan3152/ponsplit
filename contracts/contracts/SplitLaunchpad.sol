@@ -46,6 +46,8 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         Curve curve;
         uint256 curveSupply;
         uint256 creatorFees;
+        string[] handles;
+        uint16[] bps;
     }
 
     FeeVault public immutable vault;
@@ -65,6 +67,8 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     mapping(address token => uint256) public curveSupplyOf;
     mapping(address token => string) public imageUrlOf;
     mapping(address token => string) public descriptionOf;
+    mapping(address token => string[]) private _handlesOf;
+    mapping(address token => uint16[]) private _bpsOf;
 
     event TokenCreated(
         address indexed token,
@@ -73,7 +77,7 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         string symbol,
         string imageUrl,
         string description,
-        bytes32[] handleHashes,
+        string[] handles,
         uint16[] bps
     );
     event Trade(
@@ -94,6 +98,7 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
 
     error InvalidConfig();
     error InvalidMetadata();
+    error InvalidHandle();
     error UnknownToken();
     error CurveComplete();
     error NotGraduated();
@@ -112,12 +117,14 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
     // ---------------------------------------------------------------- launch
 
     /// @notice Creates a token. Any ETH sent above `creationFee` is used as the creator's first buy.
+    /// @param handles X usernames without the at-sign, lowercase; validated on-chain so a typo in
+    ///        case or format can never strand fees under a hash nobody can claim.
     function createToken(
         string calldata name,
         string calldata symbol,
         string calldata imageUrl,
         string calldata description,
-        bytes32[] calldata handleHashes,
+        string[] calldata handles,
         uint16[] calldata bps,
         uint256 minTokensOut
     ) external payable nonReentrant returns (address token) {
@@ -145,10 +152,16 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         descriptionOf[token] = description;
         allTokens.push(token);
 
-        vault.setSplit(token, handleHashes, bps);
+        bytes32[] memory hashes = new bytes32[](handles.length);
+        for (uint256 i; i < handles.length; ++i) {
+            hashes[i] = _handleHash(handles[i]);
+        }
+        vault.setSplit(token, hashes, bps);
+        _handlesOf[token] = handles;
+        _bpsOf[token] = bps;
         protocolFees += creationFee;
 
-        emit TokenCreated(token, msg.sender, name, symbol, imageUrl, description, handleHashes, bps);
+        emit TokenCreated(token, msg.sender, name, symbol, imageUrl, description, handles, bps);
 
         uint256 initialBuy = msg.value - creationFee;
         if (initialBuy > 0) _buy(token, initialBuy, minTokensOut);
@@ -275,6 +288,8 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
         v.curve = curves[token];
         v.curveSupply = curveSupplyOf[token];
         v.creatorFees = vault.tokenFees(token);
+        v.handles = _handlesOf[token];
+        v.bps = _bpsOf[token];
     }
 
     // ------------------------------------------------------------------ admin
@@ -336,6 +351,19 @@ contract SplitLaunchpad is Ownable, ReentrancyGuard {
             c.graduated = true;
             emit Graduated(token, c.realEth);
         }
+    }
+
+    /// @dev X usernames are 1-15 chars of [a-z0-9_] once lowercased. Uppercase is rejected rather
+    ///      than folded so the stored handle, the hash and the OAuth username always agree.
+    function _handleHash(string calldata handle) internal pure returns (bytes32) {
+        bytes calldata b = bytes(handle);
+        if (b.length == 0 || b.length > 15) revert InvalidHandle();
+        for (uint256 i; i < b.length; ++i) {
+            bytes1 c = b[i];
+            bool ok = (c >= 0x61 && c <= 0x7a) || (c >= 0x30 && c <= 0x39) || c == 0x5f;
+            if (!ok) revert InvalidHandle();
+        }
+        return keccak256(b);
     }
 
     function _distributeFee(address token, uint256 fee) internal {
