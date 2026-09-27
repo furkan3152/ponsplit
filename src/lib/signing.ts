@@ -2,6 +2,7 @@ import "server-only";
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { activeChain } from "./chains";
+import { adminKey } from "./adminKey";
 import { FEE_VAULT_ADDRESS } from "./config";
 
 // Must stay in sync with FeeVault's EIP712("PonSplit FeeVault", "2") and its typehashes.
@@ -13,7 +14,7 @@ const domain = () => ({
 });
 
 export function signerAccount() {
-  const key = process.env.SIGNER_PRIVATE_KEY as Hex | undefined;
+  const key = adminKey();
   if (!key || !FEE_VAULT_ADDRESS) return undefined;
   return privateKeyToAccount(key);
 }

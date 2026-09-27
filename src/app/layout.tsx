@@ -11,7 +11,7 @@ const sans = Inter({ subsets: ["latin"], variable: "--font-sans" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXTAUTH_URL || "http://localhost:3000"),
+  metadataBase: new URL(process.env.NEXTAUTH_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000"),
   title: { default: "PonSplit · One coin, many X accounts", template: "%s · PonSplit" },
   description: "Launch a coin on Robinhood Chain and split its trading fees across any set of X accounts.",
 };

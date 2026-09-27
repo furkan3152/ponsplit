@@ -179,7 +179,7 @@ function KeyGenerator() {
     return (
       <div className="space-y-3">
         <p className="text-[14px] text-ink-2">
-          PonSplit needs one key that deploys the contracts and signs launches and claims. It is created here in your browser and never sent to us.
+          PonSplit needs one key that deploys the contracts and signs launches and claims. On Render this is automatic (the SIGNER_SEED variable from render.yaml). On other hosts, create it here in your browser; it is never sent anywhere.
         </p>
         <button
           className="btn-primary"

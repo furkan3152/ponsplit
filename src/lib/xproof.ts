@@ -1,6 +1,7 @@
 import "server-only";
 import { createHmac, createHash } from "crypto";
 import { getAddress, type Address } from "viem";
+import { adminKey } from "./adminKey";
 import { isValidHandle, normalizeHandle } from "./handles";
 import { mockXId, resolverMode } from "./x";
 
@@ -15,7 +16,7 @@ import { mockXId, resolverMode } from "./x";
 const DAY = 86_400;
 
 function secret(): Buffer {
-  const key = process.env.SIGNER_PRIVATE_KEY;
+  const key = adminKey();
   if (!key) throw new Error("Signer not configured");
   return createHash("sha256").update(`ponsplit-x-proof:${key}`).digest();
 }

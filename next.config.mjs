@@ -1,5 +1,5 @@
 import { readFileSync } from "fs";
-import { getContractAddress } from "viem";
+import { getContractAddress, keccak256, toBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 /**
@@ -7,9 +7,16 @@ import { privateKeyToAccount } from "viem/accounts";
  * nonce 1 (see /setup), so both addresses are known at build time from the key alone. Explicit
  * NEXT_PUBLIC_* variables or addresses committed to src/deployment.json take precedence.
  */
+// Must match src/lib/adminKey.ts.
+function adminKeyFromEnv() {
+  if (process.env.SIGNER_PRIVATE_KEY) return process.env.SIGNER_PRIVATE_KEY;
+  if (process.env.SIGNER_SEED) return keccak256(toBytes(`ponsplit-admin:${process.env.SIGNER_SEED}`));
+  return undefined;
+}
+
 function predictedAddresses() {
   const deployment = JSON.parse(readFileSync(new URL("./src/deployment.json", import.meta.url), "utf8"));
-  const key = process.env.SIGNER_PRIVATE_KEY;
+  const key = adminKeyFromEnv();
   if (deployment.launchpad || process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS || !key) return {};
   try {
     const admin = privateKeyToAccount(key).address;

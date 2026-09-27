@@ -74,7 +74,7 @@ export async function setupStatus(): Promise<SetupStatus> {
  */
 export async function runSetup(): Promise<{ status: SetupStatus; txs: Hex[] }> {
   const account = signerAccount();
-  if (!account) throw new Error("SIGNER_PRIVATE_KEY is not set on the server.");
+  if (!account) throw new Error("No admin key on the server (set SIGNER_PRIVATE_KEY or SIGNER_SEED).");
   const client = publicClient();
   const wallet = createWalletClient({ account, chain: activeChain, transport: http(rpcUrl) });
   const txs: Hex[] = [];
