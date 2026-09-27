@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import type { NextAuthOptions } from "next-auth";
+import { adminKey } from "./adminKey";
 import CredentialsProvider from "next-auth/providers/credentials";
 import TwitterProvider from "next-auth/providers/twitter";
 import { isValidHandle, normalizeHandle } from "./handles";
@@ -17,7 +18,10 @@ export const devLoginEnabled = process.env.ENABLE_DEV_LOGIN === "true" && resolv
 // Falls back to a secret derived from the signer key so deployments need one less variable.
 const secret =
   process.env.NEXTAUTH_SECRET ||
-  (process.env.SIGNER_PRIVATE_KEY ? createHash("sha256").update(`ponsplit-nextauth:${process.env.SIGNER_PRIVATE_KEY}`).digest("hex") : undefined);
+  (adminKey() ? createHash("sha256").update(`ponsplit-nextauth:${adminKey()}`).digest("hex") : undefined);
+
+// OAuth callbacks need the public URL; Render exposes it without extra configuration.
+if (!process.env.NEXTAUTH_URL && process.env.RENDER_EXTERNAL_URL) process.env.NEXTAUTH_URL = process.env.RENDER_EXTERNAL_URL;
 
 export const authOptions: NextAuthOptions = {
   secret,
