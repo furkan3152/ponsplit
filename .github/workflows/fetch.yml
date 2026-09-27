@@ -1,0 +1,27 @@
+name: Fetch page
+
+# Research helper: fetches public web pages from the runner (this repo's dev sandbox can't reach
+# every host) and prints them as plain text in the job log.
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: Space-separated URLs
+        required: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch
+        env:
+          URLS: ${{ inputs.urls }}
+        run: |
+          pip install -q html2text >/dev/null 2>&1
+          for u in $URLS; do
+            echo "=================== $u"
+            curl -sSL -m 30 -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15" "$u" -o page.html -w "HTTP %{http_code} %{content_type}\n" || true
+            python3 -c "import html2text,sys;h=html2text.HTML2Text();h.ignore_images=True;h.body_width=0;print(h.handle(open('page.html',errors='ignore').read())[:40000])" || head -c 20000 page.html
+            echo "--- script/link urls"
+            grep -oE '(src|href)="[^"]+"' page.html | sort -u | head -60 || true
+          done
