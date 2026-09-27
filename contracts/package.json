@@ -5,7 +5,8 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy": "hardhat run scripts/deploy.js --network"
+    "deploy": "hardhat run scripts/deploy.js --network",
+    "export-abi": "hardhat compile && node scripts/export-abi.js"
   },
   "author": "",
   "license": "ISC",

@@ -28,7 +28,7 @@ async function deploy() {
 async function createToken(launchpad, from, { handles = ["alice", "bob"], bps = [6000, 4000], value = 0n } = {}) {
   const tx = await launchpad
     .connect(from)
-    .createToken("Pon Coin", "PON", "https://img/pon.png", "gm", handles.map(handleHash), bps, 0, { value });
+    .createToken("Pon Coin", "PON", "https://img/pon.png", "gm", handles, bps, 0, { value });
   const receipt = await tx.wait();
   const log = receipt.logs.map((l) => launchpad.interface.parseLog(l)).find((l) => l?.name === "TokenCreated");
   return ethers.getContractAt("SplitToken", log.args.token);
@@ -91,14 +91,27 @@ describe("SplitLaunchpad", () => {
       ];
       for (const [handles, bps] of bad) {
         await expect(
-          launchpad.connect(alice).createToken("A", "A", "", "", handles.map(handleHash), bps, 0)
+          launchpad.connect(alice).createToken("A", "A", "", "", handles, bps, 0)
         ).to.be.revertedWithCustomError(vault, "InvalidSplit");
       }
     });
 
+    it("validates X handles on-chain and exposes them in the token view", async () => {
+      const { launchpad, alice } = await loadFixture(deploy);
+      for (const bad of ["Alice", "@alice", "", "a".repeat(16), "al ice", "al-ice", "ali\u00e7e"]) {
+        await expect(
+          launchpad.connect(alice).createToken("A", "A", "", "", [bad], [10000], 0)
+        ).to.be.revertedWithCustomError(launchpad, "InvalidHandle");
+      }
+      const token = await createToken(launchpad, alice, { handles: ["pon_dev", "x0"], bps: [7500, 2500] });
+      const view = await launchpad.getToken(await token.getAddress());
+      expect(view.handles).to.deep.equal(["pon_dev", "x0"]);
+      expect(view.bps).to.deep.equal([7500n, 2500n]);
+    });
+
     it("validates metadata and the creation fee", async () => {
       const { launchpad, owner, alice } = await loadFixture(deploy);
-      const hs = [handleHash("alice")];
+      const hs = ["alice"];
       await expect(launchpad.createToken("", "A", "", "", hs, [10000], 0)).to.be.revertedWithCustomError(
         launchpad,
         "InvalidMetadata"
@@ -391,7 +404,7 @@ describe("SplitLaunchpad", () => {
 
     it("pages tokens newest first", async () => {
       const { launchpad, alice } = await loadFixture(deploy);
-      const hs = [handleHash("alice")];
+      const hs = ["alice"];
       for (const s of ["A", "B", "C"]) await launchpad.connect(alice).createToken(s, s, "", "", hs, [10000], 0);
       const page = await launchpad.getTokens(0, 2);
       expect(page.map((t) => t.symbol)).to.deep.equal(["C", "B"]);
