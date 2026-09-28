@@ -112,5 +112,15 @@ Gotchas:
   - Renamed X accounts are checked by id before any avatar or @-mention (`useHandleChecks`).
   - Loading and error states instead of zeros on /me and in fee streams.
   - Stable token and trade queries.
+- A third pass found 13 smaller issues in those fixes. All are fixed:
+  - token/trade refresh loops
+  - trade list recovery after a failed first load
+  - resolver budgets: checked before they are charged, misses weighted, /48 grouping, a separate
+    proof-check budget, fxtwitter 429 retry
+  - the JPEG header walk matches the decoder
+  - GIF share cards
+  - clearer upload and /setup messages
+  - home cards use stickers
+  - a "missing" status, distinct from "renamed"
 - If you change anything substantial, run a review → fix → verify loop again. Unit tests live in
   `src/lib/*.test.ts` and run with `npm test`.

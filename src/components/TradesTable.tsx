@@ -25,7 +25,9 @@ export function TradesTable({
         <h2 className="text-[17px] font-semibold">Trades</h2>
         <span className="text-[12px] text-ink-2">{trades ? `${(total ?? BigInt(trades.length)).toLocaleString("en-US")} total` : ""}</span>
       </div>
-      {rows.length === 0 ? (
+      {!trades ? (
+        <p className="px-4 pb-6 pt-2 text-[14px] text-ink-2">Loading…</p>
+      ) : rows.length === 0 ? (
         <p className="px-4 pb-6 pt-2 text-[14px] text-ink-2">No trades yet. Be the first.</p>
       ) : (
         <div className="max-h-[420px] overflow-auto">

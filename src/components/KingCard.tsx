@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import { compact, formatPrice } from "@/lib/format";
+import { useHandleChecks } from "@/lib/hooks";
 import { describe } from "@/lib/market";
 import type { TokenView } from "@/lib/types";
 import { Progress } from "./Progress";
@@ -9,6 +12,7 @@ import { XAvatarStack } from "./XAvatar";
 /** pump.fun's "king of the hill": the bonding token closest to graduating. */
 export function KingCard({ t }: { t: TokenView }) {
   const { price, marketCap, progress, meta } = describe(t);
+  const checks = useHandleChecks(t.handles, t.xIds);
   return (
     <Link
       href={`/token/${t.token}`}
@@ -26,7 +30,7 @@ export function KingCard({ t }: { t: TokenView }) {
           </div>
           <p className="mt-1 line-clamp-2 max-w-xl text-[15px] opacity-80">{meta.description || "No description"}</p>
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] font-medium">
-            <XAvatarStack handles={t.handles} size={24} />
+            <XAvatarStack handles={t.handles} checks={checks} size={24} />
             <span>
               mcap <span className="num font-bold">{compact(marketCap)} ETH</span>
             </span>

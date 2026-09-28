@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readBody } from "@/lib/body";
-import { MAX_IMAGE_SIDE, imageWithinLimits, sniffImage } from "@/lib/image-bytes";
+import { MAX_IMAGE_SIDE, imageSize, imageWithinLimits, sniffImage } from "@/lib/image-bytes";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +33,9 @@ export async function POST(req: Request) {
   // The real type and size from the bytes; the browser-declared type is not trusted.
   const type = sniffImage(bytes);
   if (!type) return NextResponse.json({ error: "Use a PNG, JPG, WEBP or GIF." }, { status: 400 });
+  if (!imageSize(bytes)) {
+    return NextResponse.json({ error: "Couldn't read this image. Re-save it as PNG or JPG and try again." }, { status: 400 });
+  }
   if (!imageWithinLimits(bytes)) {
     return NextResponse.json({ error: `Images can be at most ${MAX_IMAGE_SIDE}×${MAX_IMAGE_SIDE} pixels.` }, { status: 400 });
   }

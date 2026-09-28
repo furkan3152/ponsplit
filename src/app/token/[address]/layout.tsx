@@ -5,7 +5,8 @@ import { fetchToken } from "@/lib/server-token";
 export async function generateMetadata({ params }: { params: { address: string } }): Promise<Metadata> {
   const t = await fetchToken(params.address);
   if (!t) return { title: "Coin" };
-  const who = t.handles.map((h) => `@${h}`).join(", ");
+  // Launch-time usernames (the fees follow the account ids), so written without "@".
+  const who = t.handles.join(", ");
   const description = parseMetadata(t.metadata).description || `Every trade of $${t.symbol} splits its fees between ${who}.`;
   return {
     title: `${t.name} ($${t.symbol})`,

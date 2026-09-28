@@ -58,6 +58,21 @@ test("rejects decompression bombs: small files with huge canvases", () => {
   assert.equal(imageWithinLimits(gif([10, 10], [[0, 0, 10, 10]])), true);
 });
 
+test("JPEG: skips padding and FF 00 between segments like the decoder, and finds the same frame", () => {
+  const sof = (w: number, h: number, kind = 0xc0) => [0xff, kind, ...u16be(11), 8, ...u16be(h), ...u16be(w), 1, 1, 0x11, 0];
+  const app0 = [0xff, 0xe0, ...u16be(16), 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0];
+  // Harmless padding (some cameras write it) is still read correctly.
+  const padded = new Uint8Array([0xff, 0xd8, ...app0, 0, 0, ...sof(400, 300), 0xff, 0xd9]);
+  assert.deepEqual(imageSize(padded), { width: 400, height: 300 });
+  // "FF 00" at a boundary must not be read as a segment length that jumps over the real frame
+  // header to a small decoy one (the decoder would decode the huge frame).
+  const decoy = new Uint8Array([0xff, 0xd8, 0xff, 0x00, 0x00, 0x23, ...sof(20000, 20000, 0xc2), ...sof(64, 64), 0xff, 0xd9]);
+  assert.deepEqual(imageSize(decoy), { width: 20000, height: 20000 });
+  assert.equal(imageWithinLimits(decoy), false);
+  // Reserved markers are refused.
+  assert.equal(imageSize(new Uint8Array([0xff, 0xd8, 0xff, 0x02, 0, 4, 0, 0, ...sof(10, 10)])), null);
+});
+
 test("rejects files whose header can't be read", () => {
   assert.equal(imageWithinLimits(new Uint8Array([0xff, 0xd8, 0xff])), false);
   assert.equal(imageWithinLimits(png(0, 10)), false);
