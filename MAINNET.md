@@ -8,6 +8,8 @@
 | `security` | Slither statik analizi; orta ve üstü seviyede bulgu çıkarsa build kırılır |
 | `chain-simulation` | Tüm yaşam döngüsü **gerçek Robinhood Chain testnet ve mainnet** üzerinde tek bir `eth_call` ile çalıştırılır: deploy, launch, eğride al/sat, mezuniyet, havuzda al/sat, imzalı claim. Hiçbir işlem gönderilmez, hiçbir şey harcanmaz. Mainnet'te toplam maliyet yaklaşık 7,9M gas. |
 | `web` | Typecheck, lint ve production build |
+| `chain-simulation` (derin) | Yine tek `eth_call` ile gerçek testnet ve mainnet üzerinde: 16 ayrı trader hesabı, 3 coin (biri 10 X hesabına bölünmüş), rastgele 120 adımlık al/sat fırtınası, her adımdan sonra ödeme gücü ve arz kontrolü, mezuniyet, havuz işlemleri, reddedilmesi gereken 6 saldırı (fazla satış, bilinmeyen token, slippage, claim yönlendirme, sahte ve tekrar kullanılan imza) ve her X hesabının tam payını claim etmesi. |
+| `e2e-fork` | Robinhood testnet'in fork'u üzerinde production build gerçek bir tarayıcıda, birden çok cüzdanla uçtan uca test edilir: /setup deploy ve sahiplik devri, gerçek X hesabı çözümleme (@jack → 12), arayüzden launch, al/sat, mezuniyet, havuz işlemleri, post ile claim, 8 sayfa masaüstü/mobil/karanlık modda taşma ve hata kontrolü. Ekran görüntüleri artifact olarak yüklenir. |
 
 ## Mainnet öncesi yapılması gerekenler
 

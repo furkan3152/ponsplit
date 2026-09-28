@@ -139,7 +139,7 @@ jobs:
           OUT: shots
       - name: Logs
         if: always()
-        run: tail -50 app.log app-real.log fork.log || true
+        run: tail -n 50 app.log app-real.log fork.log || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
