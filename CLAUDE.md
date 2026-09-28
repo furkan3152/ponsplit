@@ -1,0 +1,104 @@
+# PonSplit: working notes for Claude
+
+The owner (GitHub: furkan3152) writes in Turkish, so answer in Turkish. They often work from a
+phone and can't edit environments by hand. Keep instructions to taps and copy/paste.
+
+## What this is
+
+PonSplit is the Robinhood Chain version of usesplit.pro: a pump.fun-style launchpad where every
+trade's fee is split between up to 10 X (Twitter) accounts.
+
+- **Chain.** Robinhood Chain is an Arbitrum Orbit chain with ETH as gas. Testnet chainId is 46630,
+  mainnet is 4663. RPCs: `https://rpc.testnet.chain.robinhood.com` and `https://rpc.mainnet.chain.robinhood.com`.
+- **Bonding curve.** Virtual reserves are 1.5 ETH and 1.073B tokens. The curve sells 793.1M tokens.
+  At about 4.25 ETH the coin graduates into a built-in PonSwap pool with 206.9M tokens and locked
+  liquidity. The same buy/sell functions keep working after graduation.
+- **Fees.** 1% per trade: 20% goes to the protocol and 80% to the X accounts, keyed by their
+  permanent numeric X user id in FeeVault. Fee terms are snapshotted per token.
+- **Signing.** A server key signs EIP-712 messages:
+  - `SplitAttestation` for launches: username → id, bound to the creator.
+  - `Claim` for payouts, bound to the destination wallet.
+- **Proving account ownership.** Either X OAuth (next-auth, optional), or a proof post. A proof
+  post must be a standalone post whose whole text is exactly `proofText(handle, wallet)`: the full
+  wallet plus an HMAC code. Replies, quotes and substring matches are rejected. The post is read
+  via api.fxtwitter.com.
+- **X Money is intentionally NOT used.** The owner decided this. It has no API, is US-only and needs KYC.
+
+Layout: `contracts/` holds Hardhat (SplitLaunchpad, FeeVault, SplitToken, plus test simulators).
+The Next.js 14 app is at the repo root: `src/app`, `src/lib`, `src/components`. The Playwright
+end-to-end suite is in `e2e/`. Docs are Turkish: README.md and MAINNET.md.
+
+## Hard rules
+
+- **Never generate, read, print or store private keys or seeds.** Not in chat, git, files or tool
+  calls. The owner generates the admin key on `/setup` in their browser and pastes it into the host
+  themselves. Render blueprints use `SIGNER_SEED: generateValue`.
+- Develop on branch `claude/split-robinhood-version-d6nsuj`, which is also the default branch.
+  Push only there. Don't open PRs unless asked.
+- Commits end with the Co-Authored-By / Claude-Session trailers used in `git log`.
+
+## Commands
+
+```bash
+cd contracts && npx hardhat test          # 26 tests (solc-js 0.8.24 via a compile subtask, viaIR)
+cd contracts && node scripts/export-abi.js  # regenerate src/lib/abi.ts + bytecode.ts after any .sol change (CI checks they match)
+npx tsc --noEmit && npx next lint && npm test   # web typecheck, lint, unit tests (src/lib/*.test.ts)
+# local end-to-end: hardhat node on :8545, then build+start with
+#   NEXT_PUBLIC_CHAIN=local SIGNER_SEED=<random> OWNER_ADDRESS=0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65 X_RESOLVER=mock
+#   cd e2e && BASE=http://localhost:3000 node full.mjs      (16 checks; CI adds a real-X check → 17)
+```
+
+Gotchas:
+- `pkill -f "[h]ardhat node"` kills your own shell if the same command line mentions that text
+  again. Run pkill as its own command.
+- Cloud containers can often only reach GitHub. To reach the chain, fxtwitter or any web page, run
+  the `fetch.yml` (URLs) or `probe.yml` (chain, Multicall3, faucet, fxtwitter) workflows and read
+  their logs.
+- CI (`ci.yml`) runs these jobs:
+  - contract tests plus an ABI/bytecode drift check
+  - Slither
+  - simulate.js and deep-simulate.js as a single `eth_call` against the real testnet and mainnet
+  - web checks
+  - e2e on a Hardhat fork of testnet, with a random admin seed per run
+
+## Deployment state (last updated 2026-09-28)
+
+- **Render.** Testnet service `ponsplit-testnet`, id `srv-dasv10bbc2fs73agp3sg`, workspace
+  `tea-d7ccecdckfvc73887jo0`, Frankfurt, free plan, auto-deploys the branch. It is live at
+  https://ponsplit-testnet.onrender.com. It was created through the Render API, not the blueprint,
+  so it has **no SIGNER_SEED**.
+- **Waiting on the owner.** The admin key is not configured yet (`/api/config` shows `signer:false`).
+  The owner must:
+  1. `/setup` → Generate admin key → Copy.
+  2. Render → Environment → `SIGNER_PRIVATE_KEY` → Save, rebuild, and deploy.
+  3. `/setup` → Open faucet → Deploy contracts.
+  4. Pin the two `NEXT_PUBLIC_*_ADDRESS` values that `/setup` shows once it's live.
+- **Contracts are not deployed on any network yet.** Contract changes are therefore still free:
+  just re-export the ABI and bytecode afterwards.
+- **Mainnet.** Use `render.mainnet.yaml` and follow MAINNET.md (audit, legal, multisig owner,
+  OAuth, `NEXTAUTH_URL`, `X_BEARER_TOKEN`, pinned addresses).
+
+## History / where things stand
+
+- The full MVP is built:
+  - launch, curve, graduation and pool
+  - claims (proof post or OAuth)
+  - charts and trade history read from the chain
+  - one-tap `/setup`
+  - a mixed Apple / pump.fun "chunky sticker" UI with light and dark themes and custom SVG art
+- A deep multi-agent review found 44 real issues. They are all fixed in commit 605340b:
+  - strict proof check
+  - setup race fix with exact nonces
+  - OG-image SSRF guard
+  - body caps
+  - rate-limit client IP
+  - bounded X resolver
+  - `creationFee` cap and `minTokensOut` on launch
+  - `FeeVault.totalDeposited`
+  - pinned addresses and key rotation
+  - `formatPrice` fix
+  - lists covering all coins
+  - Multicall3
+  - many UX fixes
+- A follow-up verification workflow (fixes + regressions) was running when this note was written.
+  Check `git log` for anything after 605340b.
