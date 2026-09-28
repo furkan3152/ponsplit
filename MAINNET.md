@@ -1,88 +1,64 @@
-# Mainnet'e çıkış
+# Kurulum ve mainnet'e çıkış
 
 ## Otomatik olarak doğrulananlar (her push'ta CI)
 
 | Kontrol | Ne yapıyor |
 |---|---|
-| `contracts` | 27 birim testi: fee dağıtımı, eğri, mezuniyet, havuz, claim, imza reddi, sahiplik, durdurma, launch ücreti sınırı, launch koşullarının sürümle sabitlenmesi. Ayrıca `/setup`'ın deploy ettiği bytecode'un kaynak koddan derlenenle birebir aynı olduğu kontrol edilir. |
-| `security` | Slither statik analizi; orta ve üstü seviyede bulgu çıkarsa build kırılır |
-| `chain-simulation` | Tüm yaşam döngüsü **gerçek Robinhood Chain testnet ve mainnet** üzerinde tek bir `eth_call` ile çalıştırılır: deploy, launch, eğride al/sat, mezuniyet, havuzda al/sat, imzalı claim. Hiçbir işlem gönderilmez, hiçbir şey harcanmaz. Mainnet'te toplam maliyet yaklaşık 7,9M gas. |
-| `web` | Typecheck, lint, birim testleri (fiyat gösterimi, görsel boyut kontrolü, IP anahtarları) ve production build |
-| `chain-simulation` (derin) | Yine tek `eth_call` ile gerçek testnet ve mainnet üzerinde: 16 ayrı trader hesabı, 3 coin (biri 10 X hesabına bölünmüş), rastgele 120 adımlık al/sat fırtınası, her adımdan sonra ödeme gücü ve arz kontrolü, mezuniyet, havuz işlemleri, reddedilmesi gereken 6 saldırı (fazla satış, bilinmeyen token, slippage, claim yönlendirme, sahte ve tekrar kullanılan imza) ve her X hesabının tam payını claim etmesi. |
-| `e2e-fork` | Robinhood testnet'in fork'u üzerinde production build gerçek bir tarayıcıda, birden çok cüzdanla uçtan uca test edilir: /setup deploy ve sahiplik devri, gerçek X hesabı çözümleme (@jack → 12), arayüzden launch, al/sat, mezuniyet, havuz işlemleri, post ile claim, 8 sayfa masaüstünde, mobilde ve açık temada (mobil) taşma ve hata kontrolü. Ekran görüntüleri artifact olarak yüklenir. |
-| `e2e-wallet-setup` | Mainnet'teki kurulum yolu: sahip, kontratları /setup'tan kendi cüzdanıyla deploy eder (tam 3 işlem). Sayfa yenilenince tekrar deploy teklif edilmez. Site adresler sabitlenmiş hâliyle yeniden build edilir; sahipliğin cüzdanda olduğu, imza anahtarının eşleştiği ve bir launch'ın çalıştığı kontrol edilir. |
+| `contracts` | 27 birim testi, **gerçek kod** üzerinde: doğrulanmış kaynaklardan derlenen Uniswap v4, Permit2 ve pons v2 kopyası. Launch, platform payı, creator vergisi, snipe vergisi, eğri ve havuz fee'lerinin bölünmesi, mezuniyet, router, claim ve `collectAndClaim`, yetki kontrolleri. Ayrıca `vendor/out`'un kaynaklardan birebir derlendiği ve sitenin ABI/bytecode'unun güncel olduğu kontrol edilir. |
+| `security` | Slither statik analizi; orta ve üstü seviyede bulgu çıkarsa build kırılır. |
+| `pons-fork` (mainnet) | Robinhood mainnet fork'unda **gerçek pons** ile: vendor'daki pons kodunun zincirdekiyle bayt bayt aynı olduğu, launch + ilk alım, pons'un fiyat formülü, fee bölüşümü, iki aşamalı mezuniyet, Uniswap v4 havuzunda router işlemleri, mezuniyet sonrası fee'ler. |
+| `pons-fork` (testnet) | Testnet fork'unda pons kopyası `/setup`'ın yaptığı gibi kurulur ve aynı akış çalıştırılır. |
+| `web` | Typecheck, lint, birim testleri ve production build. |
+| `e2e` (testnet, mainnet) | Her ağın fork'unda production build, gerçek tarayıcı, birden çok cüzdan: `/setup`'tan cüzdanla deploy (testnet 19, mainnet 3 işlem; çift dokunuşta bile her işlem bir kez), yenilemede kaldığı yerden devam, adreslerin sabitlenmesi, **gerçek X hesaplarıyla** (@jack, @x) arayüzden launch, eğride al/sat, mezuniyet ve havuzun coin sayfasından açılması, havuzda al/sat, fee bölüşümü, sahip panelinden durdurma/devam ve PonsEarn payını çekme, claim sayfası, üstteki ağ seçici, 8 sayfa masaüstü/mobil/açık tema taşma kontrolü. |
 
 ## Mainnet öncesi yapılması gerekenler
 
 Bu adımları kod çözemez; karar ve sorumluluk proje sahibinde.
 
-1. **Bağımsız güvenlik denetimi (audit).** Kontratlar gerçek para tutacak. Otomatik testler ve Slither bir denetimin yerini tutmaz.
-2. **Hukuki kontrol.** Token launchpad'leri birçok ülkede düzenlemeye tabi. Ayrıca herkes herhangi bir X hesabını listeleyebilir; site bunun bir onay olmadığını gösteriyor, ama taklit ve şikâyet durumları için bir kaldırma süreci planla.
-3. **Rolleri ayır.**
-   - **Sahip:** kontratları kendi cüzdanınla deploy edersin, sahibi baştan sensin. Durdurma, ücret ayarı ve imza anahtarını değiştirme yetkisi bu cüzdandadır. Özel anahtarı cüzdandan hiç çıkmaz.
-   - **İmza anahtarı** (`SIGNER_PRIVATE_KEY`): sunucuda durur ve yalnızca launch ve claim imzalar. Para tutmaz, kontratların sahibi değildir. `/setup`'ta tarayıcında üretilir, yalnızca Vercel'e yapıştırılır; hiçbir sohbete ya da dosyaya yazılmaz.
+1. **Bağımsız güvenlik denetimi (audit).** PonsEarn kontratları gerçek para yönlendirecek. Otomatik testler ve Slither bir denetimin yerini tutmaz.
+2. **Hukuki kontrol.** Token launchpad'leri birçok ülkede düzenlemeye tabi. Herkes herhangi bir X hesabını listeleyebilir; site bunun bir onay olmadığını söylüyor, ama taklit ve şikâyet durumları için bir kaldırma süreci planla (gizli coin listesi: `src/deployment.json` → `hidden`).
+3. **Roller.**
+   - **Sahip:** kontratları kendi cüzdanınla deploy edersin, sahibi baştan sensin. Durdurma, imza anahtarını değiştirme ve PonsEarn payını çekme yetkisi bu cüzdandadır. Özel anahtarı cüzdandan hiç çıkmaz.
+   - **İmza anahtarı** (`SIGNER_PRIVATE_KEY`): sunucuda durur ve yalnızca launch ve claim imzalar. Para tutmaz, hiçbir kontratın sahibi değildir. `/setup`'ta tarayıcında üretilir, yalnızca barındırma paneline yapıştırılır; hiçbir sohbete ya da dosyaya yazılmaz. İki ağda da aynı anahtar kullanılır.
 4. **X doğrulaması.**
-   - Mainnet'te "Sign in with X" (OAuth) açılmalı: `TWITTER_CLIENT_ID`, `TWITTER_CLIENT_SECRET`.
-   - `NEXTAUTH_URL=https://<site-adresin>` ekle ve X uygulamasına `https://<site-adresin>/api/auth/callback/twitter` adresini callback olarak kaydet. Yoksa X kullanıcıyı yanlış adrese döndürür ve giriş başarısız olur.
-   - Kullanıcı adını ID'ye çevirmek için resmi API kullanılmalı: `X_BEARER_TOKEN`. Launch'lar bu API'yi kullanır; önizlemeler (yazarken görünen avatarlar) ücretsiz aynadan gelir.
-   - Sınırlar istemci başınadır (IP; IPv6'da /64, ayrıca /48 ağı başına). Launch'lar ve claim'ler için ortak bir üst sınır yok; yani birkaç adresten gelen yoğun istek başkalarının launch'ını ya da claim'ini durduramaz. Kötüye kullanım en fazla kendi adresinin kotasını bitirir.
-   - Sunucu X API'yi dakikada en fazla 60 kez çağırır (her çağrı bir launch'ın tüm hesaplarını çözer). Bu sınır dolarsa ya da X hız sınırı koyarsa launch'lar o dakika aynadan çözülür; durmaz. Sınırı `src/lib/x.ts` içindeki `X_API_CALLS_PER_MIN` belirler; X API planının maliyetine göre ayarla.
-   - Varsayılan fxtwitter aynası ücretsiz ama gayriresmî.
-   - Post ile doğrulama katıdır. Post, hesabın kendi attığı yeni bir post olmalı (yanıt, alıntı ya da repost olamaz). Metni de tam olarak şu olmalı: hedef cüzdanın tam adresi ve tek kullanımlık kod. Kodu sadece içeren postlar reddedilir. Bu sayede @grok gibi otomatik yanıt veren ya da metni tekrarlayan hesaplar üzerinden başkasının fee'si çekilemez.
+   - "Sign in with X" (OAuth) için: `TWITTER_CLIENT_ID`, `TWITTER_CLIENT_SECRET`, `NEXTAUTH_URL=https://<site-adresin>`; X uygulamasına `https://<site-adresin>/api/auth/callback/twitter` callback olarak kaydedilir.
+   - Kullanıcı adını ID'ye çevirmek için resmi API önerilir: `X_BEARER_TOKEN`. Launch'lar bu API'yi kullanır (dakikada en fazla `X_API_CALLS_PER_MIN`, `src/lib/x.ts`); dolarsa o dakika ücretsiz aynadan çözülür, durmaz.
+   - Sınırlar istemci başınadır (IP; IPv6'da /64 ve /48). Launch ve claim için ortak bir üst sınır yok: birkaç adresten gelen yoğun istek başkalarını durduramaz.
 5. **Altyapı.**
-   - Site Vercel'de çalışır. Vercel'in ücretsiz (Hobby) planı ticari kullanıma izin vermez; bu site ücret aldığı için gerçek kullanıcılardan önce **Pro** plana geç.
+   - Site Vercel'de çalışır. Vercel'in ücretsiz (Hobby) planı ticari kullanıma izin vermez; gerçek kullanıcılardan önce **Pro** plana geç.
    - Kendi alan adını bağla (Vercel → Settings → Domains).
-   - Özel bir RPC sağlayıcısı kullan: `NEXT_PUBLIC_RPC_URL`. Herkese açık RPC hız sınırlı.
-   - Coin listesi, arama ve portföy tüm coin'leri doğrudan kontrattan 60'lık sayfalar hâlinde okur. Her sayfa ayrı bir `eth_call`'dır; Multicall ile birleştirilmez, böylece düğümün gas sınırına takılmaz. Birkaç bin coin'e kadar bu yeterli. Daha büyük ölçekte bir indexer (ör. TokenCreated/Trade event'lerini okuyan bir servis) ekle.
-   - Rate limit istemci IP'sini Vercel'de `x-vercel-forwarded-for` başlığından, Render'da Cloudflare'in yazdığı `cf-connecting-ip` başlığından alır. Başka bir barındırmada `TRUSTED_IP_HEADER` ayarla.
-   - Sınırlar ve önbellekler sunucu belleğinde tutulur. Vercel'de her fonksiyon örneğinin kendi belleği olur, yani sınırlar örnek başınadır. Başlangıç için yeterli; yoğun kötüye kullanım görürsen Vercel Firewall'da rate limit kuralı ekle.
-   - Mobil cüzdanlar için `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` ekle.
-6. **Parametreleri gözden geçir.** Deploy sonrası sahip `setFees` / `setCurveConfig` ile değiştirebilir. Değişiklikler yalnızca yeni coin'lere uygulanır.
+   - Özel RPC sağlayıcısı: `NEXT_PUBLIC_MAINNET_RPC_URL` (ve istersen `NEXT_PUBLIC_TESTNET_RPC_URL`). Herkese açık RPC hız sınırlı.
+   - Mobil cüzdanlar için `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`.
+6. **PonsEarn'ün ayarları.** Sahip, PonsEarn'ün payını (`setPlatformShareBps`, en fazla creator payının %30'u) ve kullanılan pons launch ayarını (`setLaunchConfigId`) değiştirebilir. Her değişiklik `termsVersion`'ı artırır; arayüz kullanıcının gördüğü koşulların sürümünü launch'a ekler, koşullar imza sırasında değişirse launch geri çevrilir. Var olan coin'ler launch anındaki oranlarını korur.
 
-   | Parametre | Varsayılan | Sınır |
-   |---|---|---|
-   | İşlem fee'si | %1 | en fazla %5 |
-   | Protokol payı | fee'nin %20'si | en fazla %50: X hesapları her zaman en az yarıyı alır |
-   | Mezuniyet ücreti | %0 | en fazla %10 |
-   | Oluşturma ücreti | 0 | en fazla 0,1 ETH |
+## Kurulum adımları (telefondan)
 
-   Her ücret ya da eğri değişikliği `termsVersion` değerini artırır. Arayüz, kullanıcıya gösterdiği koşulların sürümünü launch işlemine ekler. Kullanıcı imzalarken koşullar değişirse launch geri çevrilir; coin her zaman kullanıcının gördüğü koşullarla oluşturulur.
-
-## Mainnet deploy (Vercel + kendi cüzdanın)
-
-1. **Vercel projesi** `NEXT_PUBLIC_CHAIN=mainnet` ile bu repodan build edilir; her push'ta kendiliğinden yeniden deploy olur.
+1. **Site.** Vercel projesi bu repodan build edilir; her push'ta kendiliğinden yeniden deploy olur. Tek site iki ağı da sunar.
 2. **İmza anahtarı.** Siteyi aç → `/setup` → **Generate signing key** → **Copy**.
-   - Vercel → proje → **Settings → Environment Variables** → `SIGNER_PRIVATE_KEY` olarak yapıştır (Sensitive) → Save.
-   - **Deployments → ⋯ → Redeploy.**
-   - Anahtarı yalnızca Vercel'e yapıştır; hiçbir sohbete yazma.
-3. **Deploy.** `/setup`'ı cüzdan uygulamanın tarayıcısında aç (MetaMask, Rabby, Coinbase Wallet…) ve bağlan.
-   - **Deploy (3 transactions)** → üç işlemi onayla: FeeVault, SplitLaunchpad ve ikisini birbirine bağlama.
-   - Cüzdanda gas için biraz ETH olmalı (Robinhood Chain mainnet).
-   - Sayfa yarıda kapanırsa tekrar aç: yapılanları zincirden bulur ve kaldığı yerden devam eder, hiçbir şeyi iki kez deploy etmez.
-4. **Adresleri sabitle.** `/setup` iki satır gösterir: `NEXT_PUBLIC_FEE_VAULT_ADDRESS=…` ve `NEXT_PUBLIC_LAUNCHPAD_ADDRESS=…`.
-   - Bunları `src/deployment.json` içindeki `mainnet` kaydına yaz (push'la Vercel yeniden build eder) ya da Vercel ortam değişkeni olarak ekleyip Redeploy et.
-   - Site bundan sonra bu kontratları kullanır.
-5. **Kaynak kodu yayınla.** GitHub → Actions → **Verify contracts** → Run workflow: `network: robinhood` ve iki kontrat adresi. Kod Blockscout'ta herkese açık olur, explorer'ın Read/Write sekmeleri çalışır (Owner controls'a erişilemediği anlar için yedek yol).
-6. OAuth, `NEXTAUTH_URL` ve `X_BEARER_TOKEN` ortam değişkenlerini ekle, Redeploy et (isteğe bağlı ama önerilir).
-7. **Zincirden doğrula.** GitHub → Actions → **Inspect deployment** → Run workflow. `network: mainnet`, iki kontrat adresi, `owner` olarak kendi cüzdan adresin ve site adresini (`site`) gir. `admin` alanını boş bırak: kontratları sunucu değil, cüzdanın deploy etti.
-   - İş, kontratları sunucuya sormadan doğrudan zincirden okur: kod, birbirine bağlılık, imzalayıcı, sahipler, ücretler.
-   - `site` verilirse sitenin gerçek X hesaplarını çözüp imzaladığı bir launch'ı `eth_call` ile dener. Hiçbir işlem gönderilmez, anahtar gerekmez.
-
-Testnet sitesi Render'da (`render.yaml`) çalışmaya devam eder. Orada kurulum, faucet'ten beslenen sunucu anahtarıyla tek dokunuşludur (`NEXT_PUBLIC_SETUP_MODE=server`, testnet'te varsayılan).
+   - Vercel → proje → **Settings → Environment Variables** → `SIGNER_PRIVATE_KEY` olarak yapıştır (Sensitive) → Save → **Deployments → ⋯ → Redeploy**.
+3. **Ağı seç.** Sayfanın üstündeki **Main / Test** seçicisinden kurulacak ağı seç.
+4. **Deploy.** `/setup`'ı cüzdan uygulamanın tarayıcısında aç (MetaMask, Rabby…) ve bağlan → **Deploy**.
+   - **Testnet:** 19 işlem. Önce pons kopyası (7 kontrat + 9 bağlantı: pons'un mainnet ayarları, %1 fee, 4,2 ETH mezuniyet, 3 saniyelik snipe vergisi), sonra PonsEarn (FeeVault, launcher, bağlantı). Gas için faucet: https://faucet.testnet.chain.robinhood.com
+   - **Mainnet:** 3 işlem (FeeVault, launcher, bağlantı); coin'ler gerçek pons'ta çıkar.
+   - Her işlemi cüzdan ayrı ayrı sorar. Sayfa yarıda kapanırsa tekrar aç: yapılanları zincirden bulur ve kaldığı yerden devam eder, hiçbir şeyi iki kez göndermez.
+   - Testnet'te cüzdanın pons kopyasının launch ücretini alır; cüzdan düz ETH transferini reddediyorsa sayfa uyarır.
+5. **Adresleri sabitle.** `/setup`, `src/deployment.json` için bir JSON parçası ve karşılık gelen ortam değişkenlerini gösterir. Ya JSON'u repoya yazdır (push'la Vercel yeniden build eder), ya da değişkenleri Vercel'e ekleyip Redeploy et. Site bundan sonra o ağda canlıdır ve `/setup` sahip panelini gösterir.
+6. **Zincirden doğrula.** GitHub → Actions → **Inspect deployment** → Run workflow: `network`, `launcher` adresi, `owner` olarak kendi cüzdan adresin, `signer` olarak `/api/config`'in gösterdiği adres ve istersen `site`. İş kontratları doğrudan zincirden okur; `site` verilirse sitenin gerçek X hesaplarıyla imzaladığı bir launch'ı `eth_call` ile dener. Hiçbir işlem gönderilmez.
 
 ## Acil durum planı
 
-Hepsi sahip cüzdanından yapılır. Çoğu, `/setup` sayfasının altındaki **Owner controls** panelinde tek dokunuştur (sahip cüzdanıyla bağlan, her düğme bir işlem).
+Hepsi sahip cüzdanından yapılır. Çoğu, `/setup` sayfasındaki **Owner controls** panelinde tek dokunuştur (önce üstten doğru ağı seç).
 
-| Durum | Ne yapılır (sahip cüzdanından) |
+| Durum | Ne yapılır |
 |---|---|
-| Sunucu imza anahtarı sızdı | 1) Owner controls → **Pause claims** (`FeeVault.setClaimsPaused(true)`). 2) Vercel'de `SIGNER_PRIVATE_KEY`'i sil → Redeploy (anahtar tanımlıyken `/setup` yenisini önermez; bu arada launch ve claim kapalıdır). 3) `/setup` → **Generate signing key** → Vercel'e `SIGNER_PRIVATE_KEY` olarak ekle → Redeploy. 4) Owner controls → **Use this site's key** (`FeeVault.setSigner(yeni)`); panel imzalayıcının eşleştiğini gösterir. 5) Owner controls → **Resume claims**. Bakiyeler durdurma sırasında yerinde kalır; eski imzalar geçersizleşir. |
-| Kötüye kullanım / spam coin dalgası | Owner controls → **Pause launches** (`SplitLaunchpad.setLaunchesPaused(true)`). Mevcut coin'lerin alım satımı bilinçli olarak **durdurulamaz**, kimsenin parası içeride kilitli kalmaz. |
-| Protokol gelirlerini çekmek | Owner controls → **Withdraw to this wallet** (`SplitLaunchpad.withdrawProtocolFees`) |
-| Sahipliği devretmek | `transferOwnership(yeni)` → yeni adres `acceptOwnership()` (iki adımlı) |
+| Sunucu imza anahtarı sızdı | 1) Her iki ağda **Pause claims** (`FeeVault.setClaimsPaused(true)`). 2) Vercel'de `SIGNER_PRIVATE_KEY`'i sil → Redeploy. 3) `/setup` → **Generate signing key** → Vercel'e ekle → Redeploy. 4) Her iki ağda **Use this site's key** (`FeeVault.setSigner(yeni)`). 5) **Resume claims**. Bakiyeler durdurma sırasında yerinde kalır; eski imzalar geçersizleşir. |
+| Kötüye kullanım / spam coin dalgası | **Pause launches** (`PonsEarnLauncher.setLaunchesPaused(true)`). Var olan coin'ler pons'ta işlem görmeye devam eder; kimsenin parası kilitli kalmaz. Coin'i listeden gizlemek için adresini `src/deployment.json` → `hidden`'a ekle. |
+| PonsEarn gelirini çekmek | **Withdraw to this wallet** (`PonsEarnLauncher.withdrawPlatformFees`). Coin'lerin fee'leri claim'lerle ya da herhangi birinin `collectMany` çağrısıyla toplanır. |
+| Sahipliği devretmek | `transferOwnership(yeni)` → yeni adres `acceptOwnership()` (iki adımlı; launcher, FeeVault ve testnet'te pons kopyası ayrı ayrı). |
 
 ## Tasarım gereği güven varsayımları
 
-- **İmzalayıcı:** Kullanıcı adı → X ID eşleşmesini ve claim yetkisini imzalayan sunucuya güvenilir. İmzalayıcı ele geçirilirse biriken claim'ler yönlendirilebilir. Yukarıdaki plan bu riski sınırlar.
-- **X doğrulaması:** Post ile doğrulama fxtwitter üzerinden okunur. OAuth, X'in kendi doğrulamasını kullanır.
+- **İmzalayıcı:** Kullanıcı adı → X ID eşleşmesini ve claim yetkisini imzalayan sunucuya güvenilir. İmzalayıcı ele geçirilirse biriken claim'ler yönlendirilebilir; yukarıdaki plan bu riski sınırlar.
+- **pons:** Coin'ler pons'un kurallarına tabidir. pons'un fee oranları coin başına launch anında sabitlenir; pons'un topluluk devri (CTO) akışı bir coin'in creator fee alıcısını değiştirebilir, coin sayfası bunu gösterir.
+- **X doğrulaması:** Post ile doğrulama fxtwitter üzerinden okunur; OAuth, X'in kendi doğrulamasını kullanır.
 - **Fiyatlar ETH cinsinden gösterilir;** USD için bir fiyat kaynağı (oracle) yok.
