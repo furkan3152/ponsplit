@@ -286,7 +286,7 @@ function KeyGenerator() {
     return (
       <div className="space-y-3">
         <p className="text-[14px] text-ink-2">
-          PonSplit needs one key that deploys the contracts and signs launches and claims. On Render this is automatic (the SIGNER_SEED variable from render.yaml). On other hosts, create it here in your browser; it is never sent anywhere.
+          PonSplit needs one key that deploys the contracts and signs launches and claims. A Render Blueprint deploy creates it automatically (SIGNER_SEED). Otherwise create it here in your browser; it is never sent anywhere.
         </p>
         <button
           className="btn-primary"
@@ -319,21 +319,23 @@ function KeyGenerator() {
           </button>
         </div>
       </div>
-      <ol className="list-decimal space-y-1 pl-5 text-ink-2">
+      <p className="text-ink-2">
+        Add it to your host as <code className="num rounded bg-card-2 px-1">SIGNER_PRIVATE_KEY</code>, then come back here:
+      </p>
+      <ul className="list-disc space-y-1 pl-5 text-ink-2">
         <li>
-          Open your project on{" "}
+          <a className="font-medium text-ink underline" href="https://dashboard.render.com" target="_blank" rel="noreferrer">
+            Render
+          </a>
+          : your service → <b>Environment</b> → <b>Add</b> → paste → <b>Save, rebuild, and deploy</b>.
+        </li>
+        <li>
           <a className="font-medium text-ink underline" href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">
             Vercel
-          </a>{" "}
-          → <b>Settings</b> → <b>Environment Variables</b>.
+          </a>
+          : project → <b>Settings</b> → <b>Environment Variables</b> → add and save → <b>Deployments</b> → ⋯ → <b>Redeploy</b>.
         </li>
-        <li>
-          Add <code className="num rounded bg-card-2 px-1">SIGNER_PRIVATE_KEY</code> with the copied key and save.
-        </li>
-        <li>
-          <b>Deployments</b> → ⋯ on the latest → <b>Redeploy</b>. Then come back here.
-        </li>
-      </ol>
+      </ul>
       <button
         className="text-[12px] text-ink-3 underline"
         onClick={() => {
