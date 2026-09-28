@@ -234,18 +234,22 @@ export function useHandleChecks(handles: readonly string[], xIds: readonly bigin
   });
 }
 
+const hasMiss = (d?: { profiles: Record<string, XProfileLite | null> }) => Boolean(d && Object.values(d.profiles).includes(null));
+
 /**
  * Looks up X profiles through the app's resolver API. Handles the server couldn't fit into its
  * lookup budget this minute are absent from `data`; the query retries them shortly instead of
- * keeping the partial answer for the full stale time.
+ * keeping the partial answer for the full stale time. "Not found" answers are re-checked every
+ * minute too: the account may have just been created, or the lookup was wrong.
  */
 export function useXProfiles(handles: string[]) {
   const key = Array.from(new Set(handles)).sort().join(",");
   return useQuery({
     queryKey: ["x-profiles", key],
     enabled: handles.length > 0,
-    staleTime: (q) => (q.state.data?.incomplete.length ? 0 : 5 * 60_000),
-    refetchInterval: (q) => (q.state.status === "error" || q.state.data?.incomplete.length ? 30_000 : false),
+    staleTime: (q) => (q.state.data?.incomplete.length ? 0 : hasMiss(q.state.data) ? 60_000 : 5 * 60_000),
+    refetchInterval: (q) =>
+      q.state.status === "error" || q.state.data?.incomplete.length ? 30_000 : hasMiss(q.state.data) ? 60_000 : false,
     retry: false,
     queryFn: async () => {
       const res = await fetch(`/api/x/resolve?handles=${encodeURIComponent(key)}`);

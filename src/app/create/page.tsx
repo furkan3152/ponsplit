@@ -118,7 +118,7 @@ export default function CreatePage() {
     }
     handles.forEach((h, i) => {
       if (!isValidHandle(h)) p.push(`Account ${i + 1}: enter an X username.`);
-      else if (profiles.data && h in profiles.data && profiles.data[h] === null) p.push(`@${h} doesn't exist on X.`);
+      else if (profiles.data && h in profiles.data && profiles.data[h] === null) p.push(`Couldn't find @${h} on X. Check the spelling.`);
     });
     if (new Set(handles).size !== handles.length) p.push("Each X account can only appear once.");
     if (bps.some((b) => Number.isNaN(b) || b <= 0)) p.push("Every share must be above 0% (2 decimals max).");
