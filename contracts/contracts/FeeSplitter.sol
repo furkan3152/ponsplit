@@ -44,6 +44,7 @@ contract FeeSplitter is ReentrancyGuardTransient {
     error OnlyOwner();
     error AlreadyInitialized();
     error NotInitialized();
+    error OutOfGas();
 
     constructor(address launcher_, FeeVault feeVault_, IPonsEscrow escrow_, IPonsHook hook_) {
         launcher = launcher_;
@@ -76,11 +77,16 @@ contract FeeSplitter is ReentrancyGuardTransient {
         if (token_ == address(0)) revert NotInitialized();
 
         IPonsCurve curve_ = IPonsCurve(curve);
+        uint256 gasBefore = gasleft();
         if (!curve_.graduated()) {
             // slither-disable-next-line unused-return
-            try curve_.sweepFees(0) {} catch {}
+            try curve_.sweepFees(0) {} catch (bytes memory reason) {
+                _refusedNotStarved(reason, gasBefore);
+            }
         } else {
-            try hook.sweepPoolFees(poolId, 0, 0) {} catch {}
+            try hook.sweepPoolFees(poolId, 0, 0) {} catch (bytes memory reason) {
+                _refusedNotStarved(reason, gasBefore);
+            }
         }
         if (escrow.balanceOf(address(this)) != 0) {
             // slither-disable-next-line unused-return
@@ -99,6 +105,15 @@ contract FeeSplitter is ReentrancyGuardTransient {
         // slither-disable-next-line arbitrary-send-eth
         if (toPlatform != 0) IPlatformFeeSink(launcher).platformFeeIn{value: toPlatform}(token_);
         emit Collected(amount, toPlatform, toRecipients);
+    }
+
+    /// @dev A sweep that Pons refused is skipped; one that ran out of gas fails the whole call.
+    ///      Otherwise gas estimation could settle on a limit at which the sweep silently runs dry
+    ///      (EIP-150 leaves the caller 1/64 of its gas to carry on with), and collect would pay out
+    ///      less than it could. Pons refuses with a custom error; running out of gas returns no
+    ///      data (however deep it happened) and leaves this frame about 1/64 of its gas.
+    function _refusedNotStarved(bytes memory reason, uint256 gasBefore) private view {
+        if (reason.length == 0 || gasleft() < gasBefore / 63) revert OutOfGas();
     }
 
     /// @notice Creator fees this coin has earned but not yet split, in wei, before PonsEarn's share:
