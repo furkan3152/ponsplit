@@ -4,6 +4,7 @@ import { test } from "node:test";
 process.env.X_RESOLVER = "fxtwitter";
 const upstream: string[] = [];
 // Usernames starting with "r" exist; anything else is a 404. api.x.com answers 429 when xApiLimited.
+// "rflaky…" accounts exist but the mirror's first endpoint wrongly answers 404 for them.
 let xApiLimited = false;
 globalThis.fetch = (async (url: string | URL) => {
   const u = String(url);
@@ -15,6 +16,7 @@ globalThis.fetch = (async (url: string | URL) => {
   }
   const h = u.split("/").pop()!;
   if (!h.startsWith("r")) return new Response("{}", { status: 404 });
+  if (h.startsWith("rflaky") && !u.includes("/2/profile/")) return new Response('{"code":404,"message":"User not found"}', { status: 404 });
   return Response.json({ user: { id: String(h.length + 2000), screen_name: h, name: h } });
 }) as typeof fetch;
 
@@ -77,4 +79,25 @@ test("x-api mode: past the X API cap, or when X rate-limits us, launches use fxt
     process.env.X_RESOLVER = "fxtwitter";
     xApiLimited = false;
   }
+});
+
+test("a mirror 404 is confirmed before an account counts as missing", async () => {
+  upstream.length = 0;
+  const r = await resolveHandles(["rflaky1", "nobody1"], "display", "1.1.1.1");
+  assert.equal(r.rflaky1?.id, String("rflaky1".length + 2000));
+  assert.equal(r.nobody1, null);
+  // Each 404 was checked a second time through the other endpoint.
+  assert.equal(upstream.filter((u) => u.includes("/2/profile/")).length, 2);
+});
+
+test("a launch looks a remembered miss up again", async () => {
+  await resolveHandles(["nobody2"], "display", "1.1.1.2");
+  upstream.length = 0;
+  const r = await resolveHandles(["nobody2"], "attest", "1.1.1.2");
+  assert.equal(r.nobody2, null);
+  assert.ok(upstream.length > 0);
+  // Previews still use the remembered answer.
+  upstream.length = 0;
+  await resolveHandles(["nobody2"], "display", "1.1.1.2");
+  assert.equal(upstream.length, 0);
 });
