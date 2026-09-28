@@ -222,7 +222,7 @@ export async function readPlan(client: PublicClient, n: Network, owner: Address,
     await wire("pons:vault-factory", "Connect the buyback vault to the factory", "pons", deployed.get("pons:vault")! && factoryUp, read(p.buybackVault, ponsVaultAbi, "factory"), set, callTx(p.buybackVault, ponsVaultAbi, "setFactory", [f]), f);
     await wire("pons:hook-factory", "Connect the hook to the factory", "pons", deployed.get("pons:hook")! && factoryUp, read(p.hook, ponsHookAbi, "factory"), set, callTx(p.hook, ponsHookAbi, "setFactory", [f]), f);
     await wire("pons:hook-vault", "Connect the hook to the buyback vault", "pons", deployed.get("pons:hook")! && deployed.get("pons:vault")!, read(p.hook, ponsHookAbi, "buybackVault"), set, callTx(p.hook, ponsHookAbi, "setBuybackVault", [p.buybackVault]), p.buybackVault);
-    await wire("pons:executor", "Give the factory its graduation executor", "pons", factoryUp && deployed.get("pons:executor")!, read(f, ponsFactoryAbi, "graduationExecutor"), set, callTx(f, ponsFactoryAbi, "setGraduationExecutor", [p.executor]), p.executor);
+    await wire("pons:executor-link", "Give the factory its graduation executor", "pons", factoryUp && deployed.get("pons:executor")!, read(f, ponsFactoryAbi, "graduationExecutor"), set, callTx(f, ponsFactoryAbi, "setGraduationExecutor", [p.executor]), p.executor);
     await wire("pons:deployer-link", "Give the factory its launch deployer", "pons", factoryUp && deployed.get("pons:deployer")!, read(f, ponsFactoryAbi, "launchDeployer"), set, callTx(f, ponsFactoryAbi, "setLaunchDeployer", [p.deployer]), p.deployer);
     const c = copyTerms.launchConfig;
     const config = {
@@ -264,6 +264,8 @@ export async function readPlan(client: PublicClient, n: Network, owner: Address,
     const factoryCode = await client.getCode({ address: addresses.ponsFactory });
     if (!hasCode(factoryCode)) problems.push(`Pons's factory ${addresses.ponsFactory} isn't on ${n.label}.`);
   }
+  // /setup tracks confirmed steps by key: two steps sharing one would stall it.
+  if (new Set(steps.map((s) => s.key)).size !== steps.length) throw new Error("Duplicate deployment step keys.");
   return { owner, signer, addresses, steps, busy: pending > latest, problem: problems[0] };
 }
 
