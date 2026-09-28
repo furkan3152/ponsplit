@@ -5,6 +5,7 @@ import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
 import { TabBar } from "@/components/TabBar";
 import { Ticker } from "@/components/Ticker";
+import { visitorNetworkId } from "@/lib/server-network";
 import { THEME_SCRIPT } from "@/lib/theme";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -33,6 +34,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // The network the visitor picked at the top of the page (a cookie; `?network=` links set it).
+  const network = visitorNetworkId();
   return (
     <html
       lang="en"
@@ -44,11 +47,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body className="min-h-screen">
-        <Providers>
+        <Providers network={network}>
           <Nav />
           <Ticker />
           <ConfigBanner />
-          <main className="mx-auto w-full max-w-6xl px-4 pb-28 pt-6 sm:px-6 sm:pb-24">{children}</main>
+          <main className="mx-auto w-full max-w-6xl px-4 pb-28 pt-6 sm:px-6 md:pb-24">{children}</main>
           <Footer />
           <TabBar />
         </Providers>

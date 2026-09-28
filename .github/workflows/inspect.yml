@@ -1,28 +1,25 @@
 name: Inspect deployment
 
-# Read-only: checks live contracts straight from the chain (code, wiring, signer, owners, terms).
-# With `site`, also simulates a launch end to end: the site attests real X accounts and createToken
-# is simulated on the live contracts with that attestation. Nothing is ever sent.
+# Read-only: checks a live PonsEarn deployment straight from the chain (code, wiring, the pons
+# factory, signer, owners, terms). With `site`, also simulates a launch end to end: the site attests
+# real X accounts and the launch is simulated on the live contracts. Nothing is ever sent.
 on:
   workflow_dispatch:
     inputs:
       network:
         description: testnet or mainnet
         default: testnet
-      vault:
-        description: FeeVault address
+      launcher:
+        description: PonsEarnLauncher address
         required: true
-      launchpad:
-        description: SplitLaunchpad address
-        required: true
-      admin:
-        description: Server-deployed setups only (testnet) - admin address from /setup; checks its nonce 0/1 contracts and signer
-        default: ""
       owner:
-        description: Expected owner of both contracts (optional), e.g. the wallet that deployed them on mainnet
+        description: Expected owner (optional), the wallet that deployed from /setup
+        default: ""
+      signer:
+        description: Expected signing key address (optional), as /api/config shows it
         default: ""
       site:
-        description: Site URL to simulate a launch through (optional), e.g. https://ponsplit-testnet.onrender.com
+        description: Site URL to simulate a launch through (optional)
         default: ""
       handles:
         description: X usernames for the simulated launch, comma-separated
@@ -41,14 +38,13 @@ jobs:
       - run: node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/inspect-deployment.mjs
         env:
           NETWORK: ${{ inputs.network }}
-          VAULT: ${{ inputs.vault }}
-          LAUNCHPAD: ${{ inputs.launchpad }}
-          ADMIN: ${{ inputs.admin }}
+          LAUNCHER: ${{ inputs.launcher }}
           OWNER: ${{ inputs.owner }}
+          SIGNER: ${{ inputs.signer }}
       - if: inputs.site != ''
         run: node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/smoke-live.mjs
         env:
           NETWORK: ${{ inputs.network }}
-          LAUNCHPAD: ${{ inputs.launchpad }}
+          LAUNCHER: ${{ inputs.launcher }}
           SITE: ${{ inputs.site }}
           HANDLES: ${{ inputs.handles }}

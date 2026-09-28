@@ -102,7 +102,7 @@ export function SplitMachine({ className }: { className?: string }) {
         <path d={`M${CX - 44} ${CY - 30}A54 54 0 0 1 ${CX - 20} ${CY - 50}`} fill="none" stroke="var(--shine)" strokeWidth={3.4} strokeLinecap="round" opacity={0.85} className="split-half-a" />
       </g>
       <text x={CX} y={CY - R - 26} textAnchor="middle" className="fill-[var(--ink-3)] font-mono" fontSize={11} letterSpacing="0.14em">
-        1% OF EVERY TRADE
+        CREATOR FEES, EVERY TRADE
       </text>
 
       {/* the accounts */}

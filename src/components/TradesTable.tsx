@@ -1,40 +1,35 @@
 "use client";
 
 import { useMemo } from "react";
-import { explorerUrl } from "@/lib/chains";
-import { formatEth, formatPrice, formatTokens, recordPrice, shortAddress, timeAgo } from "@/lib/format";
+import { formatEth, formatPrice, formatTokens, shortAddress, timeAgo } from "@/lib/format";
 import { useNow } from "@/lib/hooks";
-import type { TradeRecord } from "@/lib/types";
+import { useNetwork } from "@/lib/network-context";
+import { explorerLink } from "@/lib/networks";
+import type { Trade } from "@/lib/types";
 import { EmptyArt } from "./art";
 
-/**
- * Stable row keys from the trade itself (plus a counter for identical trades), so rows that are
- * already on screen keep their elements and only new trades mount, and slide in.
- */
-function keyed(trades: readonly TradeRecord[]) {
-  const seen = new Map<string, number>();
-  return trades.map((t) => {
-    const base = `${t.trader}-${t.timestamp}-${t.isBuy ? "b" : "s"}-${t.ethAmount}-${t.tokenAmount}`;
-    const n = seen.get(base) ?? 0;
-    seen.set(base, n + 1);
-    return { key: `${base}-${n}`, t };
-  });
-}
+/** Rows keyed by where the trade sits on-chain, so rows already on screen keep their elements. */
+const keyOf = (t: Trade) => `${t.txHash}-${t.logIndex}`;
 
 export function TradesTable({
   trades,
   symbol,
   me,
-  total,
+  hasOlder,
+  loadOlder,
+  loadingOlder,
 }: {
-  trades: readonly TradeRecord[] | undefined;
+  trades: readonly Trade[] | undefined;
   symbol: string;
   me?: string;
-  /** The token's real trade count; `trades` may hold only the most recent ones. */
-  total?: bigint;
+  /** Older trades exist beyond what's loaded. */
+  hasOlder?: boolean;
+  loadOlder?: () => void;
+  loadingOlder?: boolean;
 }) {
+  const n = useNetwork();
   useNow(10_000);
-  const rows = useMemo(() => keyed(trades ?? []).slice(-60).reverse(), [trades]);
+  const rows = useMemo(() => (trades ?? []).slice(-60).reverse(), [trades]);
   return (
     <section className="card overflow-hidden">
       <div className="flex items-end justify-between gap-3 px-4 pb-3.5 pt-4 sm:px-5 sm:pt-5">
@@ -45,7 +40,7 @@ export function TradesTable({
           </div>
           <h2 className="display mt-1 text-[26px] leading-none">Trades</h2>
         </div>
-        <span className="num pb-0.5 text-[11px] text-ink-3">{trades ? `${(total ?? BigInt(trades.length)).toLocaleString("en-US")} total` : ""}</span>
+        <span className="num pb-0.5 text-[11px] text-ink-3">{trades ? `${trades.length.toLocaleString("en-US")}${hasOlder ? "+" : ""} loaded` : ""}</span>
       </div>
       {!trades ? (
         <div className="border-t border-line px-4 pb-5 pt-3 sm:px-5">
@@ -75,34 +70,43 @@ export function TradesTable({
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ key, t }) => {
+              {rows.map((t) => {
                 const mine = Boolean(me && t.trader.toLowerCase() === me.toLowerCase());
+                const buy = t.kind === "buy";
                 return (
-                  <tr key={key} className="animate-slide-up border-t border-line transition-colors first:border-t-0 hover:bg-card-2">
+                  <tr key={keyOf(t)} className="animate-slide-up border-t border-line transition-colors first:border-t-0 hover:bg-card-2">
                     <td className="relative py-2.5 pl-4 pr-2 sm:pl-5">
-                      <span aria-hidden className={`absolute inset-y-2 left-0 w-[3px] rounded-r-full ${t.isBuy ? "bg-up" : "bg-down"}`} />
+                      <span aria-hidden className={`absolute inset-y-2 left-0 w-[3px] rounded-r-full ${buy ? "bg-up" : "bg-down"}`} />
                       <a
                         className={`hover:underline ${mine ? "rounded-full bg-lime px-1.5 py-0.5 font-semibold text-[var(--lime-ink)] no-underline" : "text-ink"}`}
-                        href={explorerUrl("address", t.trader)}
+                        href={explorerLink(n, "address", t.trader)}
                         target="_blank"
                         rel="noreferrer"
                       >
                         {mine ? "you" : shortAddress(t.trader)}
                       </a>
                     </td>
-                    <td className={`px-2 py-2.5 font-semibold ${t.isBuy ? "text-up-ink" : "text-down-ink"}`}>
-                      <span aria-hidden>{t.isBuy ? "▲ " : "▼ "}</span>
-                      {t.isBuy ? "Buy" : "Sell"}
+                    <td className={`px-2 py-2.5 font-semibold ${buy ? "text-up-ink" : "text-down-ink"}`}>
+                      <span aria-hidden>{buy ? "▲ " : "▼ "}</span>
+                      {buy ? "Buy" : "Sell"}
+                      {t.venue === "pool" ? <span className="ml-1 hidden font-normal text-ink-3 sm:inline">· pool</span> : null}
                     </td>
                     <td className="px-2 py-2.5 text-right text-ink">{formatEth(t.ethAmount, 4)}</td>
                     <td className="hidden px-2 py-2.5 text-right text-ink-2 sm:table-cell">{formatTokens(t.tokenAmount)}</td>
-                    <td className="hidden px-2 py-2.5 text-right text-ink-2 md:table-cell">{formatPrice(recordPrice(t.price))}</td>
-                    <td className="py-2.5 pl-2 pr-4 text-right text-ink-3 sm:pr-5">{timeAgo(t.timestamp)}</td>
+                    <td className="hidden px-2 py-2.5 text-right text-ink-2 md:table-cell">{formatPrice(t.price)}</td>
+                    <td className="py-2.5 pl-2 pr-4 text-right text-ink-3 sm:pr-5">{t.timestamp ? timeAgo(t.timestamp) : "…"}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+          {hasOlder && loadOlder ? (
+            <div className="border-t border-line px-4 py-3 text-center sm:px-5">
+              <button className="btn-secondary min-h-[36px] px-4 py-1.5 text-[12px]" disabled={loadingOlder} onClick={loadOlder}>
+                {loadingOlder ? "Loading…" : "Load older trades"}
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
     </section>

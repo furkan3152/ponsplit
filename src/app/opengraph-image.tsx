@@ -21,7 +21,7 @@ export default function OgImage() {
             <span style={{ fontSize: 40, fontWeight: 700, color: "#1d1d1f" }}>PonsEarn</span>
           </div>
           <div style={{ fontSize: 68, fontWeight: 800, color: "#1d1d1f", lineHeight: 1.05, marginTop: 36, letterSpacing: -2 }}>One coin. Many X accounts. Fees, split.</div>
-          <div style={{ fontSize: 28, color: "#6e6e73", marginTop: 24 }}>Launch on Robinhood Chain</div>
+          <div style={{ fontSize: 28, color: "#6e6e73", marginTop: 24 }}>Launch on pons · Robinhood Chain</div>
         </div>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src(hero)} width={560} height={360} alt="" />
