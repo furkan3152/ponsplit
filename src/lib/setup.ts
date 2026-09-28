@@ -10,7 +10,6 @@ import {
   getContractAddress,
   http,
   isAddress,
-  parseEther,
   zeroAddress,
   type Address,
   type Hex,
@@ -20,19 +19,14 @@ import { feeVaultAbi, launchpadAbi } from "./abi";
 import { feeVaultBytecode, launchpadBytecode } from "./bytecode";
 import { activeChain, rpcUrl } from "./chains";
 import { adminKey, adminKeyProblem } from "./adminKey";
-import { ADDRESSES_PINNED, FEE_VAULT_ADDRESS, LAUNCHPAD_ADDRESS } from "./config";
+import { ADDRESSES_PINNED, FEE_VAULT_ADDRESS, LAUNCHPAD_ADDRESS, SETUP_MODE } from "./config";
+import { CURVE } from "./deploy-config";
 import { signerAccount } from "./signing";
-
-// Keep in sync with contracts/scripts/deploy.js.
-const CURVE = {
-  virtualEth: parseEther("1.5"),
-  virtualToken: parseEther("1073000000"),
-  curveSupply: parseEther("793100000"),
-  lpSupply: parseEther("206900000"),
-} as const;
 
 export type SetupStatus = {
   chain: string;
+  /** Who deploys the contracts (SETUP_MODE): the owner's wallet in the browser, or the server key. */
+  mode: "wallet" | "server";
   admin?: Address;
   balance?: string;
   nonce?: number;
@@ -100,6 +94,7 @@ export async function setupStatus(): Promise<SetupStatus> {
   const account = signerAccount();
   const base: SetupStatus = {
     chain: activeChain.name,
+    mode: SETUP_MODE,
     testnet: Boolean(activeChain.testnet),
     vaultDeployed: false,
     launchpadDeployed: false,
@@ -113,6 +108,12 @@ export async function setupStatus(): Promise<SetupStatus> {
     ownershipDone: false,
     ownershipProposed: false,
   };
+  if (SETUP_MODE === "wallet" && !ADDRESSES_PINNED) {
+    // The owner deploys from their own wallet on /setup, which finds the contracts on-chain; the
+    // server only has to say which address signs (it goes into the FeeVault constructor).
+    const key = adminKey();
+    return { ...base, admin: key ? privateKeyToAccount(key).address : undefined };
+  }
   if (!account) {
     // A usable key but no vault address is a configuration problem, not a missing key: say which
     // one, and report the admin so the page doesn't send the operator back to "Generate admin key".
@@ -221,6 +222,9 @@ export function runSetup(): Promise<{ status: SetupStatus; txs: Hex[] }> {
 }
 
 async function doRunSetup(): Promise<{ status: SetupStatus; txs: Hex[] }> {
+  if (SETUP_MODE === "wallet") {
+    throw new Error("On this network the contracts are deployed from the owner's own wallet on /setup, not by the server.");
+  }
   const account = signerAccount();
   if (!account) throw new Error(adminKeyProblem() ?? "No admin key on the server (set SIGNER_PRIVATE_KEY or SIGNER_SEED).");
   const client = publicClient();

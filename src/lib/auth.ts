@@ -20,11 +20,18 @@ const secret =
   process.env.NEXTAUTH_SECRET ||
   (adminKey() ? createHash("sha256").update(`ponsplit-nextauth:${adminKey()}`).digest("hex") : undefined);
 
-// OAuth callbacks need the site's public URL. On Render the onrender.com URL is the fallback;
-// with a custom domain set NEXTAUTH_URL=https://<your-domain> (and register
-// https://<your-domain>/api/auth/callback/twitter in the X app), otherwise X redirects users to
-// the onrender.com host where their sign-in cookies don't exist.
-if (!process.env.NEXTAUTH_URL && process.env.RENDER_EXTERNAL_URL) process.env.NEXTAUTH_URL = process.env.RENDER_EXTERNAL_URL;
+// OAuth callbacks need the site's public URL. Without NEXTAUTH_URL it falls back to the host's
+// production URL: Vercel's production domain (a custom domain once one is added) or Render's
+// onrender.com URL. Register <that URL>/api/auth/callback/twitter in the X app; set
+// NEXTAUTH_URL=https://<your-domain> explicitly if the site is reached some other way, otherwise X
+// redirects users to a host where their sign-in cookies don't exist.
+if (!process.env.NEXTAUTH_URL) {
+  if (process.env.VERCEL_ENV === "production" && process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    process.env.NEXTAUTH_URL = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  } else if (process.env.RENDER_EXTERNAL_URL) {
+    process.env.NEXTAUTH_URL = process.env.RENDER_EXTERNAL_URL;
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   secret,

@@ -57,7 +57,11 @@ function predictedAddresses() {
     checkAddress(entry.launchpad, `src/deployment.json ${chain}.launchpad`);
   }
   const committed = Boolean(entry.launchpad);
-  if (committed || process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS || !key) return {};
+  // Must match SETUP_MODE in src/lib/config.ts. Contracts deployed from the owner's wallet can't
+  // be predicted from the server key; they are pinned once deployed.
+  const setupMode = process.env.NEXT_PUBLIC_SETUP_MODE || (chain === "mainnet" ? "wallet" : "server");
+  if (setupMode !== "wallet" && setupMode !== "server") throw new Error('NEXT_PUBLIC_SETUP_MODE must be "wallet" or "server".');
+  if (setupMode === "wallet" || committed || process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS || !key) return {};
   const admin = privateKeyToAccount(key).address;
   return {
     NEXT_PUBLIC_FEE_VAULT_ADDRESS: getContractAddress({ from: admin, nonce: 0n }),

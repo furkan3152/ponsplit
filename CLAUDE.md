@@ -32,7 +32,8 @@ end-to-end suite is in `e2e/`. Docs are Turkish: README.md and MAINNET.md.
 
 - **Never generate, read, print or store private keys or seeds.** Not in chat, git, files or tool
   calls. The owner generates the admin key on `/setup` in their browser and pastes it into the host
-  themselves. Render blueprints use `SIGNER_SEED: generateValue`.
+  themselves. Render blueprints use `SIGNER_SEED: generateValue`. On mainnet the owner deploys the
+  contracts from their own wallet on `/setup` (wallet mode); never ask for, or accept, their wallet key.
 - Develop on branch `claude/split-robinhood-version-d6nsuj`, which is also the default branch.
   Push only there. Don't open PRs unless asked.
 - Commits end with the Co-Authored-By / Claude-Session trailers used in `git log`.
@@ -46,6 +47,9 @@ npx tsc --noEmit && npx next lint && npm test   # web typecheck, lint, unit test
 # local end-to-end: hardhat node on :8545, then build+start with
 #   NEXT_PUBLIC_CHAIN=local SIGNER_SEED=<random> OWNER_ADDRESS=0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65 X_RESOLVER=mock
 #   cd e2e && BASE=http://localhost:3000 node full.mjs      (16 checks; CI adds a real-X check → 17)
+# wallet-mode setup (the mainnet flow): build with NEXT_PUBLIC_SETUP_MODE=wallet, then
+#   cd e2e && node wallet-setup.mjs deploy   → writes wallet-deploy.env; rebuild with those pinned →
+#   node wallet-setup.mjs pinned   (CI job e2e-wallet-setup does the whole sequence)
 ```
 
 Gotchas:
@@ -79,8 +83,13 @@ Gotchas:
   changed .sol needs a new deployment: a new admin key on `/setup` (it deploys at nonces 0/1 of a
   fresh key) or `deploy-testnet.yml`, then re-pin both addresses on Render. Coins launched on the
   old contracts stay there.
-- **Mainnet** is not deployed. Use `render.mainnet.yaml` and follow MAINNET.md (audit, legal,
-  multisig owner, OAuth, `NEXTAUTH_URL`, `X_BEARER_TOKEN`, pinned addresses).
+- **Mainnet** is not deployed yet. It runs on **Vercel** (the owner's choice), built with
+  `NEXT_PUBLIC_CHAIN=mainnet`, which makes `/setup` wallet mode (`SETUP_MODE` in `src/lib/config.ts`):
+  1. the owner generates the signing key on `/setup` and pastes it into Vercel as `SIGNER_PRIVATE_KEY`;
+  2. connects their own wallet and deploys (3 txs: FeeVault, SplitLaunchpad, setLaunchpad); the
+     page resumes from chain state, so nothing is deployed twice;
+  3. the addresses are pinned in `src/deployment.json` (mainnet), and Vercel rebuilds on push.
+  MAINNET.md has the owner-facing steps. Vercel Hobby forbids commercial use: Pro before launch.
 
 ## History / where things stand
 
@@ -137,5 +146,8 @@ Gotchas:
   - Share cards only get JPEGs satori can size, and fall back to the initials card if rendering fails.
   - Malformed pinned addresses fail the build.
   - `npm test` loads server modules through `src/lib/test-hooks.mjs` (server-only stub, .ts resolution).
+- Round 5 came back clean (0 confirmed). After it: the `inspect.yml` / `smoke-live.mjs` tools, a
+  mirror-404 fix (a 404 is confirmed via fxtwitter's `/2/profile/`, launches re-check cached
+  misses), and wallet-mode setup for mainnet on Vercel.
 - If you change anything substantial, run a review → fix → verify loop again. Unit tests live in
   `src/lib/*.test.ts` and run with `npm test`.
