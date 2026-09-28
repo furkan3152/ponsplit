@@ -26,7 +26,7 @@ export function HowItWorks() {
         <Reveal key={title} delay={i * 120} className="card card-hover group relative flex flex-col items-start overflow-hidden p-6">
           <span
             aria-hidden
-            className="display pointer-events-none absolute right-4 top-3 select-none text-[88px] leading-none text-transparent"
+            className="display pointer-events-none absolute right-4 top-3 select-none text-[88px] leading-none tracking-normal text-transparent"
             style={{ WebkitTextStroke: "1px var(--line-2)" }}
           >
             0{i + 1}

@@ -1,8 +1,12 @@
+import type { CSSProperties } from "react";
 import { Avatar, C, INK, InkLine, MiniCoin, Sparkle } from "./parts";
 
 const SW = 2.8;
 
-/** Happy avatar catching a stack of coins, for the claim page. */
+/** Loose pieces move on their own clocks, each around its own center (CSS only, so reduced motion stops it). */
+const own = (delay: number): CSSProperties => ({ animationDelay: `${delay}s`, transformBox: "fill-box", transformOrigin: "center" });
+
+/** Happy avatar catching a stack of coins, for the claim page. The loose coins drift, the sparkles rock. */
 export function ClaimArt({ className }: { className?: string }) {
   const lo = { stroke: INK, strokeWidth: SW, strokeLinejoin: "round" as const };
   const coins = [0, 1, 2, 3].map((i) => {
@@ -29,12 +33,24 @@ export function ClaimArt({ className }: { className?: string }) {
       <InkLine d="M134 78Q144 104 128 122" color={C.sky} w={5} sw={SW} />
       <circle cx={72} cy={120} r={6} fill={C.sky} {...lo} />
       <circle cx={128} cy={120} r={6} fill={C.sky} {...lo} />
-      <MiniCoin cx={34} cy={40} r={9} sw={SW * 0.85} split />
-      <MiniCoin cx={166} cy={26} r={8} sw={SW * 0.85} />
-      <MiniCoin cx={160} cy={84} r={7} sw={SW * 0.85} color={C.lime} />
-      <Sparkle x={42} y={96} s={7} sw={SW * 0.75} color={C.pink} />
-      <Sparkle x={140} y={10} s={6} sw={SW * 0.7} />
-      <Sparkle x={24} y={10} s={5} sw={SW * 0.7} color={C.lime} />
+      <g className="animate-float" style={own(-0.4)}>
+        <MiniCoin cx={34} cy={40} r={9} sw={SW * 0.85} split />
+      </g>
+      <g className="animate-float" style={own(-2.6)}>
+        <MiniCoin cx={166} cy={26} r={8} sw={SW * 0.85} />
+      </g>
+      <g className="animate-float" style={own(-4.1)}>
+        <MiniCoin cx={160} cy={84} r={7} sw={SW * 0.85} color={C.lime} />
+      </g>
+      <g className="animate-wiggle" style={own(-0.8)}>
+        <Sparkle x={42} y={96} s={7} sw={SW * 0.75} color={C.pink} />
+      </g>
+      <g className="animate-wiggle" style={own(-1.7)}>
+        <Sparkle x={140} y={10} s={6} sw={SW * 0.7} />
+      </g>
+      <g className="animate-wiggle" style={own(-0.2)}>
+        <Sparkle x={24} y={10} s={5} sw={SW * 0.7} color={C.lime} />
+      </g>
     </svg>
   );
 }

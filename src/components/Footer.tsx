@@ -43,10 +43,12 @@ export function Footer() {
         <p className="mt-8 text-[12px] text-ink-3">
           Experimental software on a {activeChain.testnet ? "test network; tokens have no value" : "live network; trade at your own risk"}.
         </p>
+        {/* Filled, fading into the page. An outline would show where the variable font's glyph
+            contours overlap (the stem inside the P, the bar of the t). */}
         <div
           aria-hidden
-          className="display pointer-events-none mt-4 select-none whitespace-nowrap text-[21vw] leading-[0.78] text-transparent sm:text-[168px]"
-          style={{ WebkitTextStroke: "1px var(--line-2)" }}
+          className="display pointer-events-none mt-4 select-none whitespace-nowrap bg-clip-text text-[21vw] leading-[0.84] text-transparent sm:text-[168px]"
+          style={{ backgroundImage: "linear-gradient(to bottom, var(--line-2) 10%, transparent 92%)" }}
         >
           PonSplit
         </div>

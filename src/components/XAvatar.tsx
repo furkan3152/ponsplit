@@ -21,7 +21,8 @@ export function XAvatar({
   const url = image || xAvatarUrl(handle);
   // Keyed to the URL, so a new handle or a profile image that arrives later gets a fresh try.
   const [failedUrl, setFailedUrl] = useState<string>();
-  if (!photo || failedUrl === url) return <TokenSticker seed={`x:${handle}`} size={size} className={`shrink-0 rounded-full ${className}`} />;
+  // Photo or sticker, both sit in the same card-colored ring so stacks and rows line up.
+  if (!photo || failedUrl === url) return <TokenSticker seed={`x:${handle}`} size={size} className={`shrink-0 rounded-full ring-2 ring-card ${className}`} />;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -38,9 +39,10 @@ export function XAvatar({
 }
 
 /**
- * Overlapping avatar stack, like a group chat. Photos are shown only for usernames confirmed to
- * still belong to the fee account (`checks`, from useHandleChecks); without checks, e.g. in long
- * lists where looking every account up isn't affordable, each account gets its generated sticker.
+ * Overlapping avatar stack, like a group chat; it fans out a little when its card is hovered.
+ * Photos are shown only for usernames confirmed to still belong to the fee account (`checks`,
+ * from useHandleChecks); without checks, e.g. in long lists where looking every account up isn't
+ * affordable, each account gets its generated sticker.
  */
 export function XAvatarStack({
   handles,
@@ -63,10 +65,10 @@ export function XAvatarStack({
           image={checks?.[i]?.image}
           photo={checks?.[i]?.status === "current"}
           size={size}
-          className={i ? "-ml-1.5" : ""}
+          className={i ? "-ml-1.5 transition-[margin] duration-300 group-hover:-ml-0.5" : ""}
         />
       ))}
-      {handles.length > max ? <span className="chip -ml-1 ring-2 ring-card">+{handles.length - max}</span> : null}
+      {handles.length > max ? <span className="chip -ml-1 font-mono !text-[10.5px] ring-2 ring-card">+{handles.length - max}</span> : null}
     </div>
   );
 }
