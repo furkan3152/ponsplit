@@ -43,7 +43,7 @@ async function main() {
     { creator: signer.address, xIds: [xId], handles: [handle], deadline }
   );
   const split = { xIds: [xId], handles: [handle], bps: [10000], deadline, attestation };
-  const predicted = await launchpad.createToken.staticCall("Smoke Test", "SMOKE", "{}", split, 0, { value: ethers.parseEther("0.0001") });
+  const predicted = await launchpad.createToken.staticCall("Smoke Test", "SMOKE", "{}", split, 0, 0, { value: ethers.parseEther("0.0001") });
   console.log(`simulated createToken + first buy OK → would deploy ${predicted}`);
   console.log("SMOKE TEST PASSED");
 }

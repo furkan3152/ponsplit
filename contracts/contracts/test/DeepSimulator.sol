@@ -100,7 +100,8 @@ contract DeepSimulator {
                     string.concat("D", _u(i)),
                     "{}",
                     SplitLaunchpad.Split(p.xIds, p.handles, p.bps, attestDeadline, p.attestation),
-                    0
+                    0,
+                    lp.termsVersion()
                 )
             );
         }

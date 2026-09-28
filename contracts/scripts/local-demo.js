@@ -52,7 +52,7 @@ async function main() {
     const attestation = await signer.signTypedData(domain, types, { creator: alice.address, xIds, handles, deadline });
     const tx = await launchpad
       .connect(alice)
-      .createToken(name, symbol, JSON.stringify(meta), { xIds, handles, bps, deadline, attestation }, 0, {
+      .createToken(name, symbol, JSON.stringify(meta), { xIds, handles, bps, deadline, attestation }, 0, 0, {
         value: ethers.parseEther(devBuy),
       });
     const receipt = await tx.wait();

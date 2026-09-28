@@ -124,7 +124,8 @@ try {
   const launchpad = new ethers.Contract(
     status.launchpad,
     [
-      "function createToken(string,string,string,(uint64[] xIds,string[] handles,uint16[] bps,uint256 deadline,bytes attestation),uint256) payable returns (address)",
+      "function createToken(string,string,string,(uint64[] xIds,string[] handles,uint16[] bps,uint256 deadline,bytes attestation),uint256,uint256) payable returns (address)",
+      "function termsVersion() view returns (uint256)",
       "function getToken(address) view returns ((address token,string name,string symbol,string metadata,(uint256,uint256,uint256,uint256,uint256,address,uint64,uint64,bool,uint16,uint16,uint16) market,uint256 curveSupply,uint256 totalSupply,uint256 creatorFees,uint256 tradeCount,uint64 lastTradeAt,uint64[] xIds,string[] handles,uint16[] bps))",
       "function tokenCount() view returns (uint256)",
       "function allTokens(uint256) view returns (address)",
@@ -142,7 +143,7 @@ try {
       await fetch(`${REAL_BASE}/api/attest`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ creator: WHALE, handles: ["jack", "x"] }) })
     ).json();
     if (!att.attestation) throw new Error(`attest failed: ${JSON.stringify(att)}`);
-    const tx = await launchpad.createToken("Real Accounts", "REAL", "{}", { xIds: att.xIds.map(BigInt), handles: att.handles, bps: [5000, 5000], deadline: BigInt(att.deadline), attestation: att.attestation }, 0, {
+    const tx = await launchpad.createToken("Real Accounts", "REAL", "{}", { xIds: att.xIds.map(BigInt), handles: att.handles, bps: [5000, 5000], deadline: BigInt(att.deadline), attestation: att.attestation }, 0, await launchpad.termsVersion(), {
       value: ethers.parseEther("0.01"),
     });
     await tx.wait();

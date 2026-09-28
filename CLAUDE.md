@@ -40,7 +40,7 @@ end-to-end suite is in `e2e/`. Docs are Turkish: README.md and MAINNET.md.
 ## Commands
 
 ```bash
-cd contracts && npx hardhat test          # 26 tests (solc-js 0.8.24 via a compile subtask, viaIR)
+cd contracts && npx hardhat test          # 27 tests (solc-js 0.8.24 via a compile subtask, viaIR)
 cd contracts && node scripts/export-abi.js  # regenerate src/lib/abi.ts + bytecode.ts after any .sol change (CI checks they match)
 npx tsc --noEmit && npx next lint && npm test   # web typecheck, lint, unit tests (src/lib/*.test.ts)
 # local end-to-end: hardhat node on :8545, then build+start with
@@ -100,5 +100,17 @@ Gotchas:
   - lists covering all coins
   - Multicall3
   - many UX fixes
-- A follow-up verification workflow (fixes + regressions) was running when this note was written.
-  Check `git log` for anything after 605340b.
+- A second verification pass found 16 more issues (gaps in those fixes plus regressions). All are
+  fixed:
+  - `termsVersion`: a launch pins the fee and curve terms it was shown; any change reverts it.
+  - OG images reject decompression bombs by reading the real pixel size (`src/lib/image-bytes.ts`).
+  - Per-client and global X lookup budgets for previews and launches.
+  - `getTokens` pages kept out of Multicall3 batching (the `pagedClient` in hooks).
+  - Trade slippage is measured from the quote the user saw.
+  - IPv4-mapped IPs keyed correctly (`src/lib/ip.ts`).
+  - Address pinning is all or nothing.
+  - Renamed X accounts are checked by id before any avatar or @-mention (`useHandleChecks`).
+  - Loading and error states instead of zeros on /me and in fee streams.
+  - Stable token and trade queries.
+- If you change anything substantial, run a review → fix → verify loop again. Unit tests live in
+  `src/lib/*.test.ts` and run with `npm test`.

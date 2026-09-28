@@ -5,6 +5,7 @@ const SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉";
 /** Tiny prices the dexscreener way: 0.00000000205 → "0.0₈205". */
 export function formatPrice(n: number, sig = 3): string {
   if (!Number.isFinite(n) || n === 0) return "0";
+  if (n < 0) return `-${formatPrice(-n, sig)}`; // chart axes can put a tick just below zero
   if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
   if (n >= 0.001) return n.toPrecision(sig);
   // The subscript counts every zero after the decimal point: 2.05e-9 has 8 of them.

@@ -4,10 +4,10 @@
 
 | Kontrol | Ne yapıyor |
 |---|---|
-| `contracts` | 26 birim testi: fee dağıtımı, eğri, mezuniyet, havuz, claim, imza reddi, sahiplik, durdurma, launch ücreti sınırı. Ayrıca `/setup`'ın deploy ettiği bytecode'un kaynak koddan derlenenle birebir aynı olduğu kontrol edilir. |
+| `contracts` | 27 birim testi: fee dağıtımı, eğri, mezuniyet, havuz, claim, imza reddi, sahiplik, durdurma, launch ücreti sınırı, launch koşullarının sürümle sabitlenmesi. Ayrıca `/setup`'ın deploy ettiği bytecode'un kaynak koddan derlenenle birebir aynı olduğu kontrol edilir. |
 | `security` | Slither statik analizi; orta ve üstü seviyede bulgu çıkarsa build kırılır |
 | `chain-simulation` | Tüm yaşam döngüsü **gerçek Robinhood Chain testnet ve mainnet** üzerinde tek bir `eth_call` ile çalıştırılır: deploy, launch, eğride al/sat, mezuniyet, havuzda al/sat, imzalı claim. Hiçbir işlem gönderilmez, hiçbir şey harcanmaz. Mainnet'te toplam maliyet yaklaşık 7,9M gas. |
-| `web` | Typecheck, lint, birim testleri (fiyat gösterimi) ve production build |
+| `web` | Typecheck, lint, birim testleri (fiyat gösterimi, görsel boyut kontrolü, IP anahtarları) ve production build |
 | `chain-simulation` (derin) | Yine tek `eth_call` ile gerçek testnet ve mainnet üzerinde: 16 ayrı trader hesabı, 3 coin (biri 10 X hesabına bölünmüş), rastgele 120 adımlık al/sat fırtınası, her adımdan sonra ödeme gücü ve arz kontrolü, mezuniyet, havuz işlemleri, reddedilmesi gereken 6 saldırı (fazla satış, bilinmeyen token, slippage, claim yönlendirme, sahte ve tekrar kullanılan imza) ve her X hesabının tam payını claim etmesi. |
 | `e2e-fork` | Robinhood testnet'in fork'u üzerinde production build gerçek bir tarayıcıda, birden çok cüzdanla uçtan uca test edilir: /setup deploy ve sahiplik devri, gerçek X hesabı çözümleme (@jack → 12), arayüzden launch, al/sat, mezuniyet, havuz işlemleri, post ile claim, 8 sayfa masaüstü/mobil/karanlık modda taşma ve hata kontrolü. Ekran görüntüleri artifact olarak yüklenir. |
 
@@ -30,7 +30,7 @@ Bu adımları kod çözemez; karar ve sorumluluk proje sahibinde.
    - Uyumayan bir plan kullan (`render.mainnet.yaml` "starter" plan kullanıyor).
    - Kendi alan adını bağla.
    - Özel bir RPC sağlayıcısı kullan: `NEXT_PUBLIC_RPC_URL`. Herkese açık RPC hız sınırlı.
-   - Coin listesi, arama ve portföy tüm coin'leri doğrudan kontrattan 60'lık sayfalar hâlinde okur. Birkaç bin coin'e kadar bu yeterli. Daha büyük ölçekte bir indexer (ör. TokenCreated/Trade event'lerini okuyan bir servis) ekle.
+   - Coin listesi, arama ve portföy tüm coin'leri doğrudan kontrattan 60'lık sayfalar hâlinde okur. Her sayfa ayrı bir `eth_call`'dır; Multicall ile birleştirilmez, böylece düğümün gas sınırına takılmaz. Birkaç bin coin'e kadar bu yeterli. Daha büyük ölçekte bir indexer (ör. TokenCreated/Trade event'lerini okuyan bir servis) ekle.
    - Rate limit, Render'da istemci IP'sini Cloudflare'in yazdığı `cf-connecting-ip` başlığından alır. Başka bir barındırmada `TRUSTED_IP_HEADER` ayarla.
    - Mobil cüzdanlar için `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` ekle.
 6. **Parametreleri gözden geçir.** Deploy sonrası sahip `setFees` / `setCurveConfig` ile değiştirebilir. Değişiklikler yalnızca yeni coin'lere uygulanır.
@@ -40,7 +40,9 @@ Bu adımları kod çözemez; karar ve sorumluluk proje sahibinde.
    | İşlem fee'si | %1 | en fazla %5 |
    | Protokol payı | fee'nin %20'si | en fazla %50: X hesapları her zaman en az yarıyı alır |
    | Mezuniyet ücreti | %0 | en fazla %10 |
-   | Oluşturma ücreti | 0 | en fazla 0,1 ETH. Arayüz ilk alım için minimum token miktarı gönderir; ücret launch sırasında artarsa işlem geri çevrilir, creator'ın ETH'si sessizce ücrete gitmez. |
+   | Oluşturma ücreti | 0 | en fazla 0,1 ETH |
+
+   Her ücret ya da eğri değişikliği `termsVersion` değerini artırır. Arayüz, kullanıcıya gösterdiği koşulların sürümünü launch işlemine ekler. Kullanıcı imzalarken koşullar değişirse launch geri çevrilir; coin her zaman kullanıcının gördüğü koşullarla oluşturulur.
 
 ## Mainnet deploy (Render)
 

@@ -13,10 +13,14 @@ export const contentType = "image/png";
 
 const COLORS = ["#d7ff3c", "#7cc7ff", "#ff9bc2", "#ffd84d", "#b69cff", "#ff9f45"];
 
-/** The card shows live numbers, so it must not be cached as immutable (Next's default for OG images). */
-const LIVE = { "Cache-Control": "public, max-age=300, stale-while-revalidate=600" };
+/**
+ * The card shows live numbers, so it must not be cached as immutable (Next's default for OG
+ * images). The key must be lowercase: Next spreads these over its own "cache-control" default,
+ * and a differently-cased key would be appended to it rather than replace it.
+ */
+const LIVE = { "cache-control": "public, max-age=300, stale-while-revalidate=600" };
 /** "Not found" is often a transient RPC failure. */
-const MISS = { "Cache-Control": "no-store" };
+const MISS = { "cache-control": "no-store" };
 
 export default async function TokenOgImage({ params }: { params: { address: string } }) {
   const t = await fetchToken(params.address);

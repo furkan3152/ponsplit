@@ -330,7 +330,7 @@ function SessionClaim({ x }: { x: { id: string; username: string; name?: string;
 }
 
 function Streams({ xId, username }: { xId: bigint; username: string }) {
-  const { data: tokens } = useAllTokens();
+  const { data: tokens, error } = useAllTokens();
   const streams = useMemo(
     () =>
       (tokens ?? [])
@@ -342,7 +342,9 @@ function Streams({ xId, username }: { xId: bigint; username: string }) {
   return (
     <div className="card p-5">
       <h2 className="text-[17px] font-semibold">Fee streams for @{username}</h2>
-      {streams.length === 0 ? (
+      {!tokens ? (
+        <p className="mt-2 text-[14px] text-ink-2">{error ? "Couldn't load fee streams right now. Retrying…" : "Loading…"}</p>
+      ) : streams.length === 0 ? (
         <p className="mt-2 text-[14px] text-ink-2">
           No coins list @{username} yet.{" "}
           <Link href="/create" className="font-medium text-ink underline">
