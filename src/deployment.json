@@ -1,4 +1,15 @@
 {
-  "mainnet": { "launcher": "", "feeVault": "", "deployedAt": "", "hidden": [] },
-  "testnet": { "launcher": "", "feeVault": "", "ponsFactory": "", "deployedAt": "", "hidden": [] }
+  "mainnet": {
+    "launcher": "",
+    "feeVault": "",
+    "deployedAt": "",
+    "hidden": []
+  },
+  "testnet": {
+    "launcher": "0x5D95C13c6Ef4874AcDfcd3A68cE62e17E65cFe59",
+    "feeVault": "0x5ad954cd8F5c681a2C3FC2a399868a37e3611aB7",
+    "ponsFactory": "0xF2531ee1d731653d3C4F3CE24B98dB5bDFa78c88",
+    "deployedAt": "2026-09-28",
+    "hidden": []
+  }
 }
