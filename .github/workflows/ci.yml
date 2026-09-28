@@ -125,9 +125,12 @@ jobs:
       NETWORK: ${{ matrix.network }}
       NEXT_PUBLIC_DEFAULT_NETWORK: ${{ matrix.network }}
     steps:
-      # A fresh signing key per run, made and used inside the job only.
+      # A fresh signing key per run, made and used inside the job only (masked in the logs).
       - name: Random signing seed
-        run: echo "SIGNER_SEED=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+        run: |
+          seed=$(openssl rand -hex 32)
+          echo "::add-mask::$seed"
+          echo "SIGNER_SEED=$seed" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:

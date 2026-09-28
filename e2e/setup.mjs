@@ -17,8 +17,9 @@ if (!config.signer) fail("the server has no signing key");
 
 const nonceBefore = await provider.getTransactionCount(OWNER);
 const browser = await chromium.launch();
+let page;
 try {
-  const page = await openAs(browser, OWNER, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  page = await openAs(browser, OWNER, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await page.goto(`${BASE}/setup`, { timeout: 180_000 });
   const deploy = page.getByRole("button", { name: /^Deploy \(\d+ transactions\)$/ });
   const connectButton = page.getByRole("button", { name: "Connect wallet" });
@@ -84,6 +85,11 @@ try {
       .concat(NETWORK === "testnet" ? [`NEXT_PUBLIC_TESTNET_PONS_FACTORY=${factory}`] : [])
       .join("\n") + "\n"
   );
+} catch (e) {
+  // What the owner would have seen when it stopped.
+  await page?.screenshot({ path: `${OUT}/setup-failed-${NETWORK}.png`, fullPage: true }).catch(() => {});
+  if (errors.length) console.error("page errors:", errors);
+  throw e;
 } finally {
   await browser.close();
 }
