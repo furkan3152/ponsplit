@@ -9,11 +9,11 @@ import { KingCard } from "@/components/KingCard";
 import { TokenCard } from "@/components/TokenCard";
 import { SplitMachine } from "@/components/art";
 import { CountUp, Reveal } from "@/components/motion";
-import { activeChain } from "@/lib/chains";
 import { compact } from "@/lib/format";
-import { useAllTokens, useGlobalStats, useNow } from "@/lib/hooks";
-import { describe } from "@/lib/market";
-import type { TokenView } from "@/lib/types";
+import { useActivity, useCoins, useDescriptions, useGlobalStats, useNow } from "@/lib/hooks";
+import { useNetwork } from "@/lib/network-context";
+import { isLive } from "@/lib/networks";
+import type { Coin } from "@/lib/types";
 
 const SORTS = [
   { key: "trending", label: "Trending" },
@@ -23,31 +23,43 @@ const SORTS = [
 ] as const;
 type Sort = (typeof SORTS)[number]["key"];
 
-function sortTokens(list: readonly TokenView[], sort: Sort): TokenView[] {
+function sortCoins(list: readonly Coin[], sort: Sort, trades24h: Map<string, number> | undefined): Coin[] {
   const arr = [...list];
   switch (sort) {
     case "trending":
-      return arr.sort((a, b) => Number(b.lastTradeAt) - Number(a.lastTradeAt));
+      // Most trades in the last day, then the newest.
+      return arr.sort((a, b) => (trades24h?.get(b.token.toLowerCase()) ?? 0) - (trades24h?.get(a.token.toLowerCase()) ?? 0) || b.createdAt - a.createdAt);
     case "new":
-      return arr.sort((a, b) => Number(b.market.createdAt) - Number(a.market.createdAt));
+      return arr.sort((a, b) => b.createdAt - a.createdAt);
     case "mcap":
-      return arr.sort((a, b) => describe(b).marketCap - describe(a).marketCap);
+      return arr.sort((a, b) => b.marketCap - a.marketCap);
     case "graduated":
-      return arr.filter((t) => t.market.graduated).sort((a, b) => describe(b).marketCap - describe(a).marketCap);
+      return arr.filter((t) => t.graduated).sort((a, b) => b.marketCap - a.marketCap);
   }
 }
 
 export default function Home() {
+  const n = useNetwork();
   const [limit, setLimit] = useState(60);
-  const { data: tokens, isLoading, error } = useAllTokens();
+  const { data: tokens, isLoading, error } = useCoins();
+  const activity = useActivity();
   const stats = useGlobalStats();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("trending");
   useNow(15_000);
 
+  const trades24h = activity.data?.tradesByToken;
+  const volume24h = useMemo(() => {
+    if (!isLive(n)) return 0n;
+    if (!activity.data) return undefined;
+    let v = 0n;
+    for (const x of activity.data.volumeByToken.values()) v += x;
+    return v;
+  }, [activity.data, n]);
+
   const king = useMemo(() => {
-    const bonding = (tokens ?? []).filter((t) => !t.market.graduated && t.tradeCount > 0n);
-    return bonding.sort((a, b) => describe(b).progress - describe(a).progress)[0];
+    const bonding = (tokens ?? []).filter((t) => t.phase === "curve" && t.raised > 0n);
+    return bonding.sort((a, b) => b.progress - a.progress)[0];
   }, [tokens]);
 
   const list = useMemo(() => {
@@ -55,11 +67,13 @@ export default function Home() {
     const filtered = (tokens ?? []).filter(
       (t) => !q || t.name.toLowerCase().includes(q) || t.symbol.toLowerCase().includes(q) || t.token.toLowerCase() === q || t.handles.some((h) => h.includes(q))
     );
-    return sortTokens(filtered, sort);
-  }, [tokens, query, sort]);
+    return sortCoins(filtered, sort, trades24h);
+  }, [tokens, query, sort, trades24h]);
   const shown = list.slice(0, limit);
   const hasMore = list.length > limit;
   const addressQuery = isAddress(query.trim()) ? query.trim() : null;
+  const described = useMemo(() => [...shown.map((t) => t.token), ...(king ? [king.token] : [])], [shown, king]);
+  const descriptions = useDescriptions(described);
 
   return (
     <div className="space-y-20">
@@ -69,7 +83,7 @@ export default function Home() {
           <Reveal>
             <span className="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-2">
               <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" aria-hidden />
-              Live on {activeChain.name}
+              {isLive(n) ? (n.isTestnet ? "Testnet" : "Live") : "Coming soon"} on {n.chain.name}
             </span>
           </Reveal>
           <h1 className="display mt-6 text-[54px] leading-[0.9] sm:text-[86px]">
@@ -102,7 +116,7 @@ export default function Home() {
           </h1>
           <Reveal delay={300}>
             <p className="mt-7 max-w-md text-[17px] leading-relaxed text-ink-2">
-              Launch a coin and every trade pays the X accounts you choose, on the curve and after it graduates. They sign in with X and claim whenever they like.
+              Launch a coin on pons and its creator fees pay the X accounts you choose, on the curve and after it graduates. They prove the account is theirs and claim whenever they like.
             </p>
           </Reveal>
           <Reveal delay={380} className="mt-8 flex flex-wrap gap-3">
@@ -119,13 +133,13 @@ export default function Home() {
           <Reveal delay={460}>
             <dl className="mt-10 grid max-w-md grid-cols-3 divide-x divide-[var(--line)] overflow-hidden rounded-2xl border border-line bg-card">
               <HeroStat label="Coins">
-                <CountUp value={stats.coins !== undefined ? Number(stats.coins) : undefined} format={(n) => compact(Math.round(n))} />
+                <CountUp value={stats.coins !== undefined ? Number(stats.coins) : undefined} format={(v) => compact(Math.round(v))} />
               </HeroStat>
-              <HeroStat label="Trades">
-                <CountUp value={stats.trades !== undefined ? Number(stats.trades) : undefined} format={(n) => compact(Math.round(n))} />
+              <HeroStat label="24h volume">
+                <CountUp value={volume24h !== undefined ? Number(formatEther(volume24h)) : undefined} format={(v) => `${compact(v, 3)} Ξ`} />
               </HeroStat>
-              <HeroStat label="Fees split">
-                <CountUp value={stats.feesSplit !== undefined ? Number(formatEther(stats.feesSplit)) : undefined} format={(n) => `${n.toFixed(3)} Ξ`} />
+              <HeroStat label="Split to X">
+                <CountUp value={stats.feesSplit !== undefined ? Number(formatEther(stats.feesSplit)) : undefined} format={(v) => `${v.toFixed(3)} Ξ`} />
               </HeroStat>
             </dl>
           </Reveal>
@@ -137,7 +151,7 @@ export default function Home() {
 
       {king ? (
         <Reveal as="section">
-          <KingCard key={king.token} t={king} />
+          <KingCard key={king.token} t={king} description={descriptions?.get(king.token.toLowerCase())} />
         </Reveal>
       ) : null}
 
@@ -188,7 +202,7 @@ export default function Home() {
             <Grid>
               {shown.map((t, i) => (
                 <Reveal key={t.token} delay={Math.min(i, 8) * 50}>
-                  <TokenCard t={t} />
+                  <TokenCard t={t} description={descriptions?.get(t.token.toLowerCase())} />
                 </Reveal>
               ))}
             </Grid>

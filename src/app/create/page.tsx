@@ -1,9 +1,10 @@
 "use client";
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { decodeEventLog, formatEther, formatUnits, parseEther, type Hex } from "viem";
+import { bytesToHex, formatEther, formatUnits, parseEther, parseEventLogs, type Hex } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
 import { Progress } from "@/components/Progress";
 import { useRiskGate } from "@/components/RiskNotice";
@@ -11,13 +12,15 @@ import { TokenAvatar } from "@/components/TokenAvatar";
 import { XAvatar, XAvatarStack } from "@/components/XAvatar";
 import { StepLaunch } from "@/components/art";
 import { Flash, Reveal } from "@/components/motion";
-import { launchpadAbi } from "@/lib/abi";
-import { activeChain } from "@/lib/chains";
-import { BPS, LAUNCHPAD_ADDRESS, MAX_RECIPIENTS } from "@/lib/config";
-import { compact, errorMessage, formatEth, pct, progressText, shortAddress, spotPrice } from "@/lib/format";
+import { launcherAbi } from "@/lib/abi";
+import { compact, errorMessage, formatEth, pct, progressText, shortAddress } from "@/lib/format";
 import { isValidHandle, normalizeHandle } from "@/lib/handles";
-import { readLaunchTerms, useDebounced, useLaunchesPaused, useLaunchTerms, useXProfiles, type LaunchTerms } from "@/lib/hooks";
-import { encodeMetadata, safeUrl } from "@/lib/metadata";
+import { readLaunchTerms, useDebounced, useLaunchTerms, useXProfiles, type LaunchTerms } from "@/lib/hooks";
+import { safeUrl } from "@/lib/metadata";
+import { useNetwork } from "@/lib/network-context";
+import { isLive } from "@/lib/networks";
+import { BPS, PONS_PROTOCOL_SHARE_BPS, TOTAL_SUPPLY, curvePrice, quoteCurveBuy } from "@/lib/pons";
+import { MAX_RECIPIENTS, SPLIT_TOTAL_BPS } from "@/lib/split";
 import { useServerConfig } from "@/lib/useServerConfig";
 
 type Row = { handle: string; percent: string };
@@ -29,8 +32,10 @@ function toBps(percent: string): number {
   return Math.round(parseFloat(v) * 100);
 }
 
-/** The contract limits lengths in UTF-8 bytes, not characters (emoji and accents take more). */
+/** Long names and descriptions cost gas: pons stores them on the coin itself. Limits in UTF-8 bytes. */
 const byteLength = (v: string) => new TextEncoder().encode(v).length;
+const MAX_NAME_BYTES = 32;
+const MAX_DESCRIPTION = 500;
 
 function safeParseEther(v: string): bigint | undefined {
   try {
@@ -43,24 +48,18 @@ function safeParseEther(v: string): bigint | undefined {
 }
 
 function evenSplit(n: number): string[] {
-  const base = Math.floor(BPS / n);
-  return Array.from({ length: n }, (_, i) => ((i === 0 ? base + (BPS - base * n) : base) / 100).toString());
+  const base = Math.floor(SPLIT_TOTAL_BPS / n);
+  return Array.from({ length: n }, (_, i) => ((i === 0 ? base + (SPLIT_TOTAL_BPS - base * n) : base) / 100).toString());
 }
 
 /**
- * Tolerance on the creator's first buy. The launch is pinned to the terms version the creator saw
- * (so fees and curve can't change under it) and nobody can trade a coin before it exists, so this
- * only covers a rounding difference between firstBuyTokens and the contract's quoteBuy.
+ * Tolerance on the creator's first buy. The launch is pinned to the terms version and pons's
+ * economics the creator saw, and nobody can trade a coin before it exists, so this only covers
+ * rounding between this page's quote and the curve's own arithmetic.
  */
 const FIRST_BUY_SLIPPAGE_BPS = 10n;
-
-/** Tokens a first buy of `ethIn` gets on a fresh curve; mirrors SplitLaunchpad.quoteBuy. */
-function firstBuyTokens(ethIn: bigint, feeBps: bigint, curve: readonly [bigint, bigint, bigint, bigint]): bigint {
-  const [virtualEth, virtualToken, curveSupply] = curve;
-  const net = ethIn - (ethIn * feeBps) / BigInt(BPS);
-  const out = (virtualToken * net) / (virtualEth + net);
-  return out >= curveSupply ? curveSupply : out;
-}
+/** Creator tax choices, in bps; pons caps it (maxCreatorTaxBps, 10% today). */
+const TAX_STEPS = [0, 50, 100, 200, 300, 500, 1000];
 
 /**
  * The account colors, in split order, exactly as the coin page's fee split draws them: accounts
@@ -71,34 +70,38 @@ const STRIPES = "repeating-linear-gradient(135deg, transparent 0 3px, rgba(11, 1
 const colorOf = (i: number) => ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
 const swatch = (i: number): CSSProperties => ({ backgroundColor: colorOf(i), backgroundImage: i >= ACCOUNT_COLORS.length ? STRIPES : undefined });
 
+/** PonsEarn's share of every payout for a coin with this creator tax (PonsEarnLauncher.platformBpsFor). */
+function platformBpsFor(t: LaunchTerms, taxBps: number): bigint {
+  const creatorBase = t.curveFeeBps * (BPS - BigInt(PONS_PROTOCOL_SHARE_BPS));
+  const all = creatorBase + BigInt(taxBps) * BPS;
+  return all === 0n ? 0n : (BigInt(t.platformShareBps) * creatorBase) / all;
+}
+
 /**
- * The coin as it looks right after launch: the creator's first buy run through a fresh curve
- * (mirrors SplitLaunchpad.quoteBuy and _buy). Only feeds the live preview.
+ * The coin as it looks right after launch: the creator's first buy run through a fresh pons curve
+ * (exempt from the opening snipe tax, like pons's own launcher). Feeds the preview and the buy's
+ * minimum.
  */
-function simulateLaunch(ethIn: bigint, t: LaunchTerms) {
-  const [virtualEth, virtualToken, curveSupply, lpSupply] = t.curve;
-  const bps = BigInt(BPS);
-  let fee = (ethIn * t.feeBps) / bps;
-  let net = ethIn - fee;
-  let tokens = (virtualToken * net) / (virtualEth + net);
-  const soldOut = tokens >= curveSupply;
-  if (soldOut) {
-    // Buys the whole curve: only the ETH that takes is spent, the rest is refunded.
-    tokens = curveSupply;
-    const rest = virtualToken - tokens;
-    net = (virtualEth * tokens + rest - 1n) / rest;
-    fee = (net * t.feeBps + (bps - t.feeBps) - 1n) / (bps - t.feeBps);
-    if (net + fee > ethIn) fee = ethIn - net;
-  }
-  const supply = curveSupply + lpSupply;
+function simulateLaunch(ethIn: bigint, t: LaunchTerms, taxBps: number) {
+  const reserved = (t.supply * t.phantomQuote) / (t.phantomQuote + t.threshold);
+  const q = quoteCurveBuy(
+    { quoteReserve: t.phantomQuote, tokenReserve: t.supply, sellable: t.supply - reserved, feeBps: t.curveFeeBps, creatorTaxBps: BigInt(taxBps) },
+    ethIn
+  );
+  const fee = (q.spent * t.curveFeeBps) / BPS;
+  const tax = (q.spent * BigInt(taxBps)) / BPS;
+  const net = q.spent - fee - tax;
+  const creator = (fee * (BPS - BigInt(PONS_PROTOCOL_SHARE_BPS))) / BPS + tax;
+  const platform = platformBpsFor(t, taxBps);
   return {
-    tokens,
-    soldOut,
+    tokens: q.tokensOut,
+    spent: q.spent,
+    soldOut: q.tokensOut > 0n && q.tokensOut === t.supply - reserved,
     /** What the X accounts earn from the first buy alone. */
-    split: fee - (fee * t.protocolShareBps) / bps,
-    marketCap: spotPrice(virtualEth + net, virtualToken - tokens) * Number(formatUnits(supply, 18)),
-    progress: curveSupply > 0n ? Number((tokens * 10_000n) / curveSupply) / 100 : 0,
-    supplyShare: supply > 0n ? Number((tokens * 10_000n) / supply) / 100 : 0,
+    split: creator - (creator * platform) / BPS,
+    marketCap: curvePrice(t.phantomQuote + net, t.supply - q.tokensOut) * TOTAL_SUPPLY,
+    progress: t.threshold > 0n ? Math.min(100, Number((net * 10_000n) / t.threshold) / 100) : 0,
+    supplyShare: t.supply > 0n ? Number((q.tokensOut * 10_000n) / t.supply) / 100 : 0,
   };
 }
 
@@ -107,7 +110,7 @@ const STAGES = [
   ["Checking launch terms…", "Terms"],
   ["Verifying X accounts…", "X accounts"],
   ["Confirm in your wallet…", "Wallet"],
-  ["Launching…", "Launch"],
+  ["Launching on pons…", "Launch"],
 ] as const;
 
 /** Why the launch button is disabled, and which form section (1-3) the fix belongs to. */
@@ -117,20 +120,21 @@ type Issue = { step: 1 | 2 | 3; text: string };
 const HANDLE_STATUS =
   "pointer-events-none mt-1.5 block w-fit max-w-full truncate rounded-full px-2 py-0.5 text-[12px] font-medium sm:absolute sm:right-2.5 sm:top-1/2 sm:mt-0 sm:max-w-[8rem] sm:-translate-y-1/2";
 
+/** Any unused value; pons combines it with the launching wallet (and PonsEarn with the creator). */
+const newSalt = (): Hex => bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
+
 export default function CreatePage() {
+  const n = useNetwork();
+  const live = isLive(n);
   const router = useRouter();
   const { address, isConnected, chainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
-  const publicClient = usePublicClient({ chainId: activeChain.id });
+  const publicClient = usePublicClient({ chainId: n.chain.id });
   const { writeContractAsync } = useWriteContract();
   const server = useServerConfig();
   const terms = useLaunchTerms();
   const shownTerms = terms.data;
-  const creationFee = shownTerms?.creationFee;
-  const feeBps = shownTerms?.feeBps;
-  const protocolShareBps = shownTerms?.protocolShareBps;
-  const paused = useLaunchesPaused();
   const { guard, dialog } = useRiskGate();
 
   const [name, setName] = useState("");
@@ -140,7 +144,9 @@ export default function CreatePage() {
   const [website, setWebsite] = useState("");
   const [telegram, setTelegram] = useState("");
   const [twitter, setTwitter] = useState("");
+  const [discord, setDiscord] = useState("");
   const [showLinks, setShowLinks] = useState(false);
+  const [taxBps, setTaxBps] = useState(0);
   const [rows, setRows] = useState<Row[]>([
     { handle: "", percent: "50" },
     { handle: "", percent: "50" },
@@ -164,21 +170,18 @@ export default function CreatePage() {
   const inFlight = useRef(false);
 
   const imageUrl = image.trim() ? safeUrl(image.trim()) : undefined;
-
-  const metadata = useMemo(
-    () => encodeMetadata({ image: image.trim(), description: description.trim(), website: website.trim(), telegram: telegram.trim(), twitter: twitter.trim() }),
-    [image, description, website, telegram, twitter]
-  );
+  const maxTax = shownTerms?.maxCreatorTaxBps ?? 1000;
+  const taxChoices = TAX_STEPS.filter((b) => b <= maxTax);
 
   const issues = useMemo(() => {
     const p: Issue[] = [];
     const add = (step: Issue["step"], text: string) => p.push({ step, text });
     if (!name.trim()) add(1, "Give your coin a name.");
-    else if (byteLength(name.trim()) > 32) add(1, "The name is too long (32 bytes max; emoji and accented letters count double or more).");
-    if (!symbol.trim() || byteLength(symbol.trim()) > 10) add(1, "Add a ticker (up to 10 letters or digits).");
-    if (byteLength(metadata) > 2000) add(1, "Description and links are too long together; shorten the description.");
+    else if (byteLength(name.trim()) > MAX_NAME_BYTES) add(1, `The name is too long (${MAX_NAME_BYTES} bytes max; emoji and accented letters count double or more).`);
+    if (!symbol.trim() || symbol.trim().length > 10) add(1, "Add a ticker (up to 10 letters or digits).");
+    if (description.length > MAX_DESCRIPTION) add(1, `Keep the description under ${MAX_DESCRIPTION} characters.`);
     if (image.trim() && !imageUrl) add(1, "Image must be an https:// or ipfs:// link.");
-    for (const [label, v] of [["Website", website], ["Telegram", telegram], ["X link", twitter]] as const) {
+    for (const [label, v] of [["Website", website], ["Telegram", telegram], ["X link", twitter], ["Discord", discord]] as const) {
       if (v.trim() && !safeUrl(v.trim())) add(1, `${label} must be an https:// link.`);
     }
     handles.forEach((h, i) => {
@@ -187,10 +190,11 @@ export default function CreatePage() {
     });
     if (new Set(handles).size !== handles.length) add(2, "Each X account can only appear once.");
     if (bps.some((b) => Number.isNaN(b) || b <= 0)) add(2, "Every share must be above 0% (2 decimals max).");
-    else if (totalBps !== BPS) add(2, `Shares add up to ${pct(totalBps)}; they need to total 100%.`);
+    else if (totalBps !== SPLIT_TOTAL_BPS) add(2, `Shares add up to ${pct(totalBps)}; they need to total 100%.`);
+    if (taxBps > maxTax) add(3, `pons allows a creator tax of up to ${maxTax / 100}%.`);
     if (safeParseEther(devBuy) === undefined) add(3, "First buy must be a number.");
     return p;
-  }, [name, symbol, metadata, image, imageUrl, website, telegram, twitter, handles, bps, totalBps, devBuy, profiles.data]);
+  }, [name, symbol, description, image, imageUrl, website, telegram, twitter, discord, handles, bps, totalBps, taxBps, maxTax, devBuy, profiles.data]);
   const problems = useMemo(() => issues.map((p) => p.text), [issues]);
 
   const touched = Boolean(name || symbol || handles.some(Boolean));
@@ -215,62 +219,67 @@ export default function CreatePage() {
   async function submit() {
     setError(null);
     if (!isConnected || !address) return openConnectModal?.();
-    if (!LAUNCHPAD_ADDRESS || !publicClient || problems.length || !shownTerms || inFlight.current) return;
+    if (!live || !publicClient || problems.length || !shownTerms || inFlight.current) return;
     inFlight.current = true;
     try {
-      if (chainId !== activeChain.id) {
+      if (chainId !== n.chain.id) {
         setStatus("Switching network…");
-        await switchChainAsync({ chainId: activeChain.id });
+        await switchChainAsync({ chainId: n.chain.id });
       }
-      // The launch is priced on the terms shown on this page and pinned to their version on-chain,
-      // so a fee or curve change after this point reverts it instead of costing the creator more.
+      // The launch is priced on the terms shown on this page and pinned to them on-chain (PonsEarn's
+      // terms version and pons's economics), so a change after this point reverts it instead of
+      // costing the creator more.
       setStatus("Checking launch terms…");
-      const fresh = await readLaunchTerms(publicClient);
-      if (fresh.version !== shownTerms.version) {
+      const fresh = await readLaunchTerms(n);
+      if (fresh.version !== shownTerms.version || fresh.economics !== shownTerms.economics || fresh.ponsLaunchFee !== shownTerms.ponsLaunchFee) {
         await terms.refetch();
-        throw new Error("The launch terms just changed. Review the updated fee above and launch again.");
+        throw new Error("The launch terms just changed. Review the updated numbers and launch again.");
       }
+      if (fresh.paused) throw new Error("New launches are paused by PonsEarn's owner for now.");
+      if (!fresh.canLaunch) throw new Error("pons isn't taking new launches right now.");
       const firstBuy = safeParseEther(devBuy) ?? 0n;
-      const minTokensOut =
-        firstBuy > 0n ? (firstBuyTokens(firstBuy, shownTerms.feeBps, shownTerms.curve) * (10_000n - FIRST_BUY_SLIPPAGE_BPS)) / 10_000n : 0n;
+      const minTokensOut = firstBuy > 0n ? (simulateLaunch(firstBuy, shownTerms, taxBps).tokens * (10_000n - FIRST_BUY_SLIPPAGE_BPS)) / 10_000n : 0n;
 
       setStatus("Verifying X accounts…");
       const res = await fetch("/api/attest", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ creator: address, handles }),
+        body: JSON.stringify({ network: n.id, creator: address, handles }),
       });
       const att = (await res.json()) as { error?: string; xIds: string[]; handles: string[]; deadline: string; attestation: Hex };
       if (!res.ok) throw new Error(att.error || "Could not verify X accounts");
 
       setStatus("Confirm in your wallet…");
       const hash = await writeContractAsync({
-        address: LAUNCHPAD_ADDRESS,
-        abi: launchpadAbi,
-        chainId: activeChain.id,
-        functionName: "createToken",
+        address: n.launcher!,
+        abi: launcherAbi,
+        chainId: n.chain.id,
+        functionName: "launch",
         args: [
-          name.trim(),
-          symbol.trim().toUpperCase(),
-          metadata,
+          {
+            name: name.trim(),
+            symbol: symbol.trim().toUpperCase(),
+            logo: image.trim(),
+            description: description.trim(),
+            socials: { twitter: twitter.trim(), telegram: telegram.trim(), discord: discord.trim(), website: website.trim(), farcaster: "" },
+            creatorTaxBps: taxBps,
+            salt: newSalt(),
+            expectedEconomics: shownTerms.economics,
+          },
           { xIds: att.xIds.map(BigInt), handles: att.handles, bps, deadline: BigInt(att.deadline), attestation: att.attestation },
+          firstBuy,
           minTokensOut,
           shownTerms.version,
         ],
-        value: shownTerms.creationFee + firstBuy,
+        value: shownTerms.ponsLaunchFee + firstBuy,
       });
-      setStatus("Launching…");
+      setStatus("Launching on pons…");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("Transaction reverted");
-      for (const log of receipt.logs) {
-        try {
-          const ev = decodeEventLog({ abi: launchpadAbi, ...log });
-          if (ev.eventName === "TokenCreated") return router.push(`/token/${ev.args.token}?launched=1`);
-        } catch {
-          // not a launchpad event
-        }
-      }
-      router.push("/");
+      const launched = parseEventLogs({ abi: launcherAbi, eventName: "Launched", logs: receipt.logs }).find(
+        (l) => l.address.toLowerCase() === n.launcher!.toLowerCase()
+      );
+      router.push(launched ? `/token/${launched.args.token}?launched=1` : "/");
     } catch (e) {
       setError(errorMessage(e));
       setStatus(null);
@@ -284,15 +293,21 @@ export default function CreatePage() {
 
   // Everything below only draws the page.
   const firstBuyWei = safeParseEther(devBuy);
-  const launch = useMemo(() => (shownTerms ? simulateLaunch(firstBuyWei ?? 0n, shownTerms) : undefined), [shownTerms, firstBuyWei]);
+  const launch = useMemo(() => (shownTerms ? simulateLaunch(firstBuyWei ?? 0n, shownTerms, taxBps) : undefined), [shownTerms, firstBuyWei, taxBps]);
   const stepDone = (step: Issue["step"]) => !issues.some((p) => p.step === step);
   const ticker = (symbol || "TICKER").toUpperCase();
   const shares = bps.map((b) => (Number.isNaN(b) || b < 0 ? 0 : b));
   const shareLabels = handles.map((h, i) => (isValidHandle(h) ? `@${h}` : `Account ${i + 1}`));
   const previewHandles = Array.from(new Set(handles.filter(isValidHandle)));
-  const creatorPct = feeBps !== undefined && protocolShareBps !== undefined ? (Number(feeBps) * (10_000 - Number(protocolShareBps))) / 1e6 : undefined;
+  const platformBps = shownTerms ? Number(platformBpsFor(shownTerms, taxBps)) : undefined;
+  // Of every trade: the creator's part of pons's fee plus the tax, less PonsEarn's share.
+  const accountsPct =
+    shownTerms && platformBps !== undefined
+      ? ((Number(shownTerms.curveFeeBps) * (10_000 - PONS_PROTOCOL_SHARE_BPS)) / 10_000 + taxBps) * (1 - platformBps / 10_000) / 100
+      : undefined;
   const stage = STAGES.findIndex(([s]) => s === status);
-  const launchDisabled = Boolean(status) || paused === true || (isConnected && (problems.length > 0 || !shownTerms));
+  const blocked = shownTerms ? shownTerms.paused || !shownTerms.canLaunch : false;
+  const launchDisabled = Boolean(status) || !live || blocked || (isConnected && (problems.length > 0 || !shownTerms));
 
   return (
     <div className="space-y-8 pt-2 sm:space-y-10 sm:pt-4">
@@ -304,14 +319,16 @@ export default function CreatePage() {
             <Reveal>
               <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-2">
                 <span className="h-1.5 w-1.5 shrink-0 animate-pulse-dot rounded-full bg-lime" aria-hidden />
-                New coin · {activeChain.name}
+                New coin · {n.chain.name}
               </span>
             </Reveal>
             <Reveal as="h1" delay={60} className="display mt-5 text-[44px] leading-[0.92] sm:text-[64px]">
               Launch a <span className="accent text-neon pr-1.5">coin</span>
             </Reveal>
             <Reveal delay={120}>
-              <p className="mt-4 max-w-md text-[16px] leading-relaxed text-ink-2 sm:text-[17px]">Every trade pays the X accounts you add below. Forever.</p>
+              <p className="mt-4 max-w-md text-[16px] leading-relaxed text-ink-2 sm:text-[17px]">
+                Minted on pons. Every trade pays the X accounts you add below. Forever.
+              </p>
             </Reveal>
           </div>
           <Reveal delay={180} className="relative isolate hidden shrink-0 sm:block">
@@ -357,7 +374,7 @@ export default function CreatePage() {
                 </div>
                 <div className="col-start-2 row-start-1 min-w-0">
                   <label className="label" htmlFor="name">Name</label>
-                  <input id="name" className="input" maxLength={32} value={name} onChange={(e) => setName(e.target.value)} placeholder="Pon Coin" />
+                  <input id="name" className="input" maxLength={MAX_NAME_BYTES} value={name} onChange={(e) => setName(e.target.value)} placeholder="Pon Coin" />
                 </div>
                 <div className="col-start-2 row-start-2 min-w-0 sm:col-start-3 sm:row-start-1">
                   <label className="label" htmlFor="ticker">Ticker</label>
@@ -383,15 +400,25 @@ export default function CreatePage() {
               <div>
                 <div className="flex items-baseline justify-between gap-3">
                   <label className="label" htmlFor="desc">Description</label>
-                  <span className="font-mono text-[11px] text-ink-3">{description.length}/500</span>
+                  <span className="font-mono text-[11px] text-ink-3">
+                    {description.length}/{MAX_DESCRIPTION}
+                  </span>
                 </div>
-                <textarea id="desc" className="input min-h-24 resize-y" maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What's the story?" />
+                <textarea
+                  id="desc"
+                  className="input min-h-24 resize-y"
+                  maxLength={MAX_DESCRIPTION}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What's the story?"
+                />
               </div>
               {showLinks ? (
-                <div className="grid animate-slide-up gap-3 sm:grid-cols-3">
+                <div className="grid animate-slide-up gap-3 sm:grid-cols-2">
                   <LinkInput icon={<GlobeIcon />} label="Website" value={website} onChange={setWebsite} placeholder="Website" />
                   <LinkInput icon={<SendIcon />} label="Telegram" value={telegram} onChange={setTelegram} placeholder="Telegram link" />
                   <LinkInput icon={<XMarkIcon />} label="X link" value={twitter} onChange={setTwitter} placeholder="X post or profile link" />
+                  <LinkInput icon={<ChatIcon />} label="Discord" value={discord} onChange={setDiscord} placeholder="Discord invite" />
                 </div>
               ) : (
                 <button
@@ -399,7 +426,7 @@ export default function CreatePage() {
                   className="flex min-h-11 w-full items-center justify-center rounded-2xl border border-dashed border-line-2 px-4 py-3 text-[14px] font-medium text-ink-2 transition hover:border-ink-3 hover:bg-card-2 hover:text-ink"
                   onClick={() => setShowLinks(true)}
                 >
-                  + Add links (website, Telegram, X)
+                  + Add links (website, Telegram, X, Discord)
                 </button>
               )}
             </div>
@@ -484,7 +511,7 @@ export default function CreatePage() {
                 <SplitBar className="flex-1 lg:hidden" shares={shares} labels={shareLabels} hot={hot} />
                 <div className="ml-auto shrink-0 text-right">
                   <div className="eyebrow">Total</div>
-                  <div className={`num mt-1 text-[15px] font-semibold ${totalBps === BPS ? "text-up-ink" : "text-down-ink"}`}>{pct(totalBps)} / 100%</div>
+                  <div className={`num mt-1 text-[15px] font-semibold ${totalBps === SPLIT_TOTAL_BPS ? "text-up-ink" : "text-down-ink"}`}>{pct(totalBps)} / 100%</div>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -518,49 +545,76 @@ export default function CreatePage() {
 
           <Section
             n={3}
-            done={stepDone(3) && (firstBuyWei ?? 0n) > 0n}
+            done={stepDone(3)}
             delay={160}
-            title={
-              <label htmlFor="devbuy" className="cursor-pointer">
-                Be the first buyer{" "}
-                <span className="whitespace-nowrap align-middle font-sans text-[14px] font-medium tracking-normal text-ink-3 [font-variation-settings:normal]">(optional)</span>
-              </label>
-            }
+            title="Tax and first buy"
+            hint="Both optional. Leave them at 0 for a plain pons coin."
           >
-            <div className="relative">
-              <input
-                id="devbuy"
-                className="input num h-14 pr-16 text-[20px] sm:text-[22px]"
-                inputMode="decimal"
-                placeholder="0"
-                value={devBuy}
-                onChange={(e) => setDevBuy(e.target.value.replace(",", "."))}
-              />
-              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 font-mono text-[13px] font-semibold text-ink-2">ETH</span>
-            </div>
-            {launch && firstBuyWei !== undefined && firstBuyWei > 0n ? (
-              <div className="mt-3 animate-slide-up rounded-2xl border border-line bg-card-2 px-4 py-3">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <span className="eyebrow">You get about</span>
-                  <span className="num text-[15px] font-semibold">
-                    <Flash value={launch.tokens}>
-                      {compact(Number(formatUnits(launch.tokens, 18)))} ${ticker}
-                    </Flash>
-                  </span>
-                </div>
-                <p className="mt-1 font-mono text-[11px] leading-relaxed text-ink-3">
-                  {launch.soldOut
-                    ? "The whole curve: the coin graduates to PonSwap at launch and the rest of your ETH is refunded."
-                    : `${launch.supplyShare.toLocaleString("en-US", { maximumFractionDigits: 2 })}% of the supply`}
-                </p>
+            <div>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="label !mb-0" id="tax-label">
+                  Creator tax
+                </span>
+                <span className="font-mono text-[11px] text-ink-3">all of it goes to your X accounts</span>
               </div>
-            ) : null}
-            <p className="mt-3 text-[12px] leading-relaxed text-ink-2">
-              Bought in the same transaction as the launch, so nobody gets in before you.
-              {creationFee === undefined ? "" : creationFee > 0n ? ` Launch fee ${formatEther(creationFee)} ETH, paid on top.` : " Launching is free."}
-            </p>
-            {terms.isError && !shownTerms ? (
-              <p className="mt-2 text-[12px] font-medium text-down-ink">Can&apos;t read the launch terms from {activeChain.name} right now. Retrying…</p>
+              <div role="radiogroup" aria-labelledby="tax-label" className="mt-2 flex flex-wrap gap-1.5">
+                {taxChoices.map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    role="radio"
+                    aria-checked={taxBps === b}
+                    data-active={taxBps === b}
+                    onClick={() => setTaxBps(b)}
+                    className="h-10 min-w-[3.5rem] rounded-full border border-line bg-card-2 px-3 font-mono text-[12.5px] font-medium text-ink-2 transition hover:border-line-2 hover:text-ink active:scale-95 data-[active=true]:border-transparent data-[active=true]:bg-lime data-[active=true]:text-[var(--lime-ink)]"
+                  >
+                    {b === 0 ? "None" : `${b / 100}%`}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[12px] leading-relaxed text-ink-2">
+                An extra fee on every buy and sell, on top of pons&apos;s 1%. Buyers see it; a lower tax is friendlier to trade.
+              </p>
+            </div>
+
+            <div className="mt-6 border-t border-dashed border-line-2 pt-5">
+              <label htmlFor="devbuy" className="label">
+                Be the first buyer
+              </label>
+              <div className="relative">
+                <input
+                  id="devbuy"
+                  className="input num h-14 pr-16 text-[20px] sm:text-[22px]"
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={devBuy}
+                  onChange={(e) => setDevBuy(e.target.value.replace(",", "."))}
+                />
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 font-mono text-[13px] font-semibold text-ink-2">ETH</span>
+              </div>
+              {launch && firstBuyWei !== undefined && firstBuyWei > 0n ? (
+                <div className="mt-3 animate-slide-up rounded-2xl border border-line bg-card-2 px-4 py-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                    <span className="eyebrow">You get about</span>
+                    <span className="num text-[15px] font-semibold">
+                      <Flash value={launch.tokens}>
+                        {compact(Number(formatUnits(launch.tokens, 18)))} ${ticker}
+                      </Flash>
+                    </span>
+                  </div>
+                  <p className="mt-1 font-mono text-[11px] leading-relaxed text-ink-3">
+                    {launch.soldOut
+                      ? `The whole curve: the coin graduates at launch and ${formatEth(firstBuyWei - launch.spent, 4)} ETH is refunded.`
+                      : `${launch.supplyShare.toLocaleString("en-US", { maximumFractionDigits: 2 })}% of the supply`}
+                  </p>
+                </div>
+              ) : null}
+              <p className="mt-3 text-[12px] leading-relaxed text-ink-2">
+                Bought in the same transaction as the launch, so nobody gets in before you, and free of pons&apos;s opening snipe tax.
+              </p>
+            </div>
+            {terms.isError && !shownTerms && live ? (
+              <p className="mt-2 text-[12px] font-medium text-down-ink">Can&apos;t read the launch terms from {n.chain.name} right now. Retrying…</p>
             ) : null}
           </Section>
         </div>
@@ -611,7 +665,7 @@ export default function CreatePage() {
                 <Progress value={launch?.progress ?? 0} graduated={launch?.soldOut} size="sm" />
               </div>
               <span className={`num text-[11px] font-semibold ${launch?.soldOut ? "text-up-ink" : "text-ink-2"}`}>
-                {launch?.soldOut ? "PonSwap" : `${progressText(launch?.progress ?? 0)}%`}
+                {launch?.soldOut ? "Uniswap" : `${progressText(launch?.progress ?? 0)}%`}
               </span>
             </div>
             <div className="flex items-center justify-between border-t border-line pt-2.5 font-mono text-[11px] text-ink-3">
@@ -624,8 +678,8 @@ export default function CreatePage() {
           <div className="card mt-3 p-4">
             <div className="flex items-baseline justify-between gap-3">
               <span className="eyebrow">Fee split</span>
-              {creatorPct !== undefined ? (
-                <span className="font-mono text-[11px] text-ink-3">{creatorPct.toLocaleString("en-US", { maximumFractionDigits: 2 })}% of every trade</span>
+              {accountsPct !== undefined ? (
+                <span className="font-mono text-[11px] text-ink-3">{accountsPct.toLocaleString("en-US", { maximumFractionDigits: 2 })}% of every trade</span>
               ) : null}
             </div>
             <SplitBar className="mt-3" shares={shares} labels={shareLabels} hot={hot} onHot={setHot} />
@@ -680,14 +734,18 @@ export default function CreatePage() {
                   <LockIcon />
                 </span>
                 <div className="min-w-0">
-                  <div className="eyebrow">Launch</div>
-                  {feeBps !== undefined && protocolShareBps !== undefined ? (
+                  <div className="eyebrow">Launch on pons</div>
+                  {shownTerms && platformBps !== undefined && accountsPct !== undefined ? (
                     <p className="mt-1.5 text-[14px] leading-relaxed text-ink-2">
-                      Terms locked in at launch: {Number(feeBps) / 100}% fee on every trade, of which{" "}
-                      <b className="font-semibold text-ink">{(10_000 - Number(protocolShareBps)) / 100}% goes to your X accounts</b>.
+                      Terms locked in at launch: pons&apos;s {Number(shownTerms.curveFeeBps) / 100}% fee on every trade, {(10_000 - PONS_PROTOCOL_SHARE_BPS) / 100}% of it
+                      the creator&apos;s{taxBps ? `, plus your ${taxBps / 100}% tax` : ""}.{" "}
+                      <b className="font-semibold text-ink">
+                        {accountsPct.toLocaleString("en-US", { maximumFractionDigits: 2 })}% of every trade goes to your X accounts
+                      </b>
+                      ; PonsEarn keeps {shownTerms.platformShareBps / 100}% of the creator&apos;s share of the fee{taxBps ? " (none of the tax)" : ""}.
                     </p>
                   ) : (
-                    <p className="mt-1.5 text-[14px] text-ink-3">Reading the launch terms from {activeChain.name}…</p>
+                    <p className="mt-1.5 text-[14px] text-ink-3">{live ? `Reading the launch terms from ${n.chain.name}…` : `PonsEarn isn't live on ${n.label.toLowerCase()} yet.`}</p>
                   )}
                 </div>
               </div>
@@ -695,8 +753,8 @@ export default function CreatePage() {
               {shownTerms ? (
                 <dl className="space-y-2 border-t border-dashed border-line-2 pt-4 font-mono text-[12px]">
                   <div className="flex items-baseline justify-between gap-3">
-                    <dt className="text-ink-3">Launch fee</dt>
-                    <dd className="text-ink">{shownTerms.creationFee > 0n ? `${formatEther(shownTerms.creationFee)} ETH` : "free"}</dd>
+                    <dt className="text-ink-3">pons launch fee</dt>
+                    <dd className="text-ink">{shownTerms.ponsLaunchFee > 0n ? `${formatEther(shownTerms.ponsLaunchFee)} ETH` : "free"}</dd>
                   </div>
                   <div className="flex items-baseline justify-between gap-3">
                     <dt className="text-ink-3">First buy</dt>
@@ -706,8 +764,8 @@ export default function CreatePage() {
                     <dt className="text-ink-2">You pay</dt>
                     <dd className="text-right">
                       <span className="text-[14px] font-semibold text-ink">
-                        <Flash value={firstBuyWei === undefined ? undefined : shownTerms.creationFee + firstBuyWei}>
-                          {firstBuyWei === undefined ? "–" : `${formatEther(shownTerms.creationFee + firstBuyWei)} ETH`}
+                        <Flash value={firstBuyWei === undefined ? undefined : shownTerms.ponsLaunchFee + firstBuyWei}>
+                          {firstBuyWei === undefined ? "–" : `${formatEther(shownTerms.ponsLaunchFee + firstBuyWei)} ETH`}
                         </Flash>
                       </span>{" "}
                       <span className="text-ink-3">+ gas</span>
@@ -738,19 +796,36 @@ export default function CreatePage() {
               {server && !server.signer ? (
                 <p className="flex items-start gap-2.5 rounded-2xl bg-down-soft px-4 py-3 text-[13px] text-down-ink">
                   <AlertIcon />
-                  <span>This server has no signer configured, so launches are disabled.</span>
+                  <span>This server has no signing key yet, so X accounts can&apos;t be verified and launches are disabled.</span>
                 </p>
               ) : null}
-              {paused ? (
+              {!live ? (
+                <p className="flex items-start gap-2.5 rounded-2xl bg-card-2 px-4 py-3 text-[13px] text-ink-2">
+                  <AlertIcon />
+                  <span>
+                    PonsEarn isn&apos;t live on {n.label.toLowerCase()} yet.{" "}
+                    <Link href="/setup" className="font-medium text-ink underline">
+                      Set it up
+                    </Link>{" "}
+                    or switch networks at the top.
+                  </span>
+                </p>
+              ) : null}
+              {shownTerms?.paused ? (
                 <p className="flex items-start gap-2.5 rounded-2xl bg-down-soft px-4 py-3 text-[14px] font-medium text-down-ink">
                   <PauseIcon />
-                  <span>New launches are paused by the owner for now.</span>
+                  <span>New launches are paused by PonsEarn&apos;s owner for now.</span>
+                </p>
+              ) : shownTerms && !shownTerms.canLaunch ? (
+                <p className="flex items-start gap-2.5 rounded-2xl bg-down-soft px-4 py-3 text-[14px] font-medium text-down-ink">
+                  <PauseIcon />
+                  <span>pons isn&apos;t taking new launches right now.</span>
                 </p>
               ) : null}
 
               <button className="btn-neon group/cta w-full py-4 text-[17px] sm:py-[18px] sm:text-[18px]" disabled={launchDisabled} onClick={() => guard(submit)}>
                 {status ? <span aria-hidden className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" /> : null}
-                {!isConnected ? "Connect wallet to launch" : status ?? (shownTerms ? "Launch coin" : "Reading launch terms…")}
+                {!isConnected ? "Connect wallet to launch" : status ?? (!live ? `Not live on ${n.label.toLowerCase()}` : shownTerms ? "Launch coin" : "Reading launch terms…")}
                 {!launchDisabled ? (
                   <span aria-hidden className="transition-transform duration-300 group-hover/cta:translate-x-1">
                     →
@@ -824,7 +899,7 @@ function SplitBar({
   onHot?: (i: number | null) => void;
   className?: string;
 }) {
-  const rest = Math.max(0, BPS - shares.reduce((a, b) => a + b, 0));
+  const rest = Math.max(0, SPLIT_TOTAL_BPS - shares.reduce((a, b) => a + b, 0));
   return (
     <div aria-hidden className={`flex h-4 w-full gap-[3px] overflow-hidden rounded-full bg-card-3 p-[3px] ${className}`}>
       {shares.map((s, i) =>
@@ -898,6 +973,14 @@ function XMarkIcon() {
     <svg {...ICON}>
       <path d="M4.5 4h4L19.5 20h-4z" />
       <path d="M19.5 4 13.4 10.9M4.5 20l6.1-6.9" />
+    </svg>
+  );
+}
+
+function ChatIcon() {
+  return (
+    <svg {...ICON}>
+      <path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" />
     </svg>
   );
 }

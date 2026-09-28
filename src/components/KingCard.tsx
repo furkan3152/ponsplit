@@ -1,17 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { coinImage } from "@/lib/coin-ui";
 import { compact, formatPrice, progressText } from "@/lib/format";
 import { useHandleChecks } from "@/lib/hooks";
-import { describe } from "@/lib/market";
-import type { TokenView } from "@/lib/types";
+import type { Coin } from "@/lib/types";
 import { Progress } from "./Progress";
 import { TokenAvatar } from "./TokenAvatar";
 import { XAvatarStack } from "./XAvatar";
 
 /** pump.fun's "king of the hill": the bonding coin closest to graduating, in a spotlight. */
-export function KingCard({ t }: { t: TokenView }) {
-  const { price, marketCap, progress, meta } = describe(t);
+export function KingCard({ t, description }: { t: Coin; description?: string }) {
   const checks = useHandleChecks(t.handles, t.xIds);
   return (
     <Link href={`/token/${t.token}`} className="card ring-glow group relative block rounded-[28px] p-5 sm:p-7">
@@ -27,27 +26,27 @@ export function KingCard({ t }: { t: TokenView }) {
         <span className="eyebrow hidden sm:block">Closest to graduating</span>
       </div>
       <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center">
-        <TokenAvatar src={meta.image} seed={t.token} size={112} className="transition duration-500 group-hover:-rotate-3 group-hover:scale-105" />
+        <TokenAvatar src={coinImage(t)} seed={t.token} size={112} className="transition duration-500 group-hover:-rotate-3 group-hover:scale-105" />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <h2 className="display truncate text-[34px] leading-none sm:text-[40px]">{t.name}</h2>
             <span className="shrink-0 font-mono text-[13px] text-ink-2">${t.symbol}</span>
           </div>
-          <p className="mt-2 line-clamp-2 max-w-xl text-[15px] text-ink-2">{meta.description || "No description"}</p>
+          <p className="mt-2 line-clamp-2 max-w-xl text-[15px] text-ink-2">{description || `Every trade pays ${t.handles.map((h) => `@${h}`).join(", ")}.`}</p>
           <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-[13px] text-ink-2">
             <XAvatarStack handles={t.handles} checks={checks} size={24} />
             <span>
-              mcap <span className="num font-semibold text-ink">{compact(marketCap)} ETH</span>
+              mcap <span className="num font-semibold text-ink">{compact(t.marketCap)} ETH</span>
             </span>
             <span>
-              price <span className="num font-semibold text-ink">{formatPrice(price)}</span>
+              price <span className="num font-semibold text-ink">{formatPrice(t.price)}</span>
             </span>
           </div>
           <div className="mt-5 flex items-center gap-3">
             <div className="flex-1">
-              <Progress value={progress} />
+              <Progress value={t.progress} />
             </div>
-            <span className="num text-neon text-[15px] font-bold">{progressText(progress, 1)}%</span>
+            <span className="num text-neon text-[15px] font-bold">{progressText(t.progress, 1)}%</span>
           </div>
         </div>
       </div>

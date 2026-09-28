@@ -1,30 +1,31 @@
 import "server-only";
-import type { Address, Hex } from "viem";
+import type { Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { activeChain } from "./chains";
 import { adminKey } from "./adminKey";
-import { FEE_VAULT_ADDRESS } from "./config";
+import type { Network } from "./networks";
 
-// Must stay in sync with FeeVault's EIP712("PonSplit FeeVault", "2") and its typehashes. The domain keeps the
-// project's first name: every signature the deployed contracts accept is bound to it.
-const domain = () => ({
-  name: "PonSplit FeeVault",
-  version: "2",
-  chainId: activeChain.id,
-  verifyingContract: FEE_VAULT_ADDRESS as Address,
-});
-
+/**
+ * The server's signing key. It only signs: launch attestations (X username → account id) and claim
+ * payouts, for both networks. It holds no funds and owns nothing; the owner's wallet owns the
+ * contracts, and FeeVault.setSigner replaces the key.
+ */
 export function signerAccount() {
   const key = adminKey();
-  if (!key || !FEE_VAULT_ADDRESS) return undefined;
-  return privateKeyToAccount(key);
+  return key ? privateKeyToAccount(key) : undefined;
 }
 
-export function signAttestation(args: { creator: Address; xIds: bigint[]; handles: string[]; deadline: bigint }) {
+// Must stay in sync with FeeVault's EIP712("PonsEarn FeeVault", "1") and its typehashes. The chain id
+// and the vault's address keep a signature for one network (or one vault) from working on another.
+function domain(n: Network) {
+  if (!n.feeVault) throw new Error(`PonsEarn isn't live on ${n.label} yet.`);
+  return { name: "PonsEarn FeeVault", version: "1", chainId: n.chain.id, verifyingContract: n.feeVault } as const;
+}
+
+export function signAttestation(n: Network, args: { creator: Address; xIds: bigint[]; handles: string[]; deadline: bigint }) {
   const account = signerAccount();
   if (!account) throw new Error("Signer not configured");
   return account.signTypedData({
-    domain: domain(),
+    domain: domain(n),
     types: {
       SplitAttestation: [
         { name: "creator", type: "address" },
@@ -38,11 +39,11 @@ export function signAttestation(args: { creator: Address; xIds: bigint[]; handle
   });
 }
 
-export function signClaim(args: { xId: bigint; to: Address; nonce: bigint; deadline: bigint }) {
+export function signClaim(n: Network, args: { xId: bigint; to: Address; nonce: bigint; deadline: bigint }) {
   const account = signerAccount();
   if (!account) throw new Error("Signer not configured");
   return account.signTypedData({
-    domain: domain(),
+    domain: domain(n),
     types: {
       Claim: [
         { name: "xId", type: "uint64" },

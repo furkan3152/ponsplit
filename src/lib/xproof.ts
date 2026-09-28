@@ -2,9 +2,9 @@ import "server-only";
 import { createHmac, createHash } from "crypto";
 import { getAddress, type Address } from "viem";
 import { adminKey } from "./adminKey";
-import { isValidHandle, normalizeHandle } from "./handles";
+import { normalizeHandle } from "./handles";
 import { limitClient } from "./ratelimit";
-import { fxFetch, mockXId, resolverMode } from "./x";
+import { fxFetch } from "./x";
 
 /**
  * "Post to verify": proves control of an X account without an X developer app.
@@ -144,13 +144,6 @@ async function fetchPost(id: string): Promise<Post | null> {
  * for upstream fetches; see loadPost.
  */
 export async function verifyProofPost(url: string, wallet: Address, client: string): Promise<ProofResult> {
-  if (resolverMode() === "mock") {
-    // Local development: "mock:<username>" stands in for a real post.
-    const handle = normalizeHandle(url.replace(/^mock:/, ""));
-    if (!url.startsWith("mock:") || !isValidHandle(handle)) throw new Error("Use mock:<username> in mock mode.");
-    return { id: mockXId(handle).toString(), username: handle, name: handle };
-  }
-
   const id = statusId(url);
   if (!id) throw new Error("Paste the link to your post (x.com/…/status/…).");
   const post = await loadPost(id, client);

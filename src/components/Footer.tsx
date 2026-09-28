@@ -1,22 +1,25 @@
+"use client";
+
 import Link from "next/link";
-import { activeChain } from "@/lib/chains";
-import { FAUCET_URL } from "@/lib/config";
+import { useNetwork } from "@/lib/network-context";
 import { ThemeToggle } from "./ThemeToggle";
 import { Wordmark } from "./art";
 
 export function Footer() {
+  const n = useNetwork();
   return (
     <footer className="relative mt-8 overflow-hidden border-t border-line">
-      <div className="mx-auto max-w-6xl px-4 pb-28 pt-12 sm:px-6 sm:pb-10">
+      <div className="mx-auto max-w-6xl px-4 pb-28 pt-12 sm:px-6 md:pb-10">
         <div className="flex flex-col gap-8 sm:flex-row sm:items-end sm:justify-between">
           <div className="max-w-sm space-y-3">
             <Wordmark size={30} />
             <p className="text-[14px] leading-relaxed text-ink-2">
-              One coin, many X accounts. Every trade&apos;s fee is split between the accounts a coin names, on the curve and after it graduates.
+              One coin, many X accounts. Coins launch on pons and every trade&apos;s creator fee is split between the accounts a coin names, on the curve and after
+              it graduates.
             </p>
             <span className="inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-[12px] font-medium text-ink-2">
-              <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" aria-hidden />
-              Built on {activeChain.name}
+              <span className={`h-1.5 w-1.5 rounded-full ${n.isTestnet ? "bg-sun" : "animate-pulse-dot bg-lime"}`} aria-hidden />
+              {n.chain.name}
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-[14px] text-ink-2">
@@ -29,20 +32,28 @@ export function Footer() {
             <Link href="/claim" className="transition hover:text-ink">
               Claim
             </Link>
-            {activeChain.testnet ? (
-              <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="transition hover:text-ink">
+            {n.faucet ? (
+              <a href={n.faucet} target="_blank" rel="noreferrer" className="transition hover:text-ink">
                 Testnet faucet ↗
               </a>
             ) : null}
-            <a href={activeChain.blockExplorers.default.url} target="_blank" rel="noreferrer" className="transition hover:text-ink">
+            <a href={n.explorer} target="_blank" rel="noreferrer" className="transition hover:text-ink">
               Explorer ↗
             </a>
             <ThemeToggle />
           </div>
         </div>
-        <p className="mt-8 text-[12px] text-ink-3">
-          Experimental software on a {activeChain.testnet ? "test network; tokens have no value" : "live network; trade at your own risk"}.
-        </p>
+        <div className="mt-8 space-y-2 text-[12px] leading-relaxed text-ink-3">
+          <p>
+            PonsEarn is an independent app built on pons (
+            <a href="https://ponsfamily.com" target="_blank" rel="noreferrer" className="underline-offset-2 hover:text-ink-2 hover:underline">
+              ponsfamily.com
+            </a>
+            ). It is not affiliated with, endorsed by or operated by pons.
+            {n.ponsIsCopy ? " On testnet, coins launch on PonsEarn's own copy of pons's open-source contracts." : ""}
+          </p>
+          <p>Experimental software on a {n.isTestnet ? "test network; coins and test ETH have no value" : "live network; trade at your own risk"}.</p>
+        </div>
         {/* Filled, fading into the page. An outline would show where the variable font's glyph
             contours overlap (the stem inside the P, the bar of the t). */}
         <div

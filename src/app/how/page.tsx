@@ -5,23 +5,26 @@ import { HowItWorks } from "@/components/HowItWorks";
 import { StepLaunch } from "@/components/art";
 import { Avatar, C, type FaceKind, type Hair } from "@/components/art/parts";
 import { Reveal } from "@/components/motion";
-import { activeChain } from "@/lib/chains";
-import { FAUCET_URL } from "@/lib/config";
+import { NETWORKS } from "@/lib/networks";
 
 export const metadata: Metadata = { title: "How it works" };
 
 const FAQ: { q: string; a: React.ReactNode }[] = [
   {
+    q: "Where does the coin live?",
+    a: "On pons. PonsEarn launches it through pons's own factory, so it is a regular pons coin: pons mints it, runs its bonding curve and graduates it into a Uniswap v4 pool with locked liquidity. The only difference is who receives its creator fees: a per-coin splitter that pays the X accounts.",
+  },
+  {
     q: "Where do the fees come from?",
-    a: "Every buy and sell pays a 1% fee. 80% of it is split between the coin's X accounts by the shares set at launch; 20% goes to the protocol. The split never changes after launch.",
+    a: "Every buy and sell pays pons's 1% fee: 30% of it goes to pons and 70% is the creator's. Of the creator's part, 80% goes to the coin's X accounts by the shares set at launch and 20% to PonsEarn. A coin can also carry a creator tax of up to 10%, chosen at launch; all of it goes to the X accounts. The split never changes after launch.",
   },
   {
     q: "What happens when the curve sells out?",
-    a: "The coin graduates: the ETH it raised and the remaining 20.7% of supply seed its PonSwap pool. That liquidity is locked forever and trading continues right on the coin page, still paying the same accounts.",
+    a: "The coin graduates the pons way: at 4.2 ETH the curve closes, and its ETH plus the reserved coins seed a Uniswap v4 pool whose liquidity is locked. Trading continues right on the coin page, and the pool's fees keep paying the same accounts.",
   },
   {
     q: "How do X accounts get paid?",
-    a: "Fees are held by the FeeVault contract under each account's permanent X user id, so renaming an account never loses its earnings. On the Claim page the owner proves the account is theirs by posting a one-time code (or signing in with X), then sends everything to any wallet.",
+    a: "Fees are held by the FeeVault contract under each account's permanent X user id, so renaming an account never loses its earnings. On the Claim page the owner proves the account is theirs by posting a one-time code (or signing in with X), then sends everything to any wallet; the latest fees are collected in the same transaction.",
   },
   {
     q: "Can someone claim fees for an account they don't own?",
@@ -32,19 +35,19 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     a: "No. Any public X account can be added. Their earnings wait in the vault until they choose to claim.",
   },
   {
+    q: "Is PonsEarn part of pons?",
+    a: "No. PonsEarn is an independent app built on pons's public contracts. It is not affiliated with, endorsed by or operated by pons.",
+  },
+  {
     q: "Which network is this?",
     a: (
       <>
-        {activeChain.name} (chain id {activeChain.id}).{" "}
-        {activeChain.testnet ? (
-          <>
-            Test ETH is free from the{" "}
-            <a className="underline" href={FAUCET_URL} target="_blank" rel="noreferrer">
-              faucet
-            </a>
-            ; tokens here have no value.
-          </>
-        ) : null}
+        Both: Robinhood Chain mainnet (chain id {NETWORKS.mainnet.chain.id}) and its testnet (chain id {NETWORKS.testnet.chain.id}). Pick one at the top of any
+        page. pons itself runs on mainnet; on testnet, coins launch on PonsEarn&apos;s own copy of pons&apos;s open-source contracts. Test ETH is free from the{" "}
+        <a className="underline" href={NETWORKS.testnet.faucet} target="_blank" rel="noreferrer">
+          faucet
+        </a>
+        ; testnet coins have no value.
       </>
     ),
   },
@@ -67,9 +70,11 @@ const ACCOUNTS: Account[] = [
   { handle: "sol", share: 10, color: C.orange, hair: 4, hairColor: C.sky, face: "happy" },
 ];
 
-// The same numbers the FAQ states: 1% of every trade, 80% of that to the accounts, 20% to the protocol.
+// The same numbers the FAQ states: pons's 1% fee on every trade, 70% of it the creator's, and 80% of
+// that to the accounts (20% to PonsEarn). A coin's optional creator tax comes on top, all to the accounts.
 const TRADE_ETH = 1;
 const FEE_PCT = 1;
+const CREATOR_PCT = 70;
 const ACCOUNTS_PCT = 80;
 const eth = (n: number) => `${n.toFixed(4)} ETH`;
 
@@ -144,7 +149,7 @@ export default function HowPage() {
       {/* ── 02 · Where the fee goes ──────────────────────────────────────── */}
       <section id="fees" className="scroll-mt-24 space-y-8">
         <ChapterHead n="02" kicker="The money" title="Where the fee goes">
-          Every buy and every sell pays a 1% fee, on the bonding curve and in the PonSwap pool after graduation. Here is one trade&apos;s fee, followed all the way down.
+          Every buy and every sell pays pons&apos;s 1% fee, on the bonding curve and in the Uniswap v4 pool after graduation. Here is one trade&apos;s fee, followed all the way down.
         </ChapterHead>
         <FeeFlow />
       </section>
@@ -236,14 +241,16 @@ function ChapterHead({ n, kicker, title, children }: { n: string; kicker: string
 }
 
 /**
- * Where one trade's fee goes, zooming in twice: 1 square in 100 is the fee, the fee splits 80/20
- * between the X accounts and the protocol, and the accounts' 80% splits by their shares. The
- * receipt beside it runs the same numbers for a 1 ETH trade.
+ * Where one trade's fee goes, zooming in three times: 1 square in 100 is pons's fee, 70% of the fee
+ * is the creator's, 80% of that goes to the X accounts, and the accounts' part splits by their
+ * shares. The receipt beside it runs the same numbers for a 1 ETH trade.
  */
 function FeeFlow() {
   const fee = (TRADE_ETH * FEE_PCT) / 100;
-  const toAccounts = (fee * ACCOUNTS_PCT) / 100;
-  const toProtocol = fee - toAccounts;
+  const creator = (fee * CREATOR_PCT) / 100;
+  const toPons = fee - creator;
+  const toAccounts = (creator * ACCOUNTS_PCT) / 100;
+  const toPlatform = creator - toAccounts;
   return (
     <Reveal as="figure" className="card relative isolate overflow-hidden rounded-[28px] p-5 sm:p-8">
       <div aria-hidden className="bg-grid absolute inset-0 -z-10 opacity-60" />
@@ -259,36 +266,32 @@ function FeeFlow() {
           <div className="mt-2.5 flex items-center justify-between gap-3 font-mono text-[11px]">
             <span className="text-ink-3">99% · the trade itself</span>
             <span className="text-ink-2">
-              <span className="text-neon font-semibold">1%</span> · the fee
+              <span className="text-neon font-semibold">1%</span> · pons&apos;s fee
             </span>
           </div>
 
           <Wedge id="how-wedge-fee" from={[96.7, 100]} delay={520} />
 
           <RowHead label="The 1% fee" />
-          <div className={`flex h-12 overflow-hidden rounded-2xl border border-line ${WIPE}`} style={{ transitionDelay: "640ms" }}>
-            <div className="relative flex w-4/5 min-w-0 items-center gap-2 overflow-hidden bg-lime px-3.5 text-[var(--lime-ink)]">
-              <span className="num text-[16px] font-bold">{ACCOUNTS_PCT}%</span>
-              <span className="truncate text-[12px] font-semibold">X accounts</span>
-              <span
-                aria-hidden
-                className="absolute inset-0 animate-shimmer bg-[length:200%_100%]"
-                style={{ backgroundImage: "linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.5) 50%, transparent 70%)" }}
-              />
-            </div>
-            <div className="flex w-1/5 items-center justify-center border-l border-line bg-card-3 bg-[repeating-linear-gradient(135deg,transparent_0_5px,var(--line-2)_5px_6px)]">
-              <span className="num text-[13px] font-semibold text-ink-2">{100 - ACCOUNTS_PCT}%</span>
-            </div>
+          <SplitBar left={CREATOR_PCT} leftLabel="creator" rightLabel={`${100 - CREATOR_PCT}%`} delay={640} />
+          <div className="mt-2.5 flex items-center justify-between gap-3 font-mono text-[11px] text-ink-3">
+            <span>the creator&apos;s share</span>
+            <span>to pons</span>
           </div>
+
+          <Wedge id="how-wedge-creator" from={[0, CREATOR_PCT]} delay={900} />
+
+          <RowHead label="The creator's 70%" />
+          <SplitBar left={ACCOUNTS_PCT} leftLabel="X accounts" rightLabel={`${100 - ACCOUNTS_PCT}%`} delay={1020} />
           <div className="mt-2.5 flex items-center justify-between gap-3 font-mono text-[11px] text-ink-3">
             <span>to the X accounts</span>
-            <span>to the protocol</span>
+            <span>to PonsEarn</span>
           </div>
 
-          <Wedge id="how-wedge-accounts" from={[0, ACCOUNTS_PCT]} delay={1000} />
+          <Wedge id="how-wedge-accounts" from={[0, ACCOUNTS_PCT]} delay={1300} />
 
-          <RowHead label="The accounts' 80%" note="example shares" />
-          <div className={`flex h-11 gap-[3px] overflow-hidden rounded-2xl ${WIPE}`} style={{ transitionDelay: "1120ms" }}>
+          <RowHead label="The accounts' part" note="example shares" />
+          <div className={`flex h-11 gap-[3px] overflow-hidden rounded-2xl ${WIPE}`} style={{ transitionDelay: "1420ms" }}>
             {ACCOUNTS.map((a) => (
               <div key={a.handle} className="grid min-w-0 place-items-center" style={{ flex: `${a.share} 1 0%`, backgroundColor: a.color }}>
                 <span className="num text-[11px] font-bold text-[var(--lime-ink)] sm:text-[12px]">{a.share}%</span>
@@ -297,19 +300,43 @@ function FeeFlow() {
           </div>
           <div aria-hidden className="mt-2 flex gap-[3px]">
             {ACCOUNTS.map((a, i) => (
-              <div key={a.handle} className={`flex min-w-0 justify-center ${RISE}`} style={{ flex: `${a.share} 1 0%`, transitionDelay: `${1320 + i * 70}ms` }}>
+              <div key={a.handle} className={`flex min-w-0 justify-center ${RISE}`} style={{ flex: `${a.share} 1 0%`, transitionDelay: `${1620 + i * 70}ms` }}>
                 <AccountFace a={a} className="h-7 w-7 sm:h-8 sm:w-8" />
               </div>
             ))}
           </div>
         </div>
 
-        <Receipt fee={fee} toAccounts={toAccounts} toProtocol={toProtocol} />
+        <Receipt fee={fee} toPons={toPons} creator={creator} toPlatform={toPlatform} toAccounts={toAccounts} />
       </div>
       <figcaption className="mt-7 border-t border-line pt-4 text-[13px] leading-relaxed text-ink-3">
-        Shares are set at launch and never change. Fees wait in the FeeVault under each account&apos;s permanent X user id until its owner claims them to any wallet.
+        Shares are set at launch and never change. A coin&apos;s creator tax (0–10%, chosen at launch) comes on top of the fee and goes entirely to its X accounts.
+        Fees wait in the FeeVault under each account&apos;s permanent X user id until its owner claims them to any wallet.
       </figcaption>
     </Reveal>
+  );
+}
+
+/** One zoom level: `left`% in neon with its label, the rest hatched. */
+function SplitBar({ left, leftLabel, rightLabel, delay }: { left: number; leftLabel: string; rightLabel: string; delay: number }) {
+  return (
+    <div className={`flex h-12 overflow-hidden rounded-2xl border border-line ${WIPE}`} style={{ transitionDelay: `${delay}ms` }}>
+      <div className="relative flex min-w-0 items-center gap-2 overflow-hidden bg-lime px-3.5 text-[var(--lime-ink)]" style={{ width: `${left}%` }}>
+        <span className="num text-[16px] font-bold">{left}%</span>
+        <span className="truncate text-[12px] font-semibold">{leftLabel}</span>
+        <span
+          aria-hidden
+          className="absolute inset-0 animate-shimmer bg-[length:200%_100%]"
+          style={{ backgroundImage: "linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.5) 50%, transparent 70%)" }}
+        />
+      </div>
+      <div
+        className="flex items-center justify-center border-l border-line bg-card-3 bg-[repeating-linear-gradient(135deg,transparent_0_5px,var(--line-2)_5px_6px)]"
+        style={{ width: `${100 - left}%` }}
+      >
+        <span className="num text-[13px] font-semibold text-ink-2">{rightLabel}</span>
+      </div>
+    </div>
   );
 }
 
@@ -355,7 +382,8 @@ function AccountFace({ a, className }: { a: Account; className?: string }) {
 }
 
 /** The same split as a till receipt, for a 1 ETH trade. */
-function Receipt({ fee, toAccounts, toProtocol }: { fee: number; toAccounts: number; toProtocol: number }) {
+function Receipt({ fee, toPons, creator, toPlatform, toAccounts }: { fee: number; toPons: number; creator: number; toPlatform: number; toAccounts: number }) {
+  const accountsPct = (FEE_PCT * CREATOR_PCT * ACCOUNTS_PCT) / 10_000;
   return (
     <div className="flex min-w-0 flex-col rounded-2xl border border-line bg-card-2 font-mono text-[12px]">
       <div className="flex items-center justify-between gap-3 border-b border-dashed border-line-2 px-4 py-3">
@@ -364,35 +392,39 @@ function Receipt({ fee, toAccounts, toProtocol }: { fee: number; toAccounts: num
       </div>
       <div className="flex-1 space-y-2.5 px-4 py-4">
         <ReceiptLine label="Trade" value={eth(TRADE_ETH)} delay={200} />
-        <ReceiptLine label={`Fee (${FEE_PCT}%)`} value={eth(fee)} delay={270} strong />
+        <ReceiptLine label={`pons fee (${FEE_PCT}%)`} value={eth(fee)} delay={270} strong />
         <div className="space-y-2.5 border-l border-line-2 pl-3">
-          <ReceiptLine label={`Protocol (${100 - ACCOUNTS_PCT}%)`} value={eth(toProtocol)} delay={340} />
-          <ReceiptLine label={`X accounts (${ACCOUNTS_PCT}%)`} value={eth(toAccounts)} delay={410} strong />
-          <div className="space-y-2 border-l border-line-2 pl-3">
-            {ACCOUNTS.map((a, i) => (
-              <ReceiptLine
-                key={a.handle}
-                delay={480 + i * 70}
-                value={eth((toAccounts * a.share) / 100)}
-                label={
-                  <>
-                    <AccountFace a={a} className="h-5 w-5 shrink-0" />
-                    <span className="truncate text-ink">@{a.handle}</span>
-                    <span className="shrink-0 text-ink-3">{a.share}%</span>
-                  </>
-                }
-              />
-            ))}
+          <ReceiptLine label={`pons (${100 - CREATOR_PCT}%)`} value={eth(toPons)} delay={340} />
+          <ReceiptLine label={`Creator (${CREATOR_PCT}%)`} value={eth(creator)} delay={380} strong />
+          <div className="space-y-2.5 border-l border-line-2 pl-3">
+            <ReceiptLine label={`PonsEarn (${100 - ACCOUNTS_PCT}%)`} value={eth(toPlatform)} delay={420} />
+            <ReceiptLine label={`X accounts (${ACCOUNTS_PCT}%)`} value={eth(toAccounts)} delay={460} strong />
+            <div className="space-y-2 border-l border-line-2 pl-3">
+              {ACCOUNTS.map((a, i) => (
+                <ReceiptLine
+                  key={a.handle}
+                  delay={520 + i * 70}
+                  value={eth((toAccounts * a.share) / 100)}
+                  label={
+                    <>
+                      <AccountFace a={a} className="h-5 w-5 shrink-0" />
+                      <span className="truncate text-ink">@{a.handle}</span>
+                      <span className="shrink-0 text-ink-3">{a.share}%</span>
+                    </>
+                  }
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>
-      <div className={`border-t border-dashed border-line-2 px-4 py-4 ${RISE}`} style={{ transitionDelay: "860ms" }}>
+      <div className={`border-t border-dashed border-line-2 px-4 py-4 ${RISE}`} style={{ transitionDelay: "900ms" }}>
         <div className="eyebrow">To the X accounts</div>
         <div className="mt-2 flex items-baseline gap-2">
-          <span className="display text-[34px] leading-none text-ink">{(FEE_PCT * ACCOUNTS_PCT) / 100}%</span>
+          <span className="display text-[34px] leading-none text-ink">{accountsPct}%</span>
           <span className="font-sans text-[14px] font-medium text-ink-2">of every trade</span>
         </div>
-        <p className="mt-2 text-ink-3">Paid on every trade, before and after graduating.</p>
+        <p className="mt-2 text-ink-3">Plus the whole creator tax, if the coin has one. Paid before and after graduating.</p>
       </div>
     </div>
   );

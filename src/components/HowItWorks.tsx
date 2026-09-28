@@ -4,18 +4,18 @@ import { Reveal } from "./motion";
 const STEPS = [
   {
     Art: StepLaunch,
-    title: "Launch in one tap",
-    body: "Name your coin, add up to ten X accounts and choose how the fees are shared. No code, no liquidity to provide.",
+    title: "Launch on pons",
+    body: "Name your coin, add up to ten X accounts and choose how their share is split. It's minted on pons like any pons coin: no code, no liquidity to provide.",
   },
   {
     Art: StepTrade,
-    title: "Trade on the curve",
-    body: "Everyone buys and sells on a bonding curve. When it sells out, the coin graduates to PonSwap with liquidity locked forever.",
+    title: "Trade, then graduate",
+    body: "Everyone trades on pons's bonding curve. At 4.2 ETH it graduates the pons way, into a Uniswap v4 pool with liquidity locked for good, and keeps trading here.",
   },
   {
     Art: StepSplit,
     title: "Fees split, forever",
-    body: "Every trade, before and after graduating, pays the X accounts. Owners sign in with X and claim to any wallet.",
+    body: "The coin's creator fees, on the curve and in the pool, go to the X accounts. They prove the account is theirs and claim to any wallet.",
   },
 ];
 

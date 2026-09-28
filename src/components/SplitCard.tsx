@@ -5,12 +5,12 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { formatEther } from "viem";
 import { useReadContract } from "wagmi";
 import { feeVaultAbi } from "@/lib/abi";
-import { activeChain } from "@/lib/chains";
-import { FEE_VAULT_ADDRESS } from "@/lib/config";
 import { formatEth, pct } from "@/lib/format";
 import { xProfileUrlById } from "@/lib/handles";
 import { useHandleChecks } from "@/lib/hooks";
-import type { TokenView } from "@/lib/types";
+import { useNetwork } from "@/lib/network-context";
+import { BPS, PONS_FEE_BPS, PONS_PROTOCOL_SHARE_BPS, toRecipients } from "@/lib/pons";
+import type { Coin } from "@/lib/types";
 import { CountUp, useInView } from "./motion";
 import { XAvatar } from "./XAvatar";
 
@@ -27,22 +27,30 @@ function ethText(n: number, digits = 4) {
   return n.toLocaleString("en-US", { maximumFractionDigits: digits });
 }
 
-/** Who gets this token's fees, how much of each fee, and what they've earned from it. */
-export function SplitCard({ t }: { t: TokenView }) {
+/** Of every trade's volume, the part (in %) that reaches the X accounts: the creator's share of pons's fee plus the creator tax, less PonsEarn's cut. */
+export function accountsPct(creatorTaxBps: number, platformBps: number, feeBps = PONS_FEE_BPS) {
+  const creator = (feeBps * (10_000 - PONS_PROTOCOL_SHARE_BPS)) / 10_000 + creatorTaxBps;
+  return (creator * (10_000 - platformBps)) / 10_000 / 100;
+}
+
+/** Who gets this coin's creator fees, how much of each payout, and what they've earned from it. */
+export function SplitCard({ t }: { t: Coin }) {
+  const n = useNetwork();
   const { data } = useReadContract({
-    address: FEE_VAULT_ADDRESS,
+    address: n.feeVault,
     abi: feeVaultAbi,
-    chainId: activeChain.id,
+    chainId: n.chain.id,
     functionName: "earningsOf",
     args: [t.xIds],
-    query: { enabled: Boolean(FEE_VAULT_ADDRESS && t.xIds.length), refetchInterval: 10_000 },
+    query: { enabled: Boolean(n.feeVault && t.xIds.length), refetchInterval: 10_000 },
   });
   const checks = useHandleChecks(t.handles, t.xIds);
   // Terms were locked in when this coin launched.
-  const creatorPct = (t.market.feeBps * (10_000 - t.market.protocolShareBps)) / 1e6;
+  const share = accountsPct(t.creatorTaxBps, t.platformBps);
+  const pending = toRecipients(t.feesPending, t.platformBps);
   const [barRef, barIn] = useInView<HTMLDivElement>();
-  const shares = t.bps.map((b) => Number(b) / 100);
-  const n = shares.length;
+  const shares = t.recipients.map((r) => r.bps / 100);
+  const count = shares.length;
 
   return (
     <section className="card relative isolate overflow-hidden p-4 sm:p-5">
@@ -50,7 +58,7 @@ export function SplitCard({ t }: { t: TokenView }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="eyebrow">
-            {n} X {n === 1 ? "account" : "accounts"}
+            {count} X {count === 1 ? "account" : "accounts"}
           </div>
           <h2 className="display mt-1 text-[28px] leading-none">
             Fee <span className="accent text-neon pr-1">split</span>
@@ -58,7 +66,7 @@ export function SplitCard({ t }: { t: TokenView }) {
         </div>
         <div className="shrink-0 text-right">
           <div className="num text-[20px] font-semibold leading-none text-up-ink">
-            <CountUp value={Number(formatEther(t.creatorFees))} format={(v) => ethText(v, 4)} />
+            <CountUp value={Number(formatEther(t.feesSplit))} format={(v) => ethText(v, 4)} />
           </div>
           <div className="mt-1.5 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
             <span aria-hidden className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" />
@@ -67,7 +75,9 @@ export function SplitCard({ t }: { t: TokenView }) {
         </div>
       </div>
       <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
-        {`${creatorPct.toLocaleString("en-US", { maximumFractionDigits: 2 })}% of every trade goes to these accounts, locked in at launch.`}{" "}
+        {`${share.toLocaleString("en-US", { maximumFractionDigits: 2 })}% of every trade goes to these accounts`}
+        {t.creatorTaxBps ? ` (including the ${t.creatorTaxBps / 100}% creator tax)` : ""}, locked in at launch.
+        {pending > 0n ? ` ${formatEth(pending, 5)} ETH more is on its way.` : ""}{" "}
         <Link href="/claim" className="font-medium text-ink underline-offset-2 hover:underline">
           Claim with X →
         </Link>
@@ -80,14 +90,15 @@ export function SplitCard({ t }: { t: TokenView }) {
           <span
             key={i}
             className="h-full min-w-[3px] rounded-full transition-[width] duration-700 ease-out"
-            style={{ ...swatch(i), width: barIn ? `calc(${s}% - ${((3 * (n - 1)) / n).toFixed(2)}px)` : "0px", transitionDelay: `${200 + i * 90}ms` }}
+            style={{ ...swatch(i), width: barIn ? `calc(${s}% - ${((3 * (count - 1)) / count).toFixed(2)}px)` : "0px", transitionDelay: `${200 + i * 90}ms` }}
           />
         ))}
       </div>
 
       <ul className="mt-3 divide-y divide-line">
         {t.handles.map((h, i) => {
-          const fromToken = (t.creatorFees * BigInt(t.bps[i])) / 10_000n;
+          const bps = t.recipients[i]?.bps ?? 0;
+          const fromToken = (t.feesSplit * BigInt(bps)) / BPS;
           const check = checks[i];
           return (
             <li key={`${h}:${i}`} className="flex items-center gap-3 py-3 last:pb-0">
@@ -117,14 +128,14 @@ export function SplitCard({ t }: { t: TokenView }) {
                 {data ? <div className="num text-[11px] leading-snug text-ink-3">{formatEth(data[0][i], 5)} ETH unclaimed overall</div> : null}
               </div>
               <span className="num shrink-0 rounded-full px-2 py-1 text-[12px] font-bold leading-none text-[var(--lime-ink)]" style={{ backgroundColor: colorOf(i) }}>
-                {pct(t.bps[i])}
+                {pct(bps)}
               </span>
             </li>
           );
         })}
       </ul>
       <p className="mt-4 border-t border-dashed border-line-2 pt-3 text-[11px] leading-relaxed text-ink-3">
-        Usernames as of launch. Fees follow each account&apos;s permanent X id, so a rename never moves them.
+        Usernames as of launch. Fees follow each account&apos;s permanent X id, so a rename never moves them. PonsEarn keeps {pct(t.platformBps)} of each payout.
       </p>
     </section>
   );

@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionProvider } from "next-auth/react";
 import { useState, type ReactNode } from "react";
 import { WagmiProvider } from "wagmi";
+import { NetworkProvider } from "@/lib/network-context";
+import { NETWORKS, type NetworkId } from "@/lib/networks";
 import { useTheme } from "@/lib/theme";
 import { wagmiConfig } from "@/lib/wagmi";
 
@@ -15,18 +17,21 @@ const walletThemes = {
   light: lightTheme({ accentColor: "#0b0b0d", accentColorForeground: "#ccff00", borderRadius: "large", fontStack: "system", overlayBlur: "small" }),
 };
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({ network, children }: { network: NetworkId; children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { staleTime: 4_000 } } }));
   const [theme] = useTheme();
   return (
-    <SessionProvider>
-      <WagmiProvider config={wagmiConfig}>
-        <QueryClientProvider client={queryClient}>
-          <RainbowKitProvider theme={walletThemes[theme]} modalSize="compact">
-            {children}
-          </RainbowKitProvider>
-        </QueryClientProvider>
-      </WagmiProvider>
-    </SessionProvider>
+    <NetworkProvider network={network}>
+      <SessionProvider>
+        <WagmiProvider config={wagmiConfig}>
+          <QueryClientProvider client={queryClient}>
+            {/* Connecting asks the wallet for the network the visitor picked. */}
+            <RainbowKitProvider theme={walletThemes[theme]} modalSize="compact" initialChain={NETWORKS[network].chain}>
+              {children}
+            </RainbowKitProvider>
+          </QueryClientProvider>
+        </WagmiProvider>
+      </SessionProvider>
+    </NetworkProvider>
   );
 }
