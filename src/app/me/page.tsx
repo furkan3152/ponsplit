@@ -17,7 +17,24 @@ import { describe } from "@/lib/market";
 export default function PortfolioPage() {
   const { address, isConnected } = useAccount();
   const { openConnectModal } = useConnectModal();
-  const { data: newestFirst } = useAllTokens();
+
+  if (!isConnected || !address) {
+    return (
+      <div className="mx-auto max-w-md pt-10">
+        <EmptyState title="Connect to see your coins">
+          <button className="btn-primary mt-2" onClick={openConnectModal}>
+            Connect wallet
+          </button>
+        </EmptyState>
+      </div>
+    );
+  }
+  // Keyed by wallet: switching accounts starts fresh instead of briefly showing the previous one's coins.
+  return <Portfolio key={address} address={address} />;
+}
+
+function Portfolio({ address }: { address: `0x${string}` }) {
+  const { data: newestFirst, isLoading: tokensLoading, error: tokensError } = useAllTokens();
   // Oldest first, so a new coin is appended and every earlier index keeps pointing at the same
   // coin; that is what lets the previous balances stay on screen while the next read runs.
   const tokens = useMemo(() => (newestFirst ? [...newestFirst].reverse() : undefined), [newestFirst]);
@@ -29,23 +46,14 @@ export default function PortfolioPage() {
       abi: splitTokenAbi,
       chainId: activeChain.id,
       functionName: "balanceOf" as const,
-      args: [address!] as const,
+      args: [address] as const,
     })),
-    query: { enabled: Boolean(address && tokens?.length), refetchInterval: 15_000, placeholderData: (prev) => prev },
+    query: { enabled: Boolean(tokens?.length), refetchInterval: 15_000, placeholderData: (prev) => prev },
   });
 
-  if (!isConnected) {
-    return (
-      <div className="mx-auto max-w-md pt-10">
-        <EmptyState title="Connect to see your coins">
-          <button className="btn-primary mt-2" onClick={openConnectModal}>
-            Connect wallet
-          </button>
-        </EmptyState>
-      </div>
-    );
-  }
-
+  // Don't show zeros for data we don't have yet: unknown is "–", not "0".
+  const loading = tokensLoading || (Boolean(tokens?.length) && balances === undefined);
+  const unavailable = Boolean(tokensError) && !tokens;
   // A failed read is unknown, not zero: it is left out and the page says so.
   const failed = (balances ?? []).filter((b) => b.status === "failure").length;
   const holdings = (tokens ?? [])
@@ -57,26 +65,31 @@ export default function PortfolioPage() {
     })
     .filter((h) => h.bal > 0n)
     .sort((a, b) => b.value - a.value);
-  const created = (newestFirst ?? []).filter((t) => t.market.creator.toLowerCase() === address!.toLowerCase());
+  const created = (newestFirst ?? []).filter((t) => t.market.creator.toLowerCase() === address.toLowerCase());
   const total = holdings.reduce((a, h) => a + h.value, 0);
+  const known = !loading && !unavailable;
 
   return (
     <div className="space-y-8 pt-4">
       <h1 className="font-display text-[40px] font-bold tracking-[-0.03em]">Portfolio</h1>
-      {failed ? (
+      {unavailable ? (
+        <p className="card p-4 text-[14px] text-down-ink">Couldn&apos;t load coins from {activeChain.name} right now. Retrying…</p>
+      ) : failed ? (
         <p className="card p-4 text-[14px] text-down-ink">
           {failed === 1 ? "One balance" : `${failed} balances`} couldn&apos;t be loaded right now, so totals may be low. Retrying…
         </p>
       ) : null}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Stat label="Holdings value" value={`${compact(total, 4)} Ξ`} />
-        <Stat label="Coins held" value={holdings.length} />
-        <Stat label="Coins launched" value={created.length} />
+        <Stat label="Holdings value" value={known ? `${compact(total, 4)} Ξ` : "–"} />
+        <Stat label="Coins held" value={known ? holdings.length : "–"} />
+        <Stat label="Coins launched" value={newestFirst ? created.length : "–"} />
       </div>
 
       <section className="card overflow-hidden">
         <h2 className="px-5 pb-2 pt-5 text-[17px] font-semibold">Holdings</h2>
-        {holdings.length === 0 ? (
+        {!known ? (
+          <p className="px-5 pb-5 text-[14px] text-ink-2">{unavailable ? "Unavailable right now." : "Loading…"}</p>
+        ) : holdings.length === 0 ? (
           <p className="px-5 pb-5 text-[14px] text-ink-2">
             No coins yet.{" "}
             <Link href="/" className="font-medium text-ink underline">
@@ -105,7 +118,9 @@ export default function PortfolioPage() {
 
       <section className="card overflow-hidden">
         <h2 className="px-5 pb-2 pt-5 text-[17px] font-semibold">Launched by you</h2>
-        {created.length === 0 ? (
+        {!newestFirst ? (
+          <p className="px-5 pb-5 text-[14px] text-ink-2">{unavailable ? "Unavailable right now." : "Loading…"}</p>
+        ) : created.length === 0 ? (
           <p className="px-5 pb-5 text-[14px] text-ink-2">
             Nothing yet.{" "}
             <Link href="/create" className="font-medium text-ink underline">

@@ -6,7 +6,7 @@ import { clientIp, rateLimit } from "@/lib/ratelimit";
 import { createPublicClient, http } from "viem";
 import { activeChain, rpcUrl } from "@/lib/chains";
 import { deadlineFromNow, signAttestation, signerAccount } from "@/lib/signing";
-import { resolveHandles } from "@/lib/x";
+import { ResolverBusyError, resolveHandles } from "@/lib/x";
 import { readJson } from "@/lib/body";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,8 @@ const TTL_SECONDS = 30 * 60;
  * that FeeVault checks when the token is created. The ids come from our resolver, never the client.
  */
 export async function POST(req: Request) {
-  if (!rateLimit(`attest:${clientIp(req)}`, 20, 60_000)) {
+  const ip = clientIp(req);
+  if (!rateLimit(`attest:${ip}`, 20, 60_000)) {
     return NextResponse.json({ error: "Too many requests, try again in a minute." }, { status: 429 });
   }
   if (!signerAccount()) return NextResponse.json({ error: "Launches are not configured on this server." }, { status: 500 });
@@ -33,9 +34,9 @@ export async function POST(req: Request) {
 
   let profiles;
   try {
-    profiles = await resolveHandles(handles);
+    profiles = await resolveHandles(handles, "attest", ip);
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 502 });
+    return NextResponse.json({ error: (e as Error).message }, { status: e instanceof ResolverBusyError ? 429 : 502 });
   }
   const missing = handles.filter((h) => !profiles[h]);
   if (missing.length) {

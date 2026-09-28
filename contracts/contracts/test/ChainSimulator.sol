@@ -67,7 +67,8 @@ contract ChainSimulator {
             "SIM",
             "{}",
             SplitLaunchpad.Split(xIds, handles, bps, attestDeadline, attestation),
-            0
+            0,
+            launchpad.termsVersion()
         );
         r.token = token;
         SplitToken t = SplitToken(token);

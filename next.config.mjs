@@ -29,6 +29,13 @@ function adminKeyFromEnv() {
 }
 
 function predictedAddresses() {
+  // Pinning is all or nothing: with only one address set, the app would find its launchpad but not
+  // its vault, and signing would quietly switch off.
+  const pinnedVault = Boolean(process.env.NEXT_PUBLIC_FEE_VAULT_ADDRESS);
+  const pinnedLaunchpad = Boolean(process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS);
+  if (pinnedVault !== pinnedLaunchpad) {
+    throw new Error("Set both NEXT_PUBLIC_FEE_VAULT_ADDRESS and NEXT_PUBLIC_LAUNCHPAD_ADDRESS, or neither.");
+  }
   const deployment = JSON.parse(readFileSync(new URL("./src/deployment.json", import.meta.url), "utf8"));
   const key = adminKeyFromEnv();
   const chain = process.env.NEXT_PUBLIC_CHAIN || "testnet";

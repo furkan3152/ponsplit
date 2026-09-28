@@ -2,7 +2,7 @@
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { useState } from "react";
-import { formatUnits, parseEther, type Address } from "viem";
+import { formatUnits, parseEther, parseEventLogs, type Address } from "viem";
 import { useAccount, useBalance, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { launchpadAbi, splitTokenAbi } from "@/lib/abi";
 import { activeChain } from "@/lib/chains";
@@ -82,23 +82,31 @@ export function TradePanel({ token, symbol, graduated, onTraded }: { token: Addr
     setMsg(null);
     if (!isConnected) return openConnectModal?.();
     if (!LAUNCHPAD_ADDRESS || !publicClient || !parsed || !out) return;
+    // The quote the user saw when they clicked is what the slippage setting protects.
+    const shown = out;
+    const min = (shown * (10_000n - slippage)) / 10_000n;
     setBusy(true);
     try {
       if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
-      // Re-quote right before sending: the number on screen may be seconds (or a trade) old.
+      // Re-quote before asking the wallet: if the price already moved past the slippage limit,
+      // stop here (and let the refreshed quote show) instead of sending a doomed transaction.
       const fresh =
         side === "buy"
           ? (await publicClient.readContract({ address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, functionName: "quoteBuy", args: [token, parsed] }))[0]
           : (await publicClient.readContract({ address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, functionName: "quoteSell", args: [token, parsed] }))[0];
-      if (fresh === 0n) throw new Error("That amount is too small to trade.");
-      const min = (fresh * (10_000n - slippage)) / 10_000n;
+      if (fresh < min || fresh === 0n) throw new Error("The price moved since your quote. Check the new amount and try again.");
       const hash =
         side === "buy"
           ? await writeContractAsync({ address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, chainId: activeChain.id, functionName: "buy", args: [token, min], value: parsed })
           : await writeContractAsync({ address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, chainId: activeChain.id, functionName: "sell", args: [token, parsed, min] });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("Transaction reverted");
-      setMsg({ kind: "ok", text: side === "buy" ? `Bought ${formatTokens(fresh)} ${symbol}` : `Sold for ${formatEth(fresh)} ETH` });
+      // Report what the trade actually did, from its Trade event.
+      const ev = parseEventLogs({ abi: launchpadAbi, eventName: "Trade", logs: receipt.logs }).find(
+        (l) => l.address.toLowerCase() === LAUNCHPAD_ADDRESS!.toLowerCase()
+      )?.args;
+      const got = side === "buy" ? (ev?.tokenAmount ?? fresh) : (ev?.ethAmount ?? fresh);
+      setMsg({ kind: "ok", text: side === "buy" ? `Bought ${formatTokens(got)} ${symbol}` : `Sold for ${formatEth(got)} ETH` });
       setAmount("");
       refetchEth();
       refetchToken();

@@ -3,7 +3,7 @@ import { createHmac, createHash } from "crypto";
 import { getAddress, type Address } from "viem";
 import { adminKey } from "./adminKey";
 import { isValidHandle, normalizeHandle } from "./handles";
-import { mockXId, resolverMode } from "./x";
+import { FX_HEADERS, mockXId, resolverMode } from "./x";
 
 /**
  * "Post to verify": proves control of an X account without an X developer app.
@@ -88,6 +88,7 @@ export async function verifyProofPost(url: string, wallet: Address): Promise<Pro
   if (!id) throw new Error("Paste the link to your post (x.com/…/status/…).");
   const res = await fetch(`https://api.fxtwitter.com/status/${id}`, {
     cache: "no-store",
+    headers: FX_HEADERS,
     signal: AbortSignal.timeout(8_000),
   }).catch(() => null);
   if (!res) throw new Error("Could not load the post. Try again in a minute.");

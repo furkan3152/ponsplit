@@ -26,6 +26,12 @@ test("axis precision keeps 4 significant digits", () => {
   assert.equal(formatPrice(1.398e-9, 4), "0.0₈1398");
 });
 
+test("negative values (a chart axis tick below zero) keep their sign instead of reading NaN", () => {
+  assert.equal(formatPrice(-2e-9, 4), "-0.0₈2000");
+  assert.equal(formatPrice(-0.5), "-0.500");
+  assert.equal(formatPrice(Number.NaN), "0");
+});
+
 test("larger prices", () => {
   assert.equal(formatPrice(0), "0");
   assert.equal(formatPrice(0.0123), "0.0123");

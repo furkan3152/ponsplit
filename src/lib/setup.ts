@@ -18,7 +18,7 @@ import {
 import { feeVaultAbi, launchpadAbi } from "./abi";
 import { feeVaultBytecode, launchpadBytecode } from "./bytecode";
 import { activeChain, rpcUrl } from "./chains";
-import { adminKeyProblem } from "./adminKey";
+import { adminKey, adminKeyProblem } from "./adminKey";
 import { ADDRESSES_PINNED, FEE_VAULT_ADDRESS, LAUNCHPAD_ADDRESS } from "./config";
 import { signerAccount } from "./signing";
 
@@ -112,7 +112,14 @@ export async function setupStatus(): Promise<SetupStatus> {
     ownershipDone: false,
     ownershipProposed: false,
   };
-  if (!account) return base;
+  if (!account) {
+    // A usable key but no vault address means half-configured addresses, not a missing key: say so
+    // instead of sending the operator back to "Generate admin key".
+    if (adminKey() && !FEE_VAULT_ADDRESS) {
+      return { ...base, problem: "NEXT_PUBLIC_LAUNCHPAD_ADDRESS is set without NEXT_PUBLIC_FEE_VAULT_ADDRESS. Set both, or neither." };
+    }
+    return base;
+  }
 
   const client = publicClient();
   const admin = account.address;

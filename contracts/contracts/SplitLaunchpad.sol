@@ -109,6 +109,9 @@ contract SplitLaunchpad is Ownable2Step, ReentrancyGuard {
     uint256 public creationFee;
     uint256 public protocolFees;
     bool public launchesPaused;
+    /// @notice Bumped whenever anything that prices a new launch changes (fees, curve). A launch
+    ///         can pin the version it was shown so a change while it is being signed reverts it.
+    uint256 public termsVersion;
 
     address[] public allTokens;
     mapping(address token => Market) public markets;
@@ -157,6 +160,7 @@ contract SplitLaunchpad is Ownable2Step, ReentrancyGuard {
     error TransferFailed();
     error LaunchesPaused();
     error ZeroAddress();
+    error TermsChanged();
 
     constructor(address owner_, FeeVault vault_, CurveConfig memory config_) Ownable(owner_) {
         vault = vault_;
@@ -166,16 +170,20 @@ contract SplitLaunchpad is Ownable2Step, ReentrancyGuard {
     // ---------------------------------------------------------------- launch
 
     /// @notice Creates a token. Any ETH sent above `creationFee` is used as the creator's first buy.
-    /// @param minTokensOut Minimum tokens for that first buy. When nonzero the launch reverts if the
-    ///        buy would get less, including when a fee change left no ETH for it at all, so a launch
-    ///        can never silently cost more than the creator agreed to.
+    /// @param minTokensOut Minimum tokens for that first buy; when nonzero the launch also reverts
+    ///        if the fee left no ETH for a buy at all.
+    /// @param expectedTermsVersion The `termsVersion` the creator was shown, or 0 to skip the check.
+    ///        With it, any change to the creation fee, trade fees or curve after the creator saw them
+    ///        reverts the launch, so the coin is always created on the terms the creator agreed to.
     function createToken(
         string calldata name,
         string calldata symbol,
         string calldata metadata,
         Split calldata split,
-        uint256 minTokensOut
+        uint256 minTokensOut,
+        uint256 expectedTermsVersion
     ) external payable nonReentrant returns (address token) {
+        if (expectedTermsVersion != 0 && expectedTermsVersion != termsVersion) revert TermsChanged();
         if (bytes(name).length == 0 || bytes(name).length > 32) revert InvalidMetadata();
         if (bytes(symbol).length == 0 || bytes(symbol).length > 10) revert InvalidMetadata();
         if (bytes(metadata).length > MAX_METADATA_BYTES) revert InvalidMetadata();
@@ -376,6 +384,7 @@ contract SplitLaunchpad is Ownable2Step, ReentrancyGuard {
         protocolShareBps = protocolShareBps_;
         graduationFeeBps = graduationFeeBps_;
         creationFee = creationFee_;
+        ++termsVersion;
         emit FeesSet(feeBps_, protocolShareBps_, graduationFeeBps_, creationFee_);
     }
 
@@ -470,6 +479,7 @@ contract SplitLaunchpad is Ownable2Step, ReentrancyGuard {
             revert InvalidConfig();
         }
         curveConfig = cfg;
+        ++termsVersion;
         emit CurveConfigSet(cfg.virtualEth, cfg.virtualToken, cfg.curveSupply, cfg.lpSupply);
     }
 

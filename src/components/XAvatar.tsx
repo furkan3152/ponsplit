@@ -4,11 +4,24 @@ import { useState } from "react";
 import { xAvatarUrl } from "@/lib/handles";
 import { TokenSticker } from "./art";
 
-export function XAvatar({ handle, image, size = 28, className = "" }: { handle: string; image?: string; size?: number; className?: string }) {
+export function XAvatar({
+  handle,
+  image,
+  size = 28,
+  className = "",
+  photo = true,
+}: {
+  handle: string;
+  image?: string;
+  size?: number;
+  className?: string;
+  /** false: draw the generated sticker instead of loading the photo for this username. */
+  photo?: boolean;
+}) {
   const url = image || xAvatarUrl(handle);
   // Keyed to the URL, so a new handle or a profile image that arrives later gets a fresh try.
   const [failedUrl, setFailedUrl] = useState<string>();
-  if (failedUrl === url) return <TokenSticker seed={`x:${handle}`} size={size} className={`shrink-0 rounded-full ${className}`} />;
+  if (!photo || failedUrl === url) return <TokenSticker seed={`x:${handle}`} size={size} className={`shrink-0 rounded-full ${className}`} />;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img

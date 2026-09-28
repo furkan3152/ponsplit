@@ -15,7 +15,7 @@ import { TradePanel } from "@/components/TradePanel";
 import { TradesTable } from "@/components/TradesTable";
 import { explorerUrl } from "@/lib/chains";
 import { compact, formatEth, formatPrice, formatTokens, shortAddress, timeAgo } from "@/lib/format";
-import { useNow, useToken, useTrades } from "@/lib/hooks";
+import { useHandleChecks, useNow, useToken, useTrades } from "@/lib/hooks";
 import { describe } from "@/lib/market";
 
 export default function TokenPage({ params }: { params: { address: string } }) {
@@ -133,9 +133,18 @@ export default function TokenPage({ params }: { params: { address: string } }) {
 }
 
 /** Opens an X post with the coin, its fee split and a link that unfurls into the coin's card. */
-function ShareButton({ t, className = "" }: { t: { name: string; symbol: string; handles: readonly string[]; token: string }; className?: string }) {
+function ShareButton({
+  t,
+  className = "",
+}: {
+  t: { name: string; symbol: string; handles: readonly string[]; xIds: readonly bigint[]; token: string };
+  className?: string;
+}) {
+  const checks = useHandleChecks(t.handles, t.xIds);
   function share() {
-    const who = t.handles.map((h) => `@${h}`).join(" ");
+    // @-mention only usernames confirmed to still belong to the fee recipient; a renamed account's
+    // old name may now be someone else's, so it is written without the @.
+    const who = checks.map((c) => (c.status === "current" ? `@${c.handle}` : c.handle)).join(" ");
     const text = `${t.name} ($${t.symbol}) on PonSplit: every trade splits fees to ${who}`;
     const url = `${location.origin}/token/${t.token}`;
     window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, "_blank", "noopener,noreferrer");

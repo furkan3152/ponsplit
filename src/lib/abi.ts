@@ -98,6 +98,11 @@ export const launchpadAbi = [
   },
   {
     "inputs": [],
+    "name": "TermsChanged",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "TransferFailed",
     "type": "error"
   },
@@ -563,6 +568,11 @@ export const launchpadAbi = [
       {
         "internalType": "uint256",
         "name": "minTokensOut",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "expectedTermsVersion",
         "type": "uint256"
       }
     ],
@@ -1437,6 +1447,19 @@ export const launchpadAbi = [
     "name": "setLaunchesPaused",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "termsVersion",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {

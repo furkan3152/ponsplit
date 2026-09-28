@@ -12,7 +12,7 @@ import { activeChain } from "@/lib/chains";
 import { BPS, LAUNCHPAD_ADDRESS, MAX_RECIPIENTS } from "@/lib/config";
 import { errorMessage, pct } from "@/lib/format";
 import { isValidHandle, normalizeHandle } from "@/lib/handles";
-import { useDebounced, useLaunchesPaused, useLaunchpadNumber, useXProfiles } from "@/lib/hooks";
+import { readLaunchTerms, useDebounced, useLaunchesPaused, useLaunchTerms, useXProfiles } from "@/lib/hooks";
 import { useRiskGate } from "@/components/RiskNotice";
 import { encodeMetadata, safeUrl } from "@/lib/metadata";
 import { useServerConfig } from "@/lib/useServerConfig";
@@ -40,8 +40,12 @@ function evenSplit(n: number): string[] {
   return Array.from({ length: n }, (_, i) => ((i === 0 ? base + (BPS - base * n) : base) / 100).toString());
 }
 
-/** Slippage allowed on the creator's first buy. Nobody can trade a coin before it exists, so this only absorbs rounding. */
-const FIRST_BUY_SLIPPAGE_BPS = 100n;
+/**
+ * Tolerance on the creator's first buy. The launch is pinned to the terms version the creator saw
+ * (so fees and curve can't change under it) and nobody can trade a coin before it exists, so this
+ * only covers a rounding difference between firstBuyTokens and the contract's quoteBuy.
+ */
+const FIRST_BUY_SLIPPAGE_BPS = 10n;
 
 /** Tokens a first buy of `ethIn` gets on a fresh curve; mirrors SplitLaunchpad.quoteBuy. */
 function firstBuyTokens(ethIn: bigint, feeBps: bigint, curve: readonly [bigint, bigint, bigint, bigint]): bigint {
@@ -59,9 +63,11 @@ export default function CreatePage() {
   const publicClient = usePublicClient({ chainId: activeChain.id });
   const { writeContractAsync } = useWriteContract();
   const server = useServerConfig();
-  const creationFee = useLaunchpadNumber("creationFee");
-  const feeBps = useLaunchpadNumber("feeBps");
-  const protocolShareBps = useLaunchpadNumber("protocolShareBps");
+  const terms = useLaunchTerms();
+  const shownTerms = terms.data;
+  const creationFee = shownTerms?.creationFee;
+  const feeBps = shownTerms?.feeBps;
+  const protocolShareBps = shownTerms?.protocolShareBps;
   const paused = useLaunchesPaused();
   const { guard, dialog } = useRiskGate();
 
@@ -143,13 +149,25 @@ export default function CreatePage() {
   async function submit() {
     setError(null);
     if (!isConnected || !address) return openConnectModal?.();
-    if (!LAUNCHPAD_ADDRESS || !publicClient || problems.length || inFlight.current) return;
+    if (!LAUNCHPAD_ADDRESS || !publicClient || problems.length || !shownTerms || inFlight.current) return;
     inFlight.current = true;
     try {
       if (chainId !== activeChain.id) {
         setStatus("Switching network…");
         await switchChainAsync({ chainId: activeChain.id });
       }
+      // The launch is priced on the terms shown on this page and pinned to their version on-chain,
+      // so a fee or curve change after this point reverts it instead of costing the creator more.
+      setStatus("Checking launch terms…");
+      const fresh = await readLaunchTerms(publicClient);
+      if (fresh.version !== shownTerms.version) {
+        await terms.refetch();
+        throw new Error("The launch terms just changed. Review the updated fee below and launch again.");
+      }
+      const firstBuy = safeParseEther(devBuy) ?? 0n;
+      const minTokensOut =
+        firstBuy > 0n ? (firstBuyTokens(firstBuy, shownTerms.feeBps, shownTerms.curve) * (10_000n - FIRST_BUY_SLIPPAGE_BPS)) / 10_000n : 0n;
+
       setStatus("Verifying X accounts…");
       const res = await fetch("/api/attest", {
         method: "POST",
@@ -158,21 +176,6 @@ export default function CreatePage() {
       });
       const att = (await res.json()) as { error?: string; xIds: string[]; handles: string[]; deadline: string; attestation: Hex };
       if (!res.ok) throw new Error(att.error || "Could not verify X accounts");
-
-      // Price the launch from the contract's current terms, not values read when the page loaded:
-      // the launch fee is paid on top, and the first buy must get at least what we show.
-      const launchpad = { address: LAUNCHPAD_ADDRESS, abi: launchpadAbi } as const;
-      const [fee, tradeFeeBps, curve] = await Promise.all([
-        publicClient.readContract({ ...launchpad, functionName: "creationFee" }),
-        publicClient.readContract({ ...launchpad, functionName: "feeBps" }),
-        publicClient.readContract({ ...launchpad, functionName: "curveConfig" }),
-      ]);
-      if (creationFee !== undefined && fee > creationFee) {
-        throw new Error(`The launch fee just changed to ${formatEther(fee)} ETH. Review it and launch again.`);
-      }
-      const firstBuy = safeParseEther(devBuy) ?? 0n;
-      const minTokensOut =
-        firstBuy > 0n ? (firstBuyTokens(firstBuy, tradeFeeBps, curve) * (10_000n - FIRST_BUY_SLIPPAGE_BPS)) / 10_000n : 0n;
 
       setStatus("Confirm in your wallet…");
       const hash = await writeContractAsync({
@@ -186,8 +189,9 @@ export default function CreatePage() {
           metadata,
           { xIds: att.xIds.map(BigInt), handles: att.handles, bps, deadline: BigInt(att.deadline), attestation: att.attestation },
           minTokensOut,
+          shownTerms.version,
         ],
-        value: fee + firstBuy,
+        value: shownTerms.creationFee + firstBuy,
       });
       setStatus("Launching…");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -343,6 +347,9 @@ export default function CreatePage() {
             <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 font-semibold text-ink-2">ETH</span>
           </div>
           <p className="mt-2 text-[12px] text-ink-2">Bought in the same transaction as the launch, so nobody gets in before you.{creationFee === undefined ? "" : creationFee > 0n ? ` Launch fee ${formatEther(creationFee)} ETH, paid on top.` : " Launching is free."}</p>
+          {terms.isError && !shownTerms ? (
+            <p className="mt-2 text-[12px] font-medium text-down-ink">Can&apos;t read the launch terms from {activeChain.name} right now. Retrying…</p>
+          ) : null}
         </section>
 
         {problems.length > 0 && touched ? (
@@ -362,8 +369,8 @@ export default function CreatePage() {
           </p>
         ) : null}
         {paused ? <p className="text-center text-[14px] font-medium text-down-ink">New launches are paused by the owner for now.</p> : null}
-        <button className="btn-sticker w-full py-4 text-[17px]" disabled={Boolean(status) || paused === true || (isConnected && (problems.length > 0 || creationFee === undefined))} onClick={() => guard(submit)}>
-          {!isConnected ? "Connect wallet to launch" : status ?? "Launch coin"}
+        <button className="btn-sticker w-full py-4 text-[17px]" disabled={Boolean(status) || paused === true || (isConnected && (problems.length > 0 || !shownTerms))} onClick={() => guard(submit)}>
+          {!isConnected ? "Connect wallet to launch" : status ?? (shownTerms ? "Launch coin" : "Reading launch terms…")}
         </button>
         {dialog}
       </div>
