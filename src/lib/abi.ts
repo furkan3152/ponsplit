@@ -398,6 +398,19 @@ export const launchpadAbi = [
   },
   {
     "inputs": [],
+    "name": "MAX_CREATION_FEE",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "MAX_FEE_BPS",
     "outputs": [
       {
@@ -2211,6 +2224,19 @@ export const feeVaultAbi = [
       }
     ],
     "name": "tokenFees",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalDeposited",
     "outputs": [
       {
         "internalType": "uint256",

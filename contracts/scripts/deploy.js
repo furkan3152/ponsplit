@@ -56,10 +56,14 @@ async function main() {
     claimSigner,
     deployedAt: new Date().toISOString(),
   };
-  // The web app reads its addresses from src/deployment.json at the repo root.
+  // The web app reads its addresses from src/deployment.json at the repo root, one entry per
+  // network, so deploying one network never touches the other's addresses.
   if (process.env.WRITE_WEB_CONFIG === "1") {
-    const web = { chain: network.name === "robinhood" ? "mainnet" : "testnet", launchpad: out.launchpad, feeVault: out.feeVault, startBlock: out.startBlock, deployedAt: out.deployedAt };
-    fs.writeFileSync(path.join(__dirname, "..", "..", "src", "deployment.json"), JSON.stringify(web, null, 2) + "\n");
+    const file = path.join(__dirname, "..", "..", "src", "deployment.json");
+    const web = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+    const chain = network.name === "robinhood" ? "mainnet" : "testnet";
+    web[chain] = { launchpad: out.launchpad, feeVault: out.feeVault, startBlock: out.startBlock, deployedAt: out.deployedAt };
+    fs.writeFileSync(file, JSON.stringify(web, null, 2) + "\n");
   }
 
   const dir = path.join(__dirname, "..", "deployments");

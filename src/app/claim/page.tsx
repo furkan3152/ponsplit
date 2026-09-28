@@ -3,8 +3,8 @@
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import Link from "next/link";
 import { signIn, signOut, useSession } from "next-auth/react";
-import { useMemo, useState } from "react";
-import type { Hex } from "viem";
+import { useMemo, useRef, useState } from "react";
+import { parseEventLogs, type Hex } from "viem";
 import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { ClaimArt } from "@/components/art";
 import { TokenAvatar } from "@/components/TokenAvatar";
@@ -14,7 +14,7 @@ import { activeChain, explorerUrl } from "@/lib/chains";
 import { FEE_VAULT_ADDRESS } from "@/lib/config";
 import { errorMessage, formatEth, pct, shortAddress } from "@/lib/format";
 import { isValidHandle, normalizeHandle } from "@/lib/handles";
-import { useClaimsPaused, useTokens, useXProfiles } from "@/lib/hooks";
+import { useAllTokens, useClaimsPaused, useDebounced, useXProfiles } from "@/lib/hooks";
 import { describe } from "@/lib/market";
 import { useServerConfig } from "@/lib/useServerConfig";
 
@@ -41,13 +41,18 @@ function useClaim(onDone: () => void) {
   const { writeContractAsync } = useWriteContract();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<Msg>(null);
+  const inFlight = useRef(false);
 
   async function claim(extra: { proofUrl?: string } = {}) {
     setMsg(null);
     if (!isConnected || !address) return openConnectModal?.();
-    if (!FEE_VAULT_ADDRESS || !publicClient) return;
+    if (!FEE_VAULT_ADDRESS || !publicClient || inFlight.current) return;
+    inFlight.current = true;
     try {
-      if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
+      if (chainId !== activeChain.id) {
+        setBusy("Switching network…");
+        await switchChainAsync({ chainId: activeChain.id });
+      }
       setBusy(extra.proofUrl ? "Checking your post…" : "Getting signature…");
       const res = await fetch("/api/claim-signature", {
         method: "POST",
@@ -68,12 +73,18 @@ function useClaim(onDone: () => void) {
       setBusy("Claiming…");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("Transaction reverted");
-      setMsg({ kind: "ok", text: `Sent ${formatEth(BigInt(data.claimable), 6)} ETH to your wallet.`, tx: hash });
+      // The vault pays whatever has accrued by the time the claim lands, which can be more than
+      // the balance when the signature was issued, so report what the Claimed event says.
+      const paid = parseEventLogs({ abi: feeVaultAbi, eventName: "Claimed", logs: receipt.logs }).find(
+        (l) => l.address.toLowerCase() === FEE_VAULT_ADDRESS!.toLowerCase()
+      )?.args.amount;
+      setMsg({ kind: "ok", text: `Sent ${formatEth(paid ?? BigInt(data.claimable), 6)} ETH to your wallet.`, tx: hash });
       onDone();
     } catch (e) {
       setMsg({ kind: "err", text: errorMessage(e) });
     } finally {
       setBusy(null);
+      inFlight.current = false;
     }
   }
   return { claim, busy, msg, address, isConnected };
@@ -139,8 +150,10 @@ function ProofClaim() {
   const [err, setErr] = useState<string | null>(null);
   const handle = normalizeHandle(input);
   const valid = isValidHandle(handle);
-  const profiles = useXProfiles(valid ? [handle] : []);
-  const prof = valid ? profiles.data?.[handle] : undefined;
+  // Look the profile up once typing pauses; the proof itself doesn't depend on this lookup.
+  const lookupHandle = useDebounced(valid ? handle : "");
+  const profiles = useXProfiles(lookupHandle ? [lookupHandle] : []);
+  const prof = valid && lookupHandle === handle ? profiles.data?.[handle] : undefined;
   const xId = prof ? BigInt(prof.id) : undefined;
   const earnings = useEarnings(xId);
   const { claim, busy, msg, address, isConnected } = useClaim(() => earnings.refetch());
@@ -151,14 +164,18 @@ function ProofClaim() {
 
   async function getProof() {
     setErr(null);
-    const res = await fetch("/api/x/proof", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ handle, wallet: address }),
-    });
-    const body = (await res.json()) as { text?: string; intentUrl?: string; error?: string };
-    if (!res.ok || !body.text || !body.intentUrl) return setErr(body.error || "Could not create a proof");
-    setProof({ text: body.text, intentUrl: body.intentUrl, for: proofKey });
+    try {
+      const res = await fetch("/api/x/proof", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handle, wallet: address }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { text?: string; intentUrl?: string; error?: string };
+      if (!res.ok || !body.text || !body.intentUrl) return setErr(body.error || "Could not create a proof");
+      setProof({ text: body.text, intentUrl: body.intentUrl, for: proofKey });
+    } catch (e) {
+      setErr(errorMessage(e));
+    }
   }
 
   return (
@@ -175,6 +192,8 @@ function ProofClaim() {
           </div>
         ) : valid && profiles.data && prof === null ? (
           <p className="mt-2 text-[13px] text-down-ink">@{handle} doesn&apos;t exist on X.</p>
+        ) : valid && profiles.error ? (
+          <p className="mt-2 text-[13px] text-ink-2">Couldn&apos;t look up @{handle} right now. You can still create and verify your proof post.</p>
         ) : null}
       </Step>
 
@@ -182,7 +201,7 @@ function ProofClaim() {
 
       <Step n={2} title="Wallet to receive the ETH">
         {isConnected ? (
-          <p className="num text-[15px]">{address}</p>
+          <p className="num break-all text-[15px]">{address}</p>
         ) : (
           <button className="btn-primary" onClick={openConnectModal}>
             Connect wallet
@@ -192,7 +211,7 @@ function ProofClaim() {
 
       <Step n={3} title="Post this on X">
         {!currentProof ? (
-          <button className="btn-secondary" disabled={!prof || !isConnected} onClick={getProof}>
+          <button className="btn-secondary" disabled={!valid || prof === null || !isConnected} onClick={getProof}>
             Create my proof post
           </button>
         ) : (
@@ -206,7 +225,10 @@ function ProofClaim() {
                 Copy text
               </button>
             </div>
-            <p className="text-[12px] text-ink-2">Post it from @{handle}. You can delete it after claiming. The code only works for this wallet and expires tomorrow.</p>
+            <p className="text-[12px] text-ink-2">
+              Post it from @{handle} exactly as shown, as a new post (not a reply or quote). You can delete it after claiming. It only works for the wallet it
+              names and expires tomorrow. Never post a proof text someone else sends you.
+            </p>
           </div>
         )}
         {err ? <p className="mt-2 text-[13px] text-down-ink">{err}</p> : null}
@@ -308,7 +330,7 @@ function SessionClaim({ x }: { x: { id: string; username: string; name?: string;
 }
 
 function Streams({ xId, username }: { xId: bigint; username: string }) {
-  const { data: tokens } = useTokens(200);
+  const { data: tokens } = useAllTokens();
   const streams = useMemo(
     () =>
       (tokens ?? [])
@@ -353,8 +375,10 @@ function Lookup() {
   const [input, setInput] = useState("");
   const handle = normalizeHandle(input);
   const valid = isValidHandle(handle);
-  const profiles = useXProfiles(valid ? [handle] : []);
-  const prof = valid ? profiles.data?.[handle] : undefined;
+  // Look the profile up once typing pauses.
+  const lookupHandle = useDebounced(valid ? handle : "");
+  const profiles = useXProfiles(lookupHandle ? [lookupHandle] : []);
+  const prof = valid && lookupHandle === handle ? profiles.data?.[handle] : undefined;
   const { data } = useEarnings(prof ? BigInt(prof.id) : undefined);
 
   return (

@@ -1,7 +1,4 @@
 {
-  "chain": "testnet",
-  "launchpad": "",
-  "feeVault": "",
-  "startBlock": 0,
-  "deployedAt": ""
+  "testnet": { "launchpad": "", "feeVault": "", "startBlock": 0, "deployedAt": "" },
+  "mainnet": { "launchpad": "", "feeVault": "", "startBlock": 0, "deployedAt": "" }
 }

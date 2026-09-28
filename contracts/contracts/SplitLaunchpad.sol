@@ -30,6 +30,7 @@ contract SplitLaunchpad is Ownable2Step, ReentrancyGuard {
     uint256 public constant MAX_FEE_BPS = 500; // 5%
     uint256 public constant MAX_GRADUATION_FEE_BPS = 1_000; // 10%
     uint256 public constant MAX_PROTOCOL_SHARE_BPS = 5_000; // X accounts always get at least half of every fee
+    uint256 public constant MAX_CREATION_FEE = 0.1 ether;
     uint256 public constant MAX_METADATA_BYTES = 2_000;
 
     struct CurveConfig {
@@ -165,6 +166,9 @@ contract SplitLaunchpad is Ownable2Step, ReentrancyGuard {
     // ---------------------------------------------------------------- launch
 
     /// @notice Creates a token. Any ETH sent above `creationFee` is used as the creator's first buy.
+    /// @param minTokensOut Minimum tokens for that first buy. When nonzero the launch reverts if the
+    ///        buy would get less, including when a fee change left no ETH for it at all, so a launch
+    ///        can never silently cost more than the creator agreed to.
     function createToken(
         string calldata name,
         string calldata symbol,
@@ -210,6 +214,7 @@ contract SplitLaunchpad is Ownable2Step, ReentrancyGuard {
 
         uint256 initialBuy = msg.value - creationFee;
         if (initialBuy > 0) _buy(token, initialBuy, minTokensOut);
+        else if (minTokensOut > 0) revert Slippage();
     }
 
     // ----------------------------------------------------------------- trade
@@ -361,7 +366,10 @@ contract SplitLaunchpad is Ownable2Step, ReentrancyGuard {
         external
         onlyOwner
     {
-        if (feeBps_ > MAX_FEE_BPS || protocolShareBps_ > MAX_PROTOCOL_SHARE_BPS || graduationFeeBps_ > MAX_GRADUATION_FEE_BPS) {
+        if (
+            feeBps_ > MAX_FEE_BPS || protocolShareBps_ > MAX_PROTOCOL_SHARE_BPS || graduationFeeBps_ > MAX_GRADUATION_FEE_BPS
+                || creationFee_ > MAX_CREATION_FEE
+        ) {
             revert InvalidConfig();
         }
         feeBps = feeBps_;

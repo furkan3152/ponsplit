@@ -167,6 +167,7 @@ contract DeepSimulator {
 
         // Every X account claims; together they must receive exactly what was split.
         for (uint256 i; i < tokens.length; ++i) r.creatorFees += vault.tokenFees(tokens[i]);
+        if (vault.totalDeposited() != r.creatorFees && bytes(r.failure).length == 0) r.failure = "totalDeposited mismatch";
         for (uint256 i; i < claims.length; ++i) {
             r.claimed += vault.claim(claims[i].xId, claims[i].to, claimDeadline, claims[i].sig);
             r.claims++;
