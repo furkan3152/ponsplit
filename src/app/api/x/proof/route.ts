@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAddress, isAddress } from "viem";
 import { readJson } from "@/lib/body";
 import { isValidHandle, normalizeHandle } from "@/lib/handles";
-import { clientIp, rateLimit } from "@/lib/ratelimit";
+import { clientIp, limitClient } from "@/lib/ratelimit";
 import { signerAccount } from "@/lib/signing";
 import { proofCode, proofText } from "@/lib/xproof";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 /** POST { handle, wallet } → the exact text to post on X to prove ownership of @handle for this wallet. */
 export async function POST(req: Request) {
-  if (!rateLimit(`proof:${clientIp(req)}`, 30, 60_000)) {
+  if (!limitClient("proof", clientIp(req), 30)) {
     return NextResponse.json({ error: "Too many requests, try again in a minute." }, { status: 429 });
   }
   if (!signerAccount()) return NextResponse.json({ error: "Claims are not configured on this server." }, { status: 500 });

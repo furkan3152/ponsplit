@@ -1,6 +1,7 @@
 import "server-only";
 import { keccak256, toBytes } from "viem";
 import { isValidHandle, normalizeHandle } from "./handles";
+import { networkKey } from "./ip";
 import { charge, remaining } from "./ratelimit";
 
 export type XProfile = { id: string; username: string; name: string; image?: string };
@@ -42,45 +43,54 @@ function remember(h: string, profile: XProfile | null) {
 
 /**
  * Upstream lookups (handles not in the cache) are budgeted, separately for previews ("display")
- * and launch attestations ("attest"), at three levels: per client (IP; IPv6 per /64), per wider
- * network (IPv6 /48, IPv4 as is) and globally per minute. Lookups that find no account cost more
+ * and launch attestations ("attest"), per client (IP; IPv6 per /64) and per wider network (IPv6
+ * /48, since one holder of a /48 controls 65,536 /64s). Lookups that find no account cost more
  * (spraying random names is the cheap way to burn a budget; real launches name real accounts), and
  * a client that keeps missing is cut off for the minute. Budgets are checked before anything is
- * charged, so a refused request costs nothing. Cached answers never cost anything and are always
- * returned; previews that don't fit just stay unresolved.
+ * charged, so a refused request costs nothing. Cached answers never cost anything.
+ *
+ * There is deliberately no global cap on launches: any shared counter is a switch anyone with a
+ * few dozen addresses could flip to stop every launch. Previews have a global cap (they are
+ * optional), but past it every client still gets a small fair share, so previews can't be blanked
+ * for everyone either. In x-api mode the X API calls themselves are capped globally (they may cost
+ * money); past that cap, or when X rate-limits us, launches resolve through fxtwitter instead.
  */
 const LIMITS = {
-  display: { client: 20, network: 60, global: 120, misses: 20 },
-  attest: { client: 30, network: 90, global: 600, misses: 10 },
+  display: { client: 20, global: 120, fairShare: 4, misses: 20 },
+  attest: { client: 30, misses: 10 },
 } as const;
+/** How much more a whole IPv6 /48 may look up than one of its clients. */
+const NETWORK_FACTOR = 3;
 const MISS_WEIGHT = 3;
 const WINDOW_MS = 60_000;
+/** X API calls per minute for launches; one call resolves a whole launch. */
+const X_API_CALLS_PER_MIN = 60;
+const X_API_KEY = "x-api-calls:*";
+const DISPLAY_GLOBAL_KEY = "x-lookups:display:*";
 
 type Purpose = "display" | "attest";
 
-/**
- * How many of `n` lookups the budgets allow right now (0..n). Charges nothing. A batched request
- * (one X API call for the whole launch) costs 1 globally but still n per client and network.
- */
-function available(purpose: Purpose, client: string, n: number, batched: boolean): number {
+/** How many of `n` lookups the budgets allow this client right now (0..n). Charges nothing. */
+function available(purpose: Purpose, client: string, n: number): number {
   const l = LIMITS[purpose];
   if (remaining(`x-misses:${purpose}:${client}`, l.misses) === 0) return 0;
-  const clientLeft = Math.min(remaining(`x-lookups:${purpose}:${client}`, l.client), remaining(`x-lookups:${purpose}:${networkKey(client)}`, l.network));
-  const globalLeft = remaining(`x-lookups:${purpose}:*`, l.global);
-  if (batched) return clientLeft >= n && globalLeft >= 1 ? n : 0;
-  return Math.min(n, clientLeft, globalLeft);
+  const clientLeft = remaining(`x-lookups:${purpose}:${client}`, l.client);
+  const net = networkKey(client);
+  const netLeft = net === client ? Infinity : remaining(`x-lookups:${purpose}:${net}`, l.client * NETWORK_FACTOR);
+  let globalLeft = Infinity;
+  if (purpose === "display") {
+    const d = LIMITS.display;
+    const used = d.client - clientLeft;
+    globalLeft = Math.max(remaining(DISPLAY_GLOBAL_KEY, d.global), d.fairShare - used);
+  }
+  return Math.max(0, Math.min(n, clientLeft, netLeft, globalLeft));
 }
 
-function spend(purpose: Purpose, client: string, units: number, globalUnits: number) {
+function spend(purpose: Purpose, client: string, units: number) {
   charge(`x-lookups:${purpose}:${client}`, units, WINDOW_MS);
-  charge(`x-lookups:${purpose}:${networkKey(client)}`, units, WINDOW_MS);
-  charge(`x-lookups:${purpose}:*`, globalUnits, WINDOW_MS);
-}
-
-/** Wider-network key: IPv6 clients (keyed per /64) are also grouped per /48. */
-function networkKey(client: string): string {
-  const m = /^([0-9a-f]+:[0-9a-f]+:[0-9a-f]+):[0-9a-f]+::\/64$/i.exec(client);
-  return m ? `${m[1]}::/48` : client;
+  const net = networkKey(client);
+  if (net !== client) charge(`x-lookups:${purpose}:${net}`, units, WINDOW_MS);
+  if (purpose === "display") charge(DISPLAY_GLOBAL_KEY, units, WINDOW_MS);
 }
 
 export class ResolverBusyError extends Error {
@@ -94,13 +104,14 @@ export class ResolverBusyError extends Error {
  * accounts that do not exist. Throws when the upstream lookup itself fails.
  *
  * `client` identifies the caller (its IP) for the lookup budgets above. A launch that doesn't fit
- * throws ResolverBusyError; a preview returns what it can. `purpose: "display"` is for previews: in x-api mode it
- * uses the free fxtwitter mirror so the X API quota is kept for `purpose: "attest"`, the lookup a
- * launch actually depends on.
+ * its client's budget throws ResolverBusyError. A preview returns what fits (handles left out are
+ * simply absent from the result) and throws ResolverBusyError only when it can return nothing.
+ * `purpose: "display"` is for previews: they use the free fxtwitter mirror so the X API quota is
+ * kept for `purpose: "attest"`, the lookup a launch actually depends on.
  *
  * Modes:
  *  - x-api:     official X API v2 users lookup (needs X_BEARER_TOKEN; most reliable). Falls back
- *               to fxtwitter when X rate-limits us.
+ *               to fxtwitter when X rate-limits us or our own X API cap is reached.
  *  - fxtwitter: the public api.fxtwitter.com mirror (no key; unofficial, best effort)
  *  - mock:      fake deterministic ids for local development only
  */
@@ -111,9 +122,11 @@ export async function resolveHandles(
 ): Promise<Record<string, XProfile | null>> {
   const handles = Array.from(new Set(input.map(normalizeHandle))).filter(isValidHandle);
   const mode = resolverMode();
-  // Results are cached per source. In x-api mode a launch only trusts X API answers, while
-  // previews may reuse either.
-  const readable: Source[] = mode === "mock" ? ["mock"] : mode === "x-api" && purpose === "attest" ? ["x"] : ["x", "fx"];
+  // In x-api mode a launch asks X itself while the X API cap has room.
+  const useXApi = mode === "x-api" && purpose === "attest" && remaining(X_API_KEY, X_API_CALLS_PER_MIN) > 0;
+  // Results are cached per source. A launch that asks X only trusts X API answers; everything
+  // else may reuse either (an fxtwitter answer is what it would get anyway).
+  const readable: Source[] = mode === "mock" ? ["mock"] : useXApi ? ["x"] : ["x", "fx"];
   const out: Record<string, XProfile | null> = {};
   const missing: string[] = [];
   for (const h of handles) {
@@ -128,17 +141,17 @@ export async function resolveHandles(
   if (mode === "mock") {
     [fresh, source] = [resolveMock(missing), "mock"];
   } else {
-    // One batched X API request serves a whole launch; fxtwitter is one request per handle.
-    const batched = purpose === "attest" && mode === "x-api";
-    const allowed = available(purpose, client, missing.length, batched);
+    const allowed = available(purpose, client, missing.length);
     // A launch needs every account resolved; a preview shows what fits and leaves the rest unknown.
     if (purpose === "attest" && allowed < missing.length) throw new ResolverBusyError();
-    if (allowed === 0) return out;
+    if (allowed === 0) {
+      if (Object.keys(out).length === 0) throw new ResolverBusyError();
+      return out;
+    }
     missing.splice(allowed);
-    spend(purpose, client, allowed, batched ? 1 : allowed);
-    if (purpose === "display") {
-      [fresh, source] = [await resolveFx(missing), "fx"];
-    } else if (mode === "x-api") {
+    spend(purpose, client, allowed);
+    if (useXApi) {
+      charge(X_API_KEY, 1, WINDOW_MS);
       try {
         [fresh, source] = [await resolveXApi(missing), "x"];
       } catch (e) {
@@ -158,8 +171,8 @@ export async function resolveHandles(
   }
   if (misses && mode !== "mock") {
     charge(`x-misses:${purpose}:${client}`, misses, WINDOW_MS);
-    // Misses also weigh more against the client's lookup budget.
-    charge(`x-lookups:${purpose}:${client}`, misses * (MISS_WEIGHT - 1), WINDOW_MS);
+    // Misses also weigh more against the lookup budgets.
+    spend(purpose, client, misses * (MISS_WEIGHT - 1));
   }
   return out;
 }

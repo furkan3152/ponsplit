@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAddress, isAddress } from "viem";
 import { MAX_RECIPIENTS } from "@/lib/config";
 import { isValidHandle, normalizeHandle } from "@/lib/handles";
-import { clientIp, rateLimit } from "@/lib/ratelimit";
+import { clientIp, limitClient } from "@/lib/ratelimit";
 import { createPublicClient, http } from "viem";
 import { activeChain, rpcUrl } from "@/lib/chains";
 import { deadlineFromNow, signAttestation, signerAccount } from "@/lib/signing";
@@ -19,7 +19,7 @@ const TTL_SECONDS = 30 * 60;
  */
 export async function POST(req: Request) {
   const ip = clientIp(req);
-  if (!rateLimit(`attest:${ip}`, 20, 60_000)) {
+  if (!limitClient("attest", ip, 20)) {
     return NextResponse.json({ error: "Too many requests, try again in a minute." }, { status: 429 });
   }
   if (!signerAccount()) return NextResponse.json({ error: "Launches are not configured on this server." }, { status: 500 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { imageSize, imageWithinLimits, sniffImage } from "./image-bytes.ts";
+import { imageSize, imageWithinLimits, satoriCanSizeJpeg, sniffImage } from "./image-bytes.ts";
 
 const u32be = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
 const u16be = (n: number) => [(n >> 8) & 255, n & 255];
@@ -71,6 +71,18 @@ test("JPEG: skips padding and FF 00 between segments like the decoder, and finds
   assert.equal(imageWithinLimits(decoy), false);
   // Reserved markers are refused.
   assert.equal(imageSize(new Uint8Array([0xff, 0xd8, 0xff, 0x02, 0, 4, 0, 0, ...sof(10, 10)])), null);
+});
+
+test("share-card renderer: only JPEGs its strict parser can size are passed on", () => {
+  const sof = (w: number, h: number, kind = 0xc0) => [0xff, kind, ...u16be(11), 8, ...u16be(h), ...u16be(w), 1, 1, 0x11, 0];
+  const app0 = [0xff, 0xe0, ...u16be(16), 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0];
+  assert.equal(satoriCanSizeJpeg(jpeg(640, 480)), true);
+  // Decoders read these fine, but the renderer's parser throws on them.
+  assert.equal(satoriCanSizeJpeg(new Uint8Array([0xff, 0xd8, ...app0, 0, 0, 0, ...sof(64, 64), 0xff, 0xd9])), false);
+  assert.equal(satoriCanSizeJpeg(new Uint8Array([0xff, 0xd8, ...app0, 0xff, 0x00, ...sof(64, 64), 0xff, 0xd9])), false);
+  assert.equal(satoriCanSizeJpeg(new Uint8Array([0xff, 0xd8, ...app0, ...sof(64, 64, 0xc3), 0xff, 0xd9])), false);
+  // Truncated inside the frame header.
+  assert.equal(satoriCanSizeJpeg(new Uint8Array([0xff, 0xd8, ...app0, 0xff, 0xc0, 0, 11, 8])), false);
 });
 
 test("rejects files whose header can't be read", () => {

@@ -122,6 +122,25 @@ function webpSize(b: Uint8Array) {
   return null;
 }
 
+/**
+ * True when the share-card renderer (satori) can read this JPEG's size. Its parser is stricter
+ * than image decoders: it follows segment lengths from offset 4 with no resync (padding or FF 00
+ * between segments derails it) and knows only SOF0-2. Anything else throws inside the renderer,
+ * so such files must get the fallback card instead. (Mirrors `au()` in next/og's bundled satori.)
+ */
+export function satoriCanSizeJpeg(b: Uint8Array): boolean {
+  let n = 4;
+  while (n < b.length) {
+    if (n + 2 > b.length) return false;
+    const len = be16(b, n);
+    if (len > b.length || n + len + 1 >= b.length) return false;
+    const m = b[n + len + 1];
+    if (m === 0xc0 || m === 0xc1 || m === 0xc2) return n + len + 9 <= b.length;
+    n += len + 2;
+  }
+  return false;
+}
+
 /** True when the image's real dimensions are within the limits above. */
 export function imageWithinLimits(b: Uint8Array): boolean {
   const size = imageSize(b);

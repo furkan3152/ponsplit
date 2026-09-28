@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readBody } from "@/lib/body";
 import { MAX_IMAGE_SIDE, imageSize, imageWithinLimits, sniffImage } from "@/lib/image-bytes";
-import { clientIp, rateLimit } from "@/lib/ratelimit";
+import { clientIp, limitClient } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ const MAX_REQUEST_BYTES = MAX_BYTES + 64 * 1024;
 export async function POST(req: Request) {
   const jwt = process.env.PINATA_JWT;
   if (!jwt) return NextResponse.json({ error: "Uploads are not configured; paste an image URL instead." }, { status: 501 });
-  if (!rateLimit(`upload:${clientIp(req)}`, 10, 60_000)) {
+  if (!limitClient("upload", clientIp(req), 10)) {
     return NextResponse.json({ error: "Too many uploads, try again in a minute." }, { status: 429 });
   }
 

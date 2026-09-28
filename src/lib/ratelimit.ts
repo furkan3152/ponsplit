@@ -1,36 +1,35 @@
 import "server-only";
-import { ipKey as key, isPrivateIp as isPrivate } from "./ip";
+import { ipKey as key, isPrivateIp as isPrivate, networkKey } from "./ip";
 
-const buckets = new Map<string, { count: number; reset: number }>();
-const MAX_KEYS = 10_000;
+type Bucket = { count: number; reset: number };
+
+/**
+ * Per-client windows live in a map that is pruned when it grows (so spoofed or one-off keys can't
+ * exhaust memory). Network-wide (IPv6 /48) and global ("…:*") windows live apart and are only ever
+ * dropped once expired, so flooding the first map with fresh keys can't reset them.
+ */
+const clientBuckets = new Map<string, Bucket>();
+const sharedBuckets = new Map<string, Bucket>();
+const MAX_CLIENT_KEYS = 10_000;
+
+const isShared = (key: string) => key.endsWith(":*") || key.endsWith("::/48");
+const mapFor = (key: string) => (isShared(key) ? sharedBuckets : clientBuckets);
 
 function prune(now: number) {
-  if (buckets.size <= MAX_KEYS) return;
-  // Drop expired windows so spoofed or one-off keys can't grow memory without bound; if that is
-  // not enough, evict the oldest windows rather than resetting everyone's.
-  for (const [k, b] of buckets) if (now > b.reset) buckets.delete(k);
-  for (const k of buckets.keys()) {
-    if (buckets.size <= MAX_KEYS) break;
-    buckets.delete(k);
+  for (const map of [clientBuckets, sharedBuckets]) {
+    if (map.size <= MAX_CLIENT_KEYS) continue;
+    for (const [k, b] of map) if (now > b.reset) map.delete(k);
   }
-}
-
-/** Fixed-window limiter per key (client IP). Good enough for one server instance. */
-export function rateLimit(key: string, limit: number, windowMs: number): boolean {
-  const now = Date.now();
-  prune(now);
-  const b = buckets.get(key);
-  if (!b || now > b.reset) {
-    buckets.set(key, { count: 1, reset: now + windowMs });
-    return true;
+  // Still too many live client windows: evict the oldest rather than resetting everyone's.
+  for (const k of clientBuckets.keys()) {
+    if (clientBuckets.size <= MAX_CLIENT_KEYS) break;
+    clientBuckets.delete(k);
   }
-  b.count++;
-  return b.count <= limit;
 }
 
 /** Units still available under `limit` in the key's current window (nothing is charged). */
 export function remaining(key: string, limit: number): number {
-  const b = buckets.get(key);
+  const b = mapFor(key).get(key);
   if (!b || Date.now() > b.reset) return limit;
   return Math.max(0, limit - b.count);
 }
@@ -40,9 +39,38 @@ export function charge(key: string, n: number, windowMs: number): void {
   if (n <= 0) return;
   const now = Date.now();
   prune(now);
-  const b = buckets.get(key);
-  if (!b || now > b.reset) buckets.set(key, { count: n, reset: now + windowMs });
-  else b.count += n;
+  const map = mapFor(key);
+  const b = map.get(key);
+  if (!b || now > b.reset) {
+    map.delete(key); // re-insert so map order follows recent use
+    map.set(key, { count: n, reset: now + windowMs });
+  } else b.count += n;
+}
+
+/** Fixed-window limiter for one key. Good enough for one server instance. */
+export function rateLimit(key: string, limit: number, windowMs: number): boolean {
+  if (remaining(key, limit) < 1) return false;
+  charge(key, 1, windowMs);
+  return true;
+}
+
+/** How much more a whole network (IPv6 /48) may do than one of its clients. */
+export const NETWORK_FACTOR = 3;
+
+/**
+ * Per-client limit for `scope`, plus a limit for the client's wider network (IPv6 /48), since one
+ * holder of a /48 controls 65,536 /64 client keys. Both are checked before either is charged, so
+ * a refused request costs nothing. Charges `n` units (default 1).
+ */
+export function limitClient(scope: string, ip: string, limit: number, n = 1, windowMs = 60_000): boolean {
+  const net = networkKey(ip);
+  const clientKey = `${scope}:${ip}`;
+  const netKey = `${scope}:${net}`;
+  if (remaining(clientKey, limit) < n) return false;
+  if (net !== ip && remaining(netKey, limit * NETWORK_FACTOR) < n) return false;
+  charge(clientKey, n, windowMs);
+  if (net !== ip) charge(netKey, n, windowMs);
+  return true;
 }
 
 /**
