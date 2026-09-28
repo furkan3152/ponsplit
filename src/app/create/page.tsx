@@ -1,5 +1,6 @@
 "use client";
 
+import { shrinkImage } from "@/lib/shrink-image";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -155,6 +156,7 @@ export default function CreatePage() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   // The account being edited or pointed at, so its slice of the split lights up in the preview.
   const [hot, setHot] = useState<number | null>(null);
@@ -204,7 +206,7 @@ export default function CreatePage() {
     setError(null);
     try {
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", await shrinkImage(file));
       const res = await fetch("/api/upload", { method: "POST", body: form });
       const body = (await res.json()) as { uri?: string; error?: string };
       if (!res.ok || !body.uri) throw new Error(body.error || "Upload failed");
@@ -393,8 +395,36 @@ export default function CreatePage() {
                   </div>
                 </div>
                 <div className="col-span-full row-start-3 min-w-0 sm:row-start-2">
-                  <label className="label" htmlFor="image">Image {server?.uploads ? "(upload by tapping the picture, or paste a link)" : "link"}</label>
-                  <input id="image" className="input" value={image} onChange={(e) => setImage(e.target.value)} placeholder="https://… or ipfs://…  (empty = a generated sticker)" />
+                  {server?.uploads ? (
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setDragging(true);
+                      }}
+                      onDragLeave={() => setDragging(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setDragging(false);
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) upload(f);
+                      }}
+                      className={`flex flex-wrap items-center gap-3 rounded-2xl border border-dashed p-3 transition ${dragging ? "border-lime bg-lime-soft" : "border-line-2 bg-card-2"}`}
+                    >
+                      <button type="button" className="btn-secondary px-4 py-2 text-[14px]" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                        {uploading ? "Uploading…" : image ? "Change image" : "Choose image from files"}
+                      </button>
+                      <span className="text-[12.5px] text-ink-3">PNG, JPG, WEBP or GIF. Big photos are shrunk for you. Or drop it here.</span>
+                      <details className="w-full text-[12.5px] text-ink-2" open={Boolean(image) && !/^https:\/\/[^/]+\.blob\.vercel-storage\.com\/|^ipfs:\/\//.test(image)}>
+                        <summary className="cursor-pointer select-none">Or paste a link</summary>
+                        <input id="image" className="input mt-2" value={image} onChange={(e) => setImage(e.target.value)} placeholder="https://… or ipfs://…" />
+                      </details>
+                    </div>
+                  ) : (
+                    <>
+                      <label className="label" htmlFor="image">Image link</label>
+                      <input id="image" className="input" value={image} onChange={(e) => setImage(e.target.value)} placeholder="https://… or ipfs://…  (empty = a generated sticker)" />
+                    </>
+                  )}
                 </div>
               </div>
               <div>

@@ -682,3 +682,79 @@ export function useXProfiles(handles: string[], { recheckMisses = false }: { rec
     select: (d) => d.profiles,
   });
 }
+
+// ------------------------------------------------------------------ payouts
+
+const CLAIMED = parseAbiItem("event Claimed(uint64 indexed xId, address indexed to, uint256 amount)");
+/** How far back the payout feed reads (~a week of Robinhood Chain blocks). */
+const PAYOUT_SPAN = 6_000_000n;
+
+export type Payout = { xId: bigint; handle?: string; to: Address; amount: bigint; txHash: Hex; blockNumber: bigint; timestamp: number };
+
+/**
+ * Fee payouts: each time an X account claimed its share (FeeVault's Claimed events), newest
+ * first, with the account's username where a coin names it. Read incrementally, like trades.
+ */
+export function usePayouts() {
+  const n = useNetwork();
+  const { data: coins } = useCoins();
+  const handles = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of coins ?? []) c.recipients.forEach((r) => m.set(r.xId.toString(), r.handle));
+    return m;
+  }, [coins]);
+  const cache = useRef<{ key: string; to: bigint; logs: Omit<Payout, "timestamp" | "handle">[] } | null>(null);
+  const q = useQuery({
+    queryKey: ["payouts", n.id, n.feeVault],
+    enabled: isLive(n),
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const c = clientFor(n);
+      const head = await c.getBlockNumber();
+      const floor = head > PAYOUT_SPAN ? head - PAYOUT_SPAN : 0n;
+      const key = `${n.id}:${n.feeVault}`;
+      const prev = cache.current?.key === key ? cache.current : null;
+      const from = prev ? prev.to + 1n : floor;
+      const fresh = (await logsOver(
+        (a, b) => c.getLogs({ address: n.feeVault, event: CLAIMED, fromBlock: a, toBlock: b }) as Promise<AnyLog[]>,
+        from,
+        head
+      )) as unknown as { args: { xId: bigint; to: Address; amount: bigint }; transactionHash: Hex; blockNumber: bigint }[];
+      const logs = [
+        ...(prev?.logs ?? []),
+        ...fresh.map((l) => ({ xId: l.args.xId, to: l.args.to, amount: l.args.amount, txHash: l.transactionHash, blockNumber: l.blockNumber })),
+      ];
+      cache.current = { key, to: head, logs };
+      const latest = logs.slice(-20).reverse();
+      const times = await timesOf(n, latest.map((l) => l.blockNumber));
+      return { latest: latest.map((l) => ({ ...l, timestamp: times.get(l.blockNumber) ?? 0 })), total: logs.reduce((s, l) => s + l.amount, 0n), count: logs.length };
+    },
+  });
+  const data = useMemo(
+    () => (q.data ? { ...q.data, latest: q.data.latest.map((p) => ({ ...p, handle: handles.get(p.xId.toString()) })) as Payout[] } : undefined),
+    [q.data, handles]
+  );
+  return { ...q, data: isLive(n) ? data : { latest: [] as Payout[], total: 0n, count: 0 } };
+}
+
+/**
+ * The X accounts coins pay the most, across every coin: each coin's split so far shared out by
+ * the accounts' bps. What they have earned, not what they have claimed.
+ */
+export function useTopEarners(limit = 5) {
+  const { data: coins } = useCoins();
+  return useMemo(() => {
+    const by = new Map<string, { handle: string; xId: bigint; earned: bigint; coins: number }>();
+    for (const c of coins ?? []) {
+      const total = c.recipients.reduce((s, r) => s + r.bps, 0) || 1;
+      for (const r of c.recipients) {
+        const k = r.xId.toString();
+        const e = by.get(k) ?? { handle: r.handle, xId: r.xId, earned: 0n, coins: 0 };
+        e.earned += (c.feesSplit * BigInt(r.bps)) / BigInt(total);
+        e.coins += 1;
+        by.set(k, e);
+      }
+    }
+    return [...by.values()].sort((a, b) => (b.earned > a.earned ? 1 : b.earned < a.earned ? -1 : b.coins - a.coins)).slice(0, limit);
+  }, [coins, limit]);
+}

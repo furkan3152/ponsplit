@@ -369,3 +369,28 @@ body::after {
 .split-half-b {
   animation: split-b 3.2s ease-in-out infinite;
 }
+
+/* App shell: the desktop sidebar's width, folded to icons with <html data-sidebar="folded">. */
+:root {
+  --sidebar-w: 256px;
+}
+html[data-sidebar="folded"] {
+  --sidebar-w: 80px;
+}
+.sidebar {
+  width: var(--sidebar-w);
+  transition: width 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+html[data-sidebar="folded"] .sidebar-label {
+  display: none;
+}
+html[data-sidebar="folded"] .sidebar nav a,
+html[data-sidebar="folded"] .sidebar button {
+  justify-content: center;
+}
+@media (min-width: 1024px) {
+  .shell {
+    padding-left: var(--sidebar-w);
+    transition: padding-left 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}

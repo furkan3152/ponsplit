@@ -9,7 +9,7 @@
 //   NETWORK=testnet|mainnet BASE=http://localhost:3000 RPC=http://127.0.0.1:8545 node full.mjs
 import { ethers } from "ethers";
 import { chromium } from "playwright";
-import { A, B, BASE, C, NETWORK, OUT, OWNER, WHALE, connect, errors, fail, openAs, provider, results, same, step, waitFor } from "./lib.mjs";
+import { A, B, BASE, C, NETWORK, OUT, OWNER, WHALE, adminSignIn, connect, errors, fail, openAs, provider, results, same, step, waitFor } from "./lib.mjs";
 
 const NET = NETWORK.toUpperCase();
 const LAUNCHER = ethers.getAddress(process.env[`NEXT_PUBLIC_${NET}_LAUNCHER_ADDRESS`] ?? "");
@@ -72,6 +72,7 @@ try {
   // ── 2. The owner's switches on /setup ───────────────────────────────────────────────────
   const owner = await openAs(browser, OWNER, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await owner.goto(`${BASE}/setup`, { timeout: 180_000 });
+  await adminSignIn(owner);
   await owner.getByText(`SplitEarn is live on ${NETWORK}`).waitFor({ timeout: 90_000 });
   await connect(owner);
   await owner.getByRole("button", { name: "Pause launches" }).click({ timeout: 60_000 });
@@ -157,6 +158,7 @@ try {
   if (platform === 0n) fail("SplitEarn's share didn't arrive");
   step(`fees split: ${ethers.formatEther(split)} ETH to the X accounts (@jack ${ethers.formatEther(jack)}, @x ${ethers.formatEther(x)}), ${ethers.formatEther(platform)} ETH to SplitEarn`);
   await owner.goto(`${BASE}/setup`);
+  await adminSignIn(owner);
   await owner.getByRole("button", { name: "Withdraw to this wallet" }).click({ timeout: 60_000 });
   await owner.getByText("Withdraw to this wallet: done.").waitFor({ timeout: 60_000 });
   if ((await launcher.platformFees()) !== 0n) fail("the withdrawal didn't reach the chain");
@@ -183,7 +185,7 @@ try {
   step(`the header switch moves the whole site to ${other}`);
 
   // ── 9. Every page on desktop, mobile and in the light theme ──────────────────────────────
-  const pages = ["/", "/create", tokenUrl.replace(BASE, ""), "/claim", "/me", "/how", "/setup", "/does-not-exist"];
+  const pages = ["/", "/explore", "/create", tokenUrl.replace(BASE, ""), "/claim", "/me", "/how", "/setup", "/does-not-exist"];
   for (const [label, opts] of [
     ["desktop", { viewport: { width: 1280, height: 900 } }],
     ["mobile", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }],

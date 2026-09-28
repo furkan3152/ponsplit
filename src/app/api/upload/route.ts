@@ -1,3 +1,5 @@
+import { createHash } from "crypto";
+import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { readBody } from "@/lib/body";
 import { MAX_IMAGE_SIDE, imageSize, imageWithinLimits, sniffImage } from "@/lib/image-bytes";
@@ -9,10 +11,15 @@ const MAX_BYTES = 2 * 1024 * 1024;
 /** Multipart framing around the file (boundaries, headers, filename). */
 const MAX_REQUEST_BYTES = MAX_BYTES + 64 * 1024;
 
-/** POST multipart { file } → { uri: "ipfs://…" }. Pins to IPFS through Pinata when PINATA_JWT is set. */
+/**
+ * POST multipart { file } → { uri }. Stores the coin image on Vercel Blob when the site's Blob store
+ * is connected (BLOB_READ_WRITE_TOKEN, set by Vercel), else pins it to IPFS through Pinata
+ * (PINATA_JWT). The image is checked from its bytes first: type, real pixel size, file size.
+ */
 export async function POST(req: Request) {
   const jwt = process.env.PINATA_JWT;
-  if (!jwt) return NextResponse.json({ error: "Uploads are not configured; paste an image URL instead." }, { status: 501 });
+  const blob = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!jwt && !blob) return NextResponse.json({ error: "Uploads are not configured; paste an image URL instead." }, { status: 501 });
   if (!limitClient("upload", clientIp(req), 10)) {
     return NextResponse.json({ error: "Too many uploads, try again in a minute." }, { status: 429 });
   }
@@ -40,8 +47,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Images can be at most ${MAX_IMAGE_SIDE}×${MAX_IMAGE_SIDE} pixels.` }, { status: 400 });
   }
 
+  const ext = type.split("/")[1];
+  if (blob) {
+    // Content-addressed name: the same picture uploaded twice keeps one URL.
+    const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 32);
+    const stored = await put(`coins/${hash}.${ext}`, Buffer.from(bytes), {
+      access: "public",
+      contentType: type,
+      token: blob,
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: 31_536_000,
+    }).catch(() => null);
+    if (!stored) return NextResponse.json({ error: "Upload failed, try again." }, { status: 502 });
+    return NextResponse.json({ uri: stored.url });
+  }
+
   const upstream = new FormData();
-  upstream.append("file", new Blob([bytes], { type }), `image.${type.split("/")[1]}`);
+  upstream.append("file", new Blob([bytes], { type }), `image.${ext}`);
   const res = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
     method: "POST",
     headers: { authorization: `Bearer ${jwt}` },

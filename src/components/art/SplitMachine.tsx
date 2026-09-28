@@ -3,19 +3,24 @@
 import { useId } from "react";
 import { useEffect } from "react";
 import { useInView, useReducedMotion } from "../motion";
-import { Avatar, C, type Hair, INK, splitHalves } from "./parts";
+import { LogoCoin } from "./Logo";
+import { Avatar, C, type Hair, INK } from "./parts";
 
 const CX = 280;
 const CY = 214;
 const R = 76;
 
-const NODES: { x: number; y: number; color: string; hair: Hair; hairColor: string; handle: string; pct: string; bend: number; face: "happy" | "joy" }[] = [
-  { x: 92, y: 96, color: C.sky, hair: 0, hairColor: C.sun, handle: "@ada", pct: "40%", bend: -46, face: "happy" },
-  { x: 470, y: 84, color: C.pink, hair: 3, hairColor: C.lilac, handle: "@kofi", pct: "25%", bend: 44, face: "joy" },
-  { x: 498, y: 292, color: C.sun, hair: 1, hairColor: C.green, handle: "@mei", pct: "15%", bend: -40, face: "happy" },
-  { x: 318, y: 390, color: C.lilac, hair: 2, hairColor: C.orange, handle: "@noor", pct: "10%", bend: 34, face: "joy" },
-  { x: 72, y: 318, color: C.orange, hair: 4, hairColor: C.sky, handle: "@sol", pct: "10%", bend: 38, face: "happy" },
+/** Where the five accounts sit around the coin, and how their streams bend. */
+const SLOTS: { x: number; y: number; color: string; hair: Hair; hairColor: string; bend: number; face: "happy" | "joy" }[] = [
+  { x: 92, y: 96, color: C.sky, hair: 0, hairColor: C.sun, bend: -46, face: "happy" },
+  { x: 470, y: 84, color: C.pink, hair: 3, hairColor: C.lilac, bend: 44, face: "joy" },
+  { x: 498, y: 292, color: C.sun, hair: 1, hairColor: C.green, bend: -40, face: "happy" },
+  { x: 318, y: 390, color: C.lilac, hair: 2, hairColor: C.orange, bend: 34, face: "joy" },
+  { x: 72, y: 318, color: C.orange, hair: 4, hairColor: C.sky, bend: 38, face: "happy" },
 ];
+
+/** A real X account the coin pays: its username, share, and profile photo when known. */
+export type MachineAccount = { handle: string; pct: number; image?: string };
 
 const r2 = (n: number) => Math.round(n * 10) / 10;
 
@@ -24,7 +29,7 @@ const r2 = (n: number) => Math.round(n * 10) / 10;
  * drops, one stream per X account, sized by its share. Pure SVG; motion stops for visitors who
  * ask for less of it.
  */
-export function SplitMachine({ className }: { className?: string }) {
+export function SplitMachine({ className, accounts, caption = "CREATOR FEES, EVERY TRADE" }: { className?: string; accounts: MachineAccount[]; caption?: string }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const reduced = useReducedMotion();
   // All of this motion repaints the whole drawing every frame, so it only runs while on screen.
@@ -35,7 +40,7 @@ export function SplitMachine({ className }: { className?: string }) {
     if (onScreen) svg.unpauseAnimations();
     else svg.pauseAnimations();
   }, [onScreen, ref]);
-  const [a, b] = splitHalves(CX, CY, R, 9);
+  const NODES = accounts.slice(0, SLOTS.length).map((a, i) => ({ ...SLOTS[i], handle: `@${a.handle}`, pct: `${+a.pct.toFixed(1)}%`, weight: a.pct, image: a.image }));
   const streams = NODES.map((n, i) => {
     const dx = n.x - CX;
     const dy = n.y - CY;
@@ -48,7 +53,7 @@ export function SplitMachine({ className }: { className?: string }) {
     const y3 = n.y - uy * 38;
     const mx = (x0 + x3) / 2 - uy * n.bend;
     const my = (y0 + y3) / 2 + ux * n.bend;
-    return { id: `${uid}s${i}`, d: `M${r2(x0)} ${r2(y0)}Q${r2(mx)} ${r2(my)} ${r2(x3)} ${r2(y3)}`, n, weight: parseInt(n.pct, 10) };
+    return { id: `${uid}s${i}`, d: `M${r2(x0)} ${r2(y0)}Q${r2(mx)} ${r2(my)} ${r2(x3)} ${r2(y3)}`, n, weight: n.weight };
   });
 
   return (
@@ -57,7 +62,7 @@ export function SplitMachine({ className }: { className?: string }) {
       viewBox="0 0 560 450"
       className={`${className ?? ""} ${onScreen ? "" : "motion-paused"}`}
       role="img"
-      aria-label="A coin splitting its trading fees between five X accounts"
+      aria-label={`A coin splitting its trading fees between ${NODES.map((n) => `${n.handle} (${n.pct})`).join(", ")}`}
     >
       <defs>
         <radialGradient id={`${uid}glow`}>
@@ -94,28 +99,38 @@ export function SplitMachine({ className }: { className?: string }) {
         </g>
       ))}
 
-      {/* the coin, splitting and closing again */}
-      <g>
-        <path d={b} fill={INK} transform="translate(5 5)" />
-        <path d={a} fill={C.lime} stroke={INK} strokeWidth={3.2} strokeLinejoin="round" className="split-half-a" />
-        <path d={b} fill={C.green} stroke={INK} strokeWidth={3.2} strokeLinejoin="round" className="split-half-b" />
-        <path d={`M${CX - 44} ${CY - 30}A54 54 0 0 1 ${CX - 20} ${CY - 50}`} fill="none" stroke="var(--shine)" strokeWidth={3.4} strokeLinecap="round" opacity={0.85} className="split-half-a" />
+      {/* the coin: the brand's happy two-tone coin, bobbing */}
+      <g className="animate-float" style={{ transformBox: "fill-box", transformOrigin: "center" }}>
+        <g transform={`translate(${r2(CX - 21 * (R / 16.5))} ${r2(CY - 23.5 * (R / 16.5))}) scale(${r2(R / 16.5)})`}>
+          <LogoCoin />
+        </g>
       </g>
       <text x={CX} y={CY - R - 26} textAnchor="middle" className="fill-[var(--ink-3)] font-mono" fontSize={11} letterSpacing="0.14em">
-        CREATOR FEES, EVERY TRADE
+        {caption}
       </text>
 
       {/* the accounts */}
       {NODES.map((n, i) => (
         <g key={n.handle} className="animate-float" style={{ animationDelay: `${-i * 1.1}s`, transformBox: "fill-box", transformOrigin: "center" }}>
-          <Avatar cx={n.x} cy={n.y} r={26} color={n.color} hair={n.hair} hairColor={n.hairColor} sw={2.8} face={n.face} shadow={3} />
+          {n.image ? (
+            <g>
+              <clipPath id={`${uid}c${i}`}>
+                <circle cx={n.x} cy={n.y} r={25} />
+              </clipPath>
+              <circle cx={n.x + 3} cy={n.y + 3} r={27} fill={INK} />
+              <circle cx={n.x} cy={n.y} r={27} fill={n.color} stroke={INK} strokeWidth={2.8} />
+              <image href={n.image} x={n.x - 25} y={n.y - 25} width={50} height={50} clipPath={`url(#${uid}c${i})`} preserveAspectRatio="xMidYMid slice" />
+            </g>
+          ) : (
+            <Avatar cx={n.x} cy={n.y} r={26} color={n.color} hair={n.hair} hairColor={n.hairColor} sw={2.8} face={n.face} shadow={3} />
+          )}
           <g transform={`translate(${n.x} ${n.y + 44})`}>
-            <rect x={-44} y={-12} width={88} height={24} rx={12} fill="var(--card)" stroke="var(--line-2)" />
-            <text x={-34} y={4} className="fill-[var(--ink)] font-mono" fontSize={11}>
-              {n.handle}
+            <rect x={-62} y={-12} width={124} height={24} rx={12} fill="var(--card)" stroke="var(--line-2)" />
+            <text x={-52} y={4} className="fill-[var(--ink)] font-mono" fontSize={11}>
+              {n.handle.length > 12 ? `${n.handle.slice(0, 11)}…` : n.handle}
             </text>
             {/* The pastel reads on the dark pill; on the paper edition's white pill the share is ink. */}
-            <text x={36} y={4} textAnchor="end" className="font-mono [[data-theme=light]_&]:fill-[var(--ink)]" fill={n.color} fontSize={11} fontWeight={600}>
+            <text x={54} y={4} textAnchor="end" className="font-mono [[data-theme=light]_&]:fill-[var(--ink)]" fill={n.color} fontSize={11} fontWeight={600}>
               {n.pct}
             </text>
           </g>

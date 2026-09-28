@@ -7,7 +7,7 @@
 import { writeFileSync } from "fs";
 import { ethers } from "ethers";
 import { chromium } from "playwright";
-import { BASE, NETWORK, OUT, OWNER, errors, fail, openAs, provider, same, step, waitFor } from "./lib.mjs";
+import { A, BASE, NETWORK, OUT, OWNER, adminSignIn, errors, fail, openAs, provider, same, step, waitFor } from "./lib.mjs";
 
 const PONS_MAINNET_FACTORY = "0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e";
 
@@ -19,8 +19,27 @@ const nonceBefore = await provider.getTransactionCount(OWNER);
 const browser = await chromium.launch();
 let page;
 try {
+  // Anyone else gets only the sign-in screen, and can't sign in.
+  const visitor = await openAs(browser, A, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await visitor.goto(`${BASE}/setup`, { timeout: 180_000 });
+  await visitor.getByRole("heading", { name: "Admin sign-in" }).waitFor({ timeout: 90_000 });
+  if (await visitor.getByRole("button", { name: /^Deploy \(/ }).count()) fail("a visitor sees the deploy button");
+  await visitor.waitForTimeout(2500);
+  if (!(await visitor.getByRole("button", { name: /^Sign in as / }).count())) {
+    await visitor.getByRole("button", { name: "Connect wallet" }).first().click({ timeout: 30_000 });
+    await visitor.waitForTimeout(1200);
+    await visitor.getByText("E2E Wallet").first().click({ force: true, timeout: 10_000 });
+  }
+  await visitor.getByRole("button", { name: /^Sign in as / }).click({ timeout: 60_000 });
+  await visitor.getByText("This wallet isn't an admin of this site.").waitFor({ timeout: 30_000 });
+  const res = await visitor.evaluate(() => fetch("/api/admin/session").then((r) => r.json()));
+  if (res.admin) fail("a visitor's wallet got an admin session");
+  await visitor.context().close();
+  step("/setup: visitors get only the sign-in screen, and a non-admin wallet is refused");
+
   page = await openAs(browser, OWNER, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await page.goto(`${BASE}/setup`, { timeout: 180_000 });
+  await adminSignIn(page);
   const deploy = page.getByRole("button", { name: /^Deploy \(\d+ transactions\)$/ });
   const connectButton = page.getByRole("button", { name: "Connect wallet" });
   // The injected test wallet may reconnect by itself; otherwise connect it through the modal.
