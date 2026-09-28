@@ -12,7 +12,11 @@ const SOLC_VERSION = "0.8.24";
 subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD, async (args, hre, runSuper) => {
   if (args.solcVersion === SOLC_VERSION) {
     const compilerPath = path.join(__dirname, "node_modules", "solc", "soljson.js");
-    return { compilerPath, isSolcJs: true, version: args.solcVersion, longVersion: require("solc").version() };
+    // solc-js reports "0.8.24+commit.e11b9ed9.Emscripten.clang"; the platform suffix isn't part of
+    // the compiler's identity (the bytecode and metadata are the same), and explorers only know
+    // "v0.8.24+commit.e11b9ed9", so verification needs it without the suffix.
+    const longVersion = require("solc").version().replace(/\.Emscripten\.clang$/, "");
+    return { compilerPath, isSolcJs: true, version: args.solcVersion, longVersion };
   }
   return runSuper();
 });
