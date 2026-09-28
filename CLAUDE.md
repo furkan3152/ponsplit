@@ -80,7 +80,7 @@ The owner asked for a UI that doesn't look generated. Keep new work in this lang
 ## Commands
 
 ```bash
-cd contracts && npx hardhat test          # 27 tests on the real pons/Uniswap stack (solc-js 0.8.24 via a compile subtask, viaIR)
+cd contracts && npx hardhat test          # 29 tests on the real pons/Uniswap stack (solc-js 0.8.24 via a compile subtask, viaIR)
 cd contracts && node vendor/build.js      # re-derive vendor/out from the verified sources (CI checks they match)
 cd contracts && node scripts/export-abi.js  # regenerate src/lib/abi.ts + bytecode.ts after any .sol change (CI checks)
 cd contracts && FORK_URL=<rpc> FORK_NETWORK=mainnet|testnet npx hardhat test test/fork/PonsMainnet.fork.test.js
@@ -200,6 +200,6 @@ Gotchas:
   way, trading inside PonsEarn, 20% of the creator share to PonsEarn / 80% to the X accounts, a
   creator tax (0-10%, default 0) all to the accounts, the name PonsEarn with a not-affiliated note,
   and then both networks selectable at the top with no mock data and deploys from their own wallet.
-  Built: the contracts above (27 unit tests on the real stack; fork tests on both real networks,
+  Built: the contracts above (29 unit tests on the real stack; fork tests on both real networks,
   including a byte-for-byte check of the vendored pons code against mainnet), the two-network site,
   wallet `/setup` for both networks, and a fork e2e for both. SplitLaunchpad/SplitToken are gone.
