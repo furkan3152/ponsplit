@@ -1,0 +1,35 @@
+name: Inspect deployment
+
+# Read-only: checks live contracts straight from the chain (code, wiring, signer, owners, terms).
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: testnet or mainnet
+        default: testnet
+      vault:
+        description: FeeVault address
+        required: true
+      launchpad:
+        description: SplitLaunchpad address
+        required: true
+      admin:
+        description: Admin address shown on /setup (optional; also checks the addresses are its nonce 0/1 contracts)
+        default: ""
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/inspect-deployment.mjs
+        env:
+          NETWORK: ${{ inputs.network }}
+          VAULT: ${{ inputs.vault }}
+          LAUNCHPAD: ${{ inputs.launchpad }}
+          ADMIN: ${{ inputs.admin }}
