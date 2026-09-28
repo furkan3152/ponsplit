@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { getAddress, isAddress, zeroAddress } from "viem";
 import { useAccount } from "wagmi";
 import { GraduatedArt, NotFoundArt } from "@/components/art";
+import { celebrate } from "@/components/motion";
 import { PriceChart } from "@/components/PriceChart";
 import { Progress } from "@/components/Progress";
 import { SplitCard } from "@/components/SplitCard";
@@ -23,7 +24,23 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   const { data: t, isLoading, isError, refetch } = useToken(token);
   const trades = useTrades(token, t?.tradeCount);
   const { address } = useAccount();
-  const launched = useSearchParams().get("launched") === "1";
+  const router = useRouter();
+  const pathname = usePathname();
+  // The create page lands here with ?launched=1. Remember that once, then drop it from the URL,
+  // so a reload or a copied link never shows the creator's banner to anyone else.
+  const searchParams = useSearchParams();
+  const [fromLaunch] = useState(() => searchParams.get("launched") === "1");
+  useEffect(() => {
+    if (fromLaunch) router.replace(pathname, { scroll: false });
+  }, [fromLaunch, pathname, router]);
+  const launched = fromLaunch && Boolean(t && address && t.market.creator.toLowerCase() === address.toLowerCase());
+  const celebrated = useRef(false);
+  useEffect(() => {
+    if (launched && !celebrated.current) {
+      celebrated.current = true;
+      void celebrate();
+    }
+  }, [launched]);
   useNow(15_000);
 
   if (!token) return <Missing text="That is not a valid coin address." />;

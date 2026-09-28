@@ -152,7 +152,7 @@ function ProofClaim() {
   const valid = isValidHandle(handle);
   // Look the profile up once typing pauses; the proof itself doesn't depend on this lookup.
   const lookupHandle = useDebounced(valid ? handle : "");
-  const profiles = useXProfiles(lookupHandle ? [lookupHandle] : []);
+  const profiles = useXProfiles(lookupHandle ? [lookupHandle] : [], { recheckMisses: true });
   const prof = valid && lookupHandle === handle ? profiles.data?.[handle] : undefined;
   const xId = prof ? BigInt(prof.id) : undefined;
   const earnings = useEarnings(xId);
@@ -379,7 +379,7 @@ function Lookup() {
   const valid = isValidHandle(handle);
   // Look the profile up once typing pauses.
   const lookupHandle = useDebounced(valid ? handle : "");
-  const profiles = useXProfiles(lookupHandle ? [lookupHandle] : []);
+  const profiles = useXProfiles(lookupHandle ? [lookupHandle] : [], { recheckMisses: true });
   const prof = valid && lookupHandle === handle ? profiles.data?.[handle] : undefined;
   const { data } = useEarnings(prof ? BigInt(prof.id) : undefined);
 

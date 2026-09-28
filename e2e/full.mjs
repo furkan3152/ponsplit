@@ -164,7 +164,8 @@ try {
   await owner.getByLabel(/first buyer/i).fill("0.05");
   await owner.getByText("✓ alpha_e2e").waitFor({ timeout: 30_000 });
   await owner.getByRole("button", { name: "Launch coin" }).click();
-  await owner.waitForURL(/\/token\/0x.*launched=1/, { timeout: 90_000 });
+  // The coin page drops ?launched=1 from the URL right after it opens, so match the page itself.
+  await owner.waitForURL(/\/token\/0x[0-9a-fA-F]{40}/, { timeout: 90_000 });
   const tokenUrl = owner.url().split("?")[0];
   const tokenAddress = tokenUrl.split("/token/")[1];
   step(`launched FORK via the UI → ${tokenAddress}`);
@@ -221,8 +222,9 @@ try {
       await p.waitForTimeout(1500);
       const name = path === "/" ? "home" : path.split("/").filter(Boolean)[0];
       // Measure both before and after the page settles (wallet auto-connect, data loads), since
-      // late content such as a connected address can be what overflows.
-      const measure = () => p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      // late content such as a connected address can be what overflows. Compare with the
+      // configured width: in mobile emulation an overflowing page widens innerWidth to fit.
+      const measure = () => p.evaluate((w) => document.documentElement.scrollWidth - w, opts.viewport.width);
       const before = await measure();
       await p.waitForTimeout(2500);
       await p.screenshot({ path: `${OUT}/page-${label}-${name}.png`, fullPage: true });

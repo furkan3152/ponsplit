@@ -77,16 +77,16 @@ export function PriceChart({ trades, loading, total }: { trades: readonly TradeR
       series.current = s;
     };
     make();
-    // Rebuild on theme change so colors follow light/dark.
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    // Rebuild on theme change (<html data-theme>) so colors follow light/dark.
     const onTheme = () => {
       chart.current?.remove();
       make();
       setEpoch((e) => e + 1);
     };
-    mq.addEventListener("change", onTheme);
+    const mo = new MutationObserver(onTheme);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => {
-      mq.removeEventListener("change", onTheme);
+      mo.disconnect();
       chart.current?.remove();
       chart.current = undefined;
     };
