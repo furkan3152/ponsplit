@@ -123,8 +123,14 @@ Gotchas:
 - **Old testnet contracts** (SplitLaunchpad era, 2026-09-28): FeeVault `0x79729a008b26Fd1c3d50a9dF4ceD538B096380E5`,
   SplitLaunchpad `0xB6404ab2d13808eFA3885ff05900aa9d59964cf3`, owner `0x36b1f70cFcA2DB13aA43B0208f6979c5407099b9`.
   Unused by the site; coins launched there stay there.
-- **Vercel** (the owner's choice for production): Hobby forbids commercial use, so Pro before launch.
+- **Vercel** (the owner's choice for production): project `ponsplit` (team scope `akdogan1`), auto-deploys
+  the branch to production. Env: `SIGNER_PRIVATE_KEY` (owner set it), `ADMIN_ADDRESSES` =
+  `0xff3a3cfc42d27e85dba9ea85f0bfec34bd632f9a` (the owner's wallet), `BLOB_READ_WRITE_TOKEN` (Blob store
+  `splitearn-coin-images`, connected by Claude). Hobby forbids commercial use, so Pro before launch.
   MAINNET.md has the owner-facing steps.
+- **/setup is owner-only**: `src/lib/admin.ts` + `/api/admin/session`. Admins are `ADMIN_ADDRESSES` plus
+  the on-chain owner of each pinned launcher; they sign a one-time message and get a signed, http-only
+  session cookie. Everyone else sees only the sign-in screen (e2e checks this).
 
 ## History / where things stand
 
@@ -210,3 +216,12 @@ Gotchas:
   (the executor deploy and its wiring shared a key and stalled testnet setup). The owner asked
   Claude to deploy testnet from the old admin wallet `0x36b1f7…`; a key-signing deploy workflow was
   refused by the permission system, so testnet too is deployed by the owner on /setup.
+- **SplitEarn rename + redesign (2026-09-28).** The project is now SplitEarn (contracts `SplitEarnLauncher`,
+  `SplitEarnRouter`, EIP-712 `SplitEarn FeeVault`, salts `splitearn:v1`). New cute two-tone coin logo
+  (`art/Logo.tsx`; `scripts/render-logo.mjs` renders the static icons). The shell follows the owner's
+  reference: sidebar (`Sidebar.tsx`, folds; `data-sidebar` on `<html>`), top bar with coin search
+  (`SearchBox.tsx`), 5-tab bar on phones; home is a centred hero plus bento panels of real chain data
+  (`components/home/Bento.tsx`, `usePayouts`, `useTopEarners`); the board moved to `/explore`. The split
+  animation shows real X accounts with real photos (an example set of well-known accounts, labelled as
+  such, until a coin exists). Coin images upload from files (`/api/upload`: Vercel Blob, else Pinata;
+  `shrink-image.ts` shrinks photos in the browser).
