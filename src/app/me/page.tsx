@@ -34,7 +34,7 @@ export default function PortfolioPage() {
 }
 
 function Portfolio({ address }: { address: `0x${string}` }) {
-  const { data: newestFirst, isLoading: tokensLoading, error: tokensError } = useAllTokens();
+  const { data: newestFirst, error: tokensError } = useAllTokens();
   // Oldest first, so a new coin is appended and every earlier index keeps pointing at the same
   // coin; that is what lets the previous balances stay on screen while the next read runs.
   const tokens = useMemo(() => (newestFirst ? [...newestFirst].reverse() : undefined), [newestFirst]);
@@ -51,9 +51,10 @@ function Portfolio({ address }: { address: `0x${string}` }) {
     query: { enabled: Boolean(tokens?.length), refetchInterval: 15_000, placeholderData: (prev) => prev },
   });
 
-  // Don't show zeros for data we don't have yet: unknown is "–", not "0".
-  const loading = tokensLoading || (Boolean(tokens?.length) && balances === undefined);
+  // Don't show zeros for data we don't have yet: unknown is "–", not "0" (this also covers a read
+  // that is paused while offline).
   const unavailable = Boolean(tokensError) && !tokens;
+  const loading = (!tokens && !unavailable) || (Boolean(tokens?.length) && balances === undefined);
   // A failed read is unknown, not zero: it is left out and the page says so.
   const failed = (balances ?? []).filter((b) => b.status === "failure").length;
   const holdings = (tokens ?? [])

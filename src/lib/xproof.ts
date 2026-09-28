@@ -3,7 +3,8 @@ import { createHmac, createHash } from "crypto";
 import { getAddress, type Address } from "viem";
 import { adminKey } from "./adminKey";
 import { isValidHandle, normalizeHandle } from "./handles";
-import { FX_HEADERS, mockXId, resolverMode } from "./x";
+import { charge, remaining } from "./ratelimit";
+import { fxFetch, mockXId, resolverMode } from "./x";
 
 /**
  * "Post to verify": proves control of an X account without an X developer app.
@@ -19,6 +20,7 @@ import { FX_HEADERS, mockXId, resolverMode } from "./x";
  */
 
 const DAY = 86_400;
+const PROOF_CHECKS_PER_MIN = 300;
 
 function secret(): Buffer {
   const key = adminKey();
@@ -86,11 +88,11 @@ export async function verifyProofPost(url: string, wallet: Address): Promise<Pro
 
   const id = statusId(url);
   if (!id) throw new Error("Paste the link to your post (x.com/…/status/…).");
-  const res = await fetch(`https://api.fxtwitter.com/status/${id}`, {
-    cache: "no-store",
-    headers: FX_HEADERS,
-    signal: AbortSignal.timeout(8_000),
-  }).catch(() => null);
+  // Proof checks have their own global budget, so resolver traffic can never starve claims and a
+  // flood of claim attempts can't get the server throttled by the mirror.
+  if (remaining("x-proof:*", PROOF_CHECKS_PER_MIN) === 0) throw new Error("Too many claims are being checked right now. Try again in a minute.");
+  charge("x-proof:*", 1, 60_000);
+  const res = await fxFetch(`https://api.fxtwitter.com/status/${id}`).catch(() => null);
   if (!res) throw new Error("Could not load the post. Try again in a minute.");
   if (res.status === 404) throw new Error("Post not found. Is it public and not deleted?");
   if (!res.ok) throw new Error(`Could not load the post (${res.status}). Try again in a minute.`);

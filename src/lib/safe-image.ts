@@ -6,7 +6,7 @@ import { imageWithinLimits, sniffImage } from "./image-bytes";
 /**
  * Downloads a user-supplied image (coin metadata) for server-side rendering without letting the
  * URL reach our private network or exhaust memory: https only, public addresses only (checked
- * after DNS and on every redirect), 3 s timeout, 2 MB cap, the bytes must really be a PNG or JPEG,
+ * after DNS and on every redirect), 3 s timeout, 2 MB cap, the bytes must really be a PNG, JPEG or GIF,
  * and its real dimensions must be modest (a tiny file can declare a canvas that would decode to
  * gigabytes). Returns a data: URL, or null on any problem.
  */
@@ -75,9 +75,9 @@ async function download(start: string): Promise<string | null> {
     }
     const bytes = await readCapped(res.body);
     if (!bytes) return null;
-    // The OG renderer draws PNG and JPEG; anything else falls back to the initials card.
+    // The OG renderer draws PNG, JPEG and GIF (first frame); WebP falls back to the initials card.
     const type = sniffImage(bytes);
-    if ((type !== "image/png" && type !== "image/jpeg") || !imageWithinLimits(bytes)) return null;
+    if ((type !== "image/png" && type !== "image/jpeg" && type !== "image/gif") || !imageWithinLimits(bytes)) return null;
     return `data:${type};base64,${Buffer.from(bytes).toString("base64")}`;
   }
   return null;

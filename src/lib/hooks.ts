@@ -7,7 +7,7 @@ import { usePublicClient, useReadContract, useReadContracts } from "wagmi";
 import { feeVaultAbi, launchpadAbi } from "./abi";
 import { activeChain, rpcUrl } from "./chains";
 import { FEE_VAULT_ADDRESS, LAUNCHPAD_ADDRESS } from "./config";
-import type { TradeRecord } from "./types";
+import type { TokenView, TradeRecord } from "./types";
 
 const base = { address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, chainId: activeChain.id } as const;
 
@@ -31,11 +31,15 @@ export function useTokenCount() {
  * all coins, not only the newest ones. One stable query: a failed refresh keeps the list on screen.
  * (At very large scale this belongs in an indexer; see MAINNET.md.)
  */
+const NO_TOKENS: readonly TokenView[] = [];
+
 export function useAllTokens() {
   const { data: count } = useTokenCount();
   const query = useQuery({
     queryKey: ["tokens", "all"],
     enabled: Boolean(LAUNCHPAD_ADDRESS),
+    // Not set up yet: there are simply no coins (rather than a list that is forever "loading").
+    ...(LAUNCHPAD_ADDRESS ? {} : { initialData: NO_TOKENS as TokenView[] }),
     refetchInterval: 15_000,
     queryFn: async () => {
       const total = Number(await pagedClient.readContract({ address: LAUNCHPAD_ADDRESS!, abi: launchpadAbi, functionName: "tokenCount" }));
@@ -53,10 +57,17 @@ export function useAllTokens() {
       return results.flat();
     },
   });
-  // Pick up a new launch as soon as the (cheaper, faster-polled) count moves.
+  // Pick up a new launch as soon as the (cheaper, faster-polled) count moves: at most one refetch
+  // per new count, and only when the count is ahead of the list (the list can briefly be ahead of a
+  // count poll, and a failed read shouldn't be retried in a tight loop).
   const { data, refetch, isFetching } = query;
+  const askedFor = useRef<bigint>();
   useEffect(() => {
-    if (count !== undefined && data && BigInt(data.length) !== count && !isFetching) refetch();
+    if (count === undefined || !data || isFetching) return;
+    if (count > BigInt(data.length) && askedFor.current !== count) {
+      askedFor.current = count;
+      refetch();
+    }
   }, [count, data, isFetching, refetch]);
   return query;
 }
@@ -156,26 +167,29 @@ export function useTrades(token: Address | undefined, count: bigint | undefined)
   // One query per token (a failed refresh keeps the chart), re-read whenever the count moves.
   const countRef = useRef(count);
   countRef.current = count;
-  const fetchedFor = useRef<bigint>();
+  const attemptedFor = useRef<bigint>();
   const query = useQuery({
     queryKey: ["trades", token],
     enabled: Boolean(token && LAUNCHPAD_ADDRESS && count !== undefined),
+    // A failed read (with nothing on screen yet) is retried on a slow timer as well.
+    refetchInterval: (q) => (q.state.status === "error" ? 15_000 : false),
     queryFn: async () => {
       const total = countRef.current ?? 0n;
+      attemptedFor.current = total;
       const start = total > MAX_TRADES ? total - MAX_TRADES : 0n;
       const out: TradeRecord[] = [];
       for (let offset = start; offset < total; offset += PAGE) {
         const page = await pagedClient.readContract({ address: LAUNCHPAD_ADDRESS!, abi: launchpadAbi, functionName: "getTrades", args: [token!, offset, PAGE] });
         out.push(...page);
       }
-      fetchedFor.current = total; // only after a successful read, so a failed one is retried
       return out;
     },
   });
-  const { refetch, isFetching, dataUpdatedAt } = query;
+  // Each new trade count triggers one read, whether or not the previous read succeeded.
+  const { refetch, isFetching } = query;
   useEffect(() => {
-    if (count !== undefined && dataUpdatedAt && !isFetching && fetchedFor.current !== count) refetch();
-  }, [count, dataUpdatedAt, isFetching, refetch]);
+    if (count !== undefined && !isFetching && attemptedFor.current !== count) refetch();
+  }, [count, isFetching, refetch]);
   return query;
 }
 
@@ -195,10 +209,12 @@ export type HandleCheck = {
   handle: string;
   /**
    * current: the username still belongs to the account the fees go to.
-   * moved:   the account was renamed (the name is free now or belongs to someone else).
+   * moved:   the username now belongs to a different account (the fee account was renamed).
+   * missing: X doesn't show this username right now (renamed and not taken, or the account is
+   *          suspended or deactivated).
    * unknown: not checked yet, or the lookup is unavailable.
    */
-  status: "current" | "moved" | "unknown";
+  status: "current" | "moved" | "missing" | "unknown";
   image?: string;
 };
 
@@ -212,7 +228,8 @@ export function useHandleChecks(handles: readonly string[], xIds: readonly bigin
   return handles.map((handle, i) => {
     const p = profiles.data?.[handle];
     if (p === undefined) return { handle, status: "unknown" };
-    if (p === null || p.id !== xIds[i]?.toString()) return { handle, status: "moved" };
+    if (p === null) return { handle, status: "missing" };
+    if (p.id !== xIds[i]?.toString()) return { handle, status: "moved" };
     return { handle, status: "current", image: p.image };
   });
 }

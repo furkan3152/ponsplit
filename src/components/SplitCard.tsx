@@ -72,7 +72,11 @@ export function SplitCard({ t }: { t: TokenView }) {
                   >
                     @{h}
                   </a>
-                  {check.status === "moved" ? <span className="chip shrink-0 !text-[11px]">renamed since launch</span> : null}
+                  {check.status === "moved" ? (
+                    <span className="chip shrink-0 !text-[11px]">renamed since launch</span>
+                  ) : check.status === "missing" ? (
+                    <span className="chip shrink-0 !text-[11px]">not found on X right now</span>
+                  ) : null}
                 </div>
                 <div className="num text-[12px] text-ink-2">
                   {formatEth(fromToken, 5)} ETH from this coin

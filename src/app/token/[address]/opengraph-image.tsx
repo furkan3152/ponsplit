@@ -72,7 +72,7 @@ export default async function TokenOgImage({ params }: { params: { address: stri
           {t.handles.slice(0, 5).map((h, i) => (
             <div key={h} style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "3px solid #1d1d1f", borderRadius: 999, padding: "10px 22px", fontSize: 28, fontWeight: 700 }}>
               <div style={{ width: 18, height: 18, borderRadius: 999, background: COLORS[i % COLORS.length], border: "2px solid #1d1d1f" }} />
-              {`@${h} · ${pct(t.bps[i])}`}
+              {`${h} · ${pct(t.bps[i])}`}
             </div>
           ))}
         </div>

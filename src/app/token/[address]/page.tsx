@@ -84,7 +84,10 @@ export default function TokenPage({ params }: { params: { address: string } }) {
 
       <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
         <div className="min-w-0 space-y-5">
-          <PriceChart trades={trades.data} loading={trades.isLoading} total={t.tradeCount} />
+          {trades.isError && !trades.data ? (
+            <p className="card p-4 text-[14px] font-medium text-down-ink">Couldn&apos;t load this coin&apos;s trades right now. Retrying…</p>
+          ) : null}
+          <PriceChart trades={trades.data} loading={trades.isLoading || (trades.isError && !trades.data)} total={t.tradeCount} />
           <TradesTable trades={trades.data} total={t.tradeCount} symbol={t.symbol} me={address} />
           {meta.description ? (
             <div className="card p-5">

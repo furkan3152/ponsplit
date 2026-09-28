@@ -15,6 +15,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { feeVaultAbi, launchpadAbi } from "./abi";
 import { feeVaultBytecode, launchpadBytecode } from "./bytecode";
 import { activeChain, rpcUrl } from "./chains";
@@ -113,10 +114,15 @@ export async function setupStatus(): Promise<SetupStatus> {
     ownershipProposed: false,
   };
   if (!account) {
-    // A usable key but no vault address means half-configured addresses, not a missing key: say so
-    // instead of sending the operator back to "Generate admin key".
-    if (adminKey() && !FEE_VAULT_ADDRESS) {
-      return { ...base, problem: "NEXT_PUBLIC_LAUNCHPAD_ADDRESS is set without NEXT_PUBLIC_FEE_VAULT_ADDRESS. Set both, or neither." };
+    // A usable key but no vault address is a configuration problem, not a missing key: say which
+    // one, and report the admin so the page doesn't send the operator back to "Generate admin key".
+    const key = adminKey();
+    if (key) {
+      const admin = privateKeyToAccount(key).address;
+      const problem = LAUNCHPAD_ADDRESS
+        ? "The launchpad address is configured but the FeeVault address is missing or invalid (NEXT_PUBLIC_FEE_VAULT_ADDRESS / src/deployment.json). Set both, or neither."
+        : "The admin key was added after this version of the site was built, so it doesn't know its contract addresses yet. Rebuild it: on Render, Manual Deploy → Deploy latest commit (or Save, rebuild, and deploy); on Vercel, Redeploy.";
+      return { ...base, admin, problem };
     }
     return base;
   }
