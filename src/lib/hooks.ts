@@ -224,6 +224,7 @@ export type HandleCheck = {
  * re-registered name never shows or tags the wrong person.
  */
 export function useHandleChecks(handles: readonly string[], xIds: readonly bigint[]): HandleCheck[] {
+  // Missing recipients stay missing (renamed, suspended), so coin pages don't keep re-checking them.
   const profiles = useXProfiles([...handles]);
   return handles.map((handle, i) => {
     const p = profiles.data?.[handle];
@@ -239,17 +240,19 @@ const hasMiss = (d?: { profiles: Record<string, XProfileLite | null> }) => Boole
 /**
  * Looks up X profiles through the app's resolver API. Handles the server couldn't fit into its
  * lookup budget this minute are absent from `data`; the query retries them shortly instead of
- * keeping the partial answer for the full stale time. "Not found" answers are re-checked every
- * minute too: the account may have just been created, or the lookup was wrong.
+ * keeping the partial answer for the full stale time. With `recheckMisses` (where someone is
+ * typing a username), "not found" answers are re-checked every couple of minutes as well: the
+ * account may have just been created, or the lookup was wrong.
  */
-export function useXProfiles(handles: string[]) {
+export function useXProfiles(handles: string[], { recheckMisses = false }: { recheckMisses?: boolean } = {}) {
   const key = Array.from(new Set(handles)).sort().join(",");
+  const missInterval = recheckMisses ? 150_000 : false;
   return useQuery({
     queryKey: ["x-profiles", key],
     enabled: handles.length > 0,
-    staleTime: (q) => (q.state.data?.incomplete.length ? 0 : hasMiss(q.state.data) ? 60_000 : 5 * 60_000),
+    staleTime: (q) => (q.state.data?.incomplete.length ? 0 : recheckMisses && hasMiss(q.state.data) ? 120_000 : 5 * 60_000),
     refetchInterval: (q) =>
-      q.state.status === "error" || q.state.data?.incomplete.length ? 30_000 : hasMiss(q.state.data) ? 60_000 : false,
+      q.state.status === "error" || q.state.data?.incomplete.length ? 30_000 : hasMiss(q.state.data) ? missInterval : false,
     retry: false,
     queryFn: async () => {
       const res = await fetch(`/api/x/resolve?handles=${encodeURIComponent(key)}`);

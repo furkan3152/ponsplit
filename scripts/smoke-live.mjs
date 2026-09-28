@@ -60,10 +60,23 @@ await simulate("without a first buy", creationFee);
 await simulate(`with a ${formatEther(parseEther("0.001"))} ETH first buy`, creationFee + parseEther("0.001"));
 
 // The same attestation must not work for someone else.
-const reverted = await client
-  .simulateContract({ address: launchpad, abi, functionName: "createToken", args, value: creationFee, account: getAddress("0x000000000000000000000000000000000000bEEF") })
-  .then(() => undefined)
-  .catch((e) => (e instanceof BaseError ? e.walk((x) => x instanceof ContractFunctionRevertedError) : undefined));
-if (reverted?.data?.errorName !== "BadSignature") throw new Error(`another creator's launch wasn't refused with BadSignature (${reverted?.shortMessage ?? "it went through"})`);
+const other = getAddress("0x000000000000000000000000000000000000bEEF");
+const outcome = await client
+  .simulateContract({
+    address: launchpad,
+    abi,
+    functionName: "createToken",
+    args,
+    value: creationFee,
+    account: other,
+    // Funded like the real creator, so a creation fee can't make the call fail before it runs.
+    stateOverride: [{ address: other, balance: creationFee + parseEther("1") }],
+  })
+  .then(() => ({ accepted: true }))
+  .catch((e) => ({ accepted: false, error: e }));
+if (outcome.accepted) throw new Error("an attestation for another creator was accepted");
+const reverted = outcome.error instanceof BaseError ? outcome.error.walk((x) => x instanceof ContractFunctionRevertedError) : null;
+if (!reverted) throw outcome.error; // not a revert at all (RPC error, timeout): report it as it is
+if (reverted.data?.errorName !== "BadSignature") throw new Error(`another creator's launch reverted with ${reverted.data?.errorName ?? reverted.shortMessage}, expected BadSignature`);
 console.log("✔ the attestation is refused (BadSignature) for a different creator");
 console.log("\nLive launch path works.");

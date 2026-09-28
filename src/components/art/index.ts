@@ -1,5 +1,6 @@
 export { LogoMark, Wordmark } from "./Logo";
 export { HeroArt } from "./HeroArt";
+export { SplitMachine } from "./SplitMachine";
 export { StepLaunch } from "./StepLaunch";
 export { StepTrade } from "./StepTrade";
 export { StepSplit } from "./StepSplit";

@@ -223,8 +223,20 @@ async function resolveXApi(handles: string[]) {
   return out;
 }
 
+/** Mirror lookups in progress: requests for the same account at the same moment share one. */
+const fxInFlight = new Map<string, Promise<XProfile | null>>();
+
 async function resolveFx(handles: string[]) {
-  const results = await Promise.all(handles.map(async (h) => [h, await fxProfile(h)] as const));
+  const results = await Promise.all(
+    handles.map(async (h) => {
+      let lookup = fxInFlight.get(h);
+      if (!lookup) {
+        lookup = fxProfile(h).finally(() => fxInFlight.delete(h));
+        fxInFlight.set(h, lookup);
+      }
+      return [h, await lookup] as const;
+    })
+  );
   return Object.fromEntries(results.filter(([, p]) => p !== null)) as Record<string, XProfile>;
 }
 

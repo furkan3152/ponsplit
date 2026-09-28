@@ -49,15 +49,15 @@ const TABS = [
   },
 ];
 
-/** iOS-style tab bar on small screens; the header nav takes over from `sm` up. */
+/** A floating tab bar on small screens; the header nav takes over from `sm` up. */
 export function TabBar() {
   const pathname = usePathname();
   return (
     <nav
       aria-label="Main"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-[var(--glass)] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl backdrop-saturate-150 sm:hidden"
+      className="fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-40 rounded-full border border-line-2 bg-[var(--glass)] p-1.5 shadow-[0_24px_48px_-20px_rgba(0,0,0,0.75)] backdrop-blur-xl backdrop-saturate-150 sm:hidden"
     >
-      <div className="grid grid-cols-4">
+      <div className="grid grid-cols-4 gap-1">
         {TABS.map((t) => {
           const active = t.href === "/" ? pathname === "/" : pathname.startsWith(t.href);
           return (
@@ -65,7 +65,9 @@ export function TabBar() {
               key={t.href}
               href={t.href}
               aria-current={active ? "page" : undefined}
-              className={`flex flex-col items-center gap-0.5 pb-1.5 pt-2 text-[10px] font-medium ${active ? "text-ink" : "text-ink-3"}`}
+              className={`flex flex-col items-center gap-0.5 rounded-full pb-1.5 pt-2 text-[10px] font-semibold transition duration-300 ${
+                active ? "bg-lime text-[var(--lime-ink)] shadow-[0_8px_24px_-10px_var(--glow)]" : "text-ink-2 active:scale-95"
+              }`}
             >
               {t.svg}
               {t.label}
