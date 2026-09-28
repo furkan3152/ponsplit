@@ -65,6 +65,7 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
         address splitter;
         address creator;
         uint64 createdAt;
+        uint64 createdBlock; // the chain's own block number (where to start reading its trades)
         uint16 creatorTaxBps;
         uint16 platformBps; // share of every payout that goes to PonsEarn
         bytes32 poolId; // the Uniswap v4 pool it graduates into
@@ -198,13 +199,23 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
 
         FeeSplitter(payable(splitter)).initialize(token, curve, poolId, pBps);
         feeVault.setSplit(token, msg.sender, s.xIds, s.handles, s.bps, s.deadline, s.attestation);
-        _launches.push(Launch(token, curve, splitter, msg.sender, uint64(block.timestamp), p.creatorTaxBps, pBps, poolId));
+        _launches.push(
+            Launch(token, curve, splitter, msg.sender, uint64(block.timestamp), uint64(_blockNumber()), p.creatorTaxBps, pBps, poolId)
+        );
         _indexOf[token] = _launches.length;
         _handlesOf[token] = s.handles;
         isSplitter[splitter] = true;
 
         if (firstBuy != 0) tokensOut = _firstBuy(curve, firstBuy, minTokensOut);
         emit Launched(token, msg.sender, curve, splitter, p.creatorTaxBps, pBps, firstBuy, tokensOut);
+    }
+
+    /// @dev Robinhood Chain is an Arbitrum chain, where `block.number` is the parent chain's block
+    ///      number; the chain's own (the one its logs are indexed by) comes from ArbSys. Chains without
+    ///      ArbSys (local test chains) use `block.number`, which is their own.
+    function _blockNumber() private view returns (uint256) {
+        (bool ok, bytes memory ret) = address(0x64).staticcall(abi.encodeWithSignature("arbBlockNumber()"));
+        return ok && ret.length == 32 ? abi.decode(ret, (uint256)) : block.number;
     }
 
     /// @notice The fraction of every payout (in bps) that PonsEarn's share of the standard creator fee
@@ -264,7 +275,7 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
 
     /// @notice Collects several coins' fees in one transaction (see FeeSplitter.collect). A coin
     ///         whose collection fails is skipped rather than failing the rest.
-    function collectMany(address[] calldata tokens) external returns (uint256 total) {
+    function collectMany(address[] calldata tokens) public returns (uint256 total) {
         for (uint256 i; i < tokens.length; ++i) {
             uint256 index = _indexOf[tokens[i]];
             // slither-disable-next-line incorrect-equality
@@ -273,6 +284,18 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
                 total += amount;
             } catch {}
         }
+    }
+
+    /// @notice Collects the coins' latest fees, then claims X account `xId`'s whole balance to `to`
+    ///         with the signer's claim signature, in one transaction.
+    /// @dev FeeVault.claim is open to any caller: the signature binds the account, the destination,
+    ///      the nonce and the deadline.
+    function collectAndClaim(address[] calldata tokens, uint64 xId, address to, uint256 deadline, bytes calldata signature)
+        external
+        returns (uint256 amount)
+    {
+        collectMany(tokens);
+        amount = feeVault.claim(xId, to, deadline, signature);
     }
 
     // ------------------------------------------------------------------ admin
