@@ -46,27 +46,35 @@ export function imageSize(b: Uint8Array): { width: number; height: number } | nu
   }
 }
 
+/**
+ * Walks the JPEG markers the way decoders do (jpeg-decoder in the OG renderer, libjpeg in
+ * browsers): at each segment boundary, bytes before the next 0xFF and "FF 00" stuffing are skipped,
+ * so this finds the same frame header the decoder will use. Reserved markers are rejected outright,
+ * which only makes the check stricter than the decoder.
+ */
 function jpegSize(b: Uint8Array) {
   let i = 2;
-  while (i + 9 < b.length) {
-    if (b[i] !== 0xff) return null;
-    const marker = b[i + 1];
-    if (marker === 0xff) {
-      i++; // fill byte
-      continue;
-    }
-    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
-      i += 2; // markers without a length
-      continue;
-    }
+  for (;;) {
+    // Resync to the next marker.
+    while (i < b.length && b[i] !== 0xff) i++;
+    while (i < b.length && b[i] === 0xff) i++; // 0xFF fill bytes
+    if (i >= b.length) return null;
+    const marker = b[i];
+    i++;
+    if (marker === 0x00) continue; // byte stuffing, not a marker
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue; // no length
     if (marker === 0xd9 || marker === 0xda) return null; // image data before any frame header
+    if (marker < 0xc0) return null; // reserved
+    if (i + 2 > b.length) return null;
+    const length = be16(b, i);
+    if (length < 2) return null;
     // SOF0..SOF15 hold the frame size; C4 (DHT), C8 (JPG) and CC (DAC) are not frame headers.
     if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-      return { height: be16(b, i + 5), width: be16(b, i + 7) };
+      if (i + 7 > b.length) return null;
+      return { height: be16(b, i + 3), width: be16(b, i + 5) };
     }
-    i += 2 + be16(b, i + 2);
+    i += length;
   }
-  return null;
 }
 
 function gifSize(b: Uint8Array) {

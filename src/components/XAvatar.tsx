@@ -37,13 +37,34 @@ export function XAvatar({
   );
 }
 
-/** Overlapping avatar stack, like a group chat. */
-export function XAvatarStack({ handles, size = 22, max = 4 }: { handles: readonly string[]; size?: number; max?: number }) {
+/**
+ * Overlapping avatar stack, like a group chat. Photos are shown only for usernames confirmed to
+ * still belong to the fee account (`checks`, from useHandleChecks); without checks, e.g. in long
+ * lists where looking every account up isn't affordable, each account gets its generated sticker.
+ */
+export function XAvatarStack({
+  handles,
+  checks,
+  size = 22,
+  max = 4,
+}: {
+  handles: readonly string[];
+  checks?: readonly { status: string; image?: string }[];
+  size?: number;
+  max?: number;
+}) {
   const shown = handles.slice(0, max);
   return (
     <div className="flex items-center">
       {shown.map((h, i) => (
-        <XAvatar key={h} handle={h} size={size} className={i ? "-ml-1.5" : ""} />
+        <XAvatar
+          key={h}
+          handle={h}
+          image={checks?.[i]?.image}
+          photo={checks?.[i]?.status === "current"}
+          size={size}
+          className={i ? "-ml-1.5" : ""}
+        />
       ))}
       {handles.length > max ? <span className="chip -ml-1 ring-2 ring-card">+{handles.length - max}</span> : null}
     </div>

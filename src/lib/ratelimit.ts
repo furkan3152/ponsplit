@@ -28,19 +28,21 @@ export function rateLimit(key: string, limit: number, windowMs: number): boolean
   return b.count <= limit;
 }
 
-/** Like rateLimit, but charges `n` units at once (e.g. one per upstream lookup a request needs). */
-export function rateLimitN(key: string, n: number, limit: number, windowMs: number): boolean {
+/** Units still available under `limit` in the key's current window (nothing is charged). */
+export function remaining(key: string, limit: number): number {
+  const b = buckets.get(key);
+  if (!b || Date.now() > b.reset) return limit;
+  return Math.max(0, limit - b.count);
+}
+
+/** Charges `n` units to the key's window, starting a new window if the old one expired. */
+export function charge(key: string, n: number, windowMs: number): void {
+  if (n <= 0) return;
   const now = Date.now();
   prune(now);
   const b = buckets.get(key);
-  if (!b || now > b.reset) {
-    if (n > limit) return false;
-    buckets.set(key, { count: n, reset: now + windowMs });
-    return true;
-  }
-  if (b.count + n > limit) return false;
-  b.count += n;
-  return true;
+  if (!b || now > b.reset) buckets.set(key, { count: n, reset: now + windowMs });
+  else b.count += n;
 }
 
 /**
