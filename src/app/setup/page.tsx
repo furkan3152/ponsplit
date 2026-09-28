@@ -170,11 +170,13 @@ function WalletDeploy({ n, signer }: { n: Network; signer: Address }) {
   });
   // On testnet the owner's wallet receives every pons launch fee (it is the copy's protocol fee
   // recipient); a wallet that refuses plain ETH transfers would make launches revert.
+  const launchFee = BigInt(copyTerms.launchFeeWei);
   const takesEth = useQuery({
     queryKey: ["accepts-eth", n.id, address],
-    enabled: Boolean(address && n.ponsIsCopy),
+    // Simulated from the wallet's own balance, so only once it can cover a launch fee.
+    enabled: Boolean(address && n.ponsIsCopy && balance.data && balance.data.value > launchFee),
     staleTime: 60_000,
-    queryFn: async () => (await import("@/lib/deploy-plan")).acceptsEth(client, address!, BigInt(copyTerms.launchFeeWei)),
+    queryFn: async () => (await import("@/lib/deploy-plan")).acceptsEth(client, address!, launchFee),
   });
 
   if (!isConnected || !address) {
