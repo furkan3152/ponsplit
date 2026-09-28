@@ -12,7 +12,7 @@ import { EmptyArt, StepLaunch, TokenSticker } from "@/components/art";
 import { CountUp, Flash, Reveal } from "@/components/motion";
 import { splitTokenAbi } from "@/lib/abi";
 import { activeChain } from "@/lib/chains";
-import { compact, formatEth, formatTokens, shortAddress } from "@/lib/format";
+import { compact, formatEth, formatTokens, progressText, shortAddress } from "@/lib/format";
 import { useAllTokens } from "@/lib/hooks";
 import { describe } from "@/lib/market";
 import type { TokenView } from "@/lib/types";
@@ -328,10 +328,8 @@ function HoldingCard({ h, share }: { h: Holding; share: number | undefined }) {
       <div className="flex items-center gap-3.5">
         <TokenAvatar src={meta.image} seed={t.token} size={56} className="transition duration-500 group-hover:-rotate-3 group-hover:scale-105" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5">
-            <span className="truncate text-[16px] font-semibold">{t.name}</span>
-            <span className="shrink-0 font-mono text-[12px] text-ink-2">${t.symbol}</span>
-          </div>
+          {/* The ticker is on the balance line below; beside the name it squeezed long names to a letter. */}
+          <div className="truncate text-[16px] font-semibold">{t.name}</div>
           <div className="num mt-1 truncate text-[12px] text-ink-2">
             {formatTokens(bal)} ${t.symbol}
           </div>
@@ -349,7 +347,7 @@ function HoldingCard({ h, share }: { h: Holding; share: number | undefined }) {
         <div className="flex-1">
           <Progress value={progress} graduated={graduated} size="sm" />
         </div>
-        <span className={`num text-[11px] font-semibold ${graduated ? "text-up-ink" : "text-ink-2"}`}>{graduated ? "PonSwap" : `${progress.toFixed(0)}%`}</span>
+        <span className={`num text-[11px] font-semibold ${graduated ? "text-up-ink" : "text-ink-2"}`}>{graduated ? "PonSwap" : `${progressText(progress)}%`}</span>
       </div>
       <div className="mt-auto flex items-center justify-between border-t border-line pt-2.5 font-mono text-[11px] text-ink-3">
         <span>share of portfolio</span>
@@ -371,12 +369,12 @@ function LaunchedCard({ t }: { t: TokenView }) {
       <div className="flex gap-3.5">
         <TokenAvatar src={meta.image} seed={t.token} size={56} className="transition duration-500 group-hover:-rotate-3 group-hover:scale-105" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5">
-            <span className="truncate text-[16px] font-semibold">{t.name}</span>
-            <span className="shrink-0 font-mono text-[12px] text-ink-2">${t.symbol}</span>
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <span className="min-w-0 truncate text-[16px] font-semibold">{t.name}</span>
+            <span className="min-w-0 max-w-[45%] shrink-0 truncate font-mono text-[12px] text-ink-2">${t.symbol}</span>
           </div>
           <div className="mt-1 truncate font-mono text-[11px] text-ink-3">
-            {graduated ? "Graduated" : `${progress.toFixed(1)}% bonded`} · {t.tradeCount.toString()} trades
+            {graduated ? "Graduated" : `${progressText(progress, 1)}% bonded`} · {t.tradeCount.toString()} trades
           </div>
         </div>
       </div>
@@ -390,7 +388,7 @@ function LaunchedCard({ t }: { t: TokenView }) {
         <div className="flex-1">
           <Progress value={progress} graduated={graduated} size="sm" />
         </div>
-        <span className={`num text-[11px] font-semibold ${graduated ? "text-up-ink" : "text-ink-2"}`}>{graduated ? "PonSwap" : `${progress.toFixed(0)}%`}</span>
+        <span className={`num text-[11px] font-semibold ${graduated ? "text-up-ink" : "text-ink-2"}`}>{graduated ? "PonSwap" : `${progressText(progress)}%`}</span>
       </div>
       <div className="mt-auto flex items-center justify-between border-t border-line pt-2.5 font-mono text-[11px] text-ink-3">
         <span>split to X</span>

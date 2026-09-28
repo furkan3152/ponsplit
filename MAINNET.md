@@ -9,7 +9,7 @@
 | `chain-simulation` | Tüm yaşam döngüsü **gerçek Robinhood Chain testnet ve mainnet** üzerinde tek bir `eth_call` ile çalıştırılır: deploy, launch, eğride al/sat, mezuniyet, havuzda al/sat, imzalı claim. Hiçbir işlem gönderilmez, hiçbir şey harcanmaz. Mainnet'te toplam maliyet yaklaşık 7,9M gas. |
 | `web` | Typecheck, lint, birim testleri (fiyat gösterimi, görsel boyut kontrolü, IP anahtarları) ve production build |
 | `chain-simulation` (derin) | Yine tek `eth_call` ile gerçek testnet ve mainnet üzerinde: 16 ayrı trader hesabı, 3 coin (biri 10 X hesabına bölünmüş), rastgele 120 adımlık al/sat fırtınası, her adımdan sonra ödeme gücü ve arz kontrolü, mezuniyet, havuz işlemleri, reddedilmesi gereken 6 saldırı (fazla satış, bilinmeyen token, slippage, claim yönlendirme, sahte ve tekrar kullanılan imza) ve her X hesabının tam payını claim etmesi. |
-| `e2e-fork` | Robinhood testnet'in fork'u üzerinde production build gerçek bir tarayıcıda, birden çok cüzdanla uçtan uca test edilir: /setup deploy ve sahiplik devri, gerçek X hesabı çözümleme (@jack → 12), arayüzden launch, al/sat, mezuniyet, havuz işlemleri, post ile claim, 8 sayfa masaüstü/mobil/karanlık modda taşma ve hata kontrolü. Ekran görüntüleri artifact olarak yüklenir. |
+| `e2e-fork` | Robinhood testnet'in fork'u üzerinde production build gerçek bir tarayıcıda, birden çok cüzdanla uçtan uca test edilir: /setup deploy ve sahiplik devri, gerçek X hesabı çözümleme (@jack → 12), arayüzden launch, al/sat, mezuniyet, havuz işlemleri, post ile claim, 8 sayfa masaüstünde, mobilde ve açık temada (mobil) taşma ve hata kontrolü. Ekran görüntüleri artifact olarak yüklenir. |
 | `e2e-wallet-setup` | Mainnet'teki kurulum yolu: sahip, kontratları /setup'tan kendi cüzdanıyla deploy eder (tam 3 işlem). Sayfa yenilenince tekrar deploy teklif edilmez. Site adresler sabitlenmiş hâliyle yeniden build edilir; sahipliğin cüzdanda olduğu, imza anahtarının eşleştiği ve bir launch'ın çalıştığı kontrol edilir. |
 
 ## Mainnet öncesi yapılması gerekenler
@@ -71,11 +71,13 @@ Testnet sitesi Render'da (`render.yaml`) çalışmaya devam eder. Orada kurulum,
 
 ## Acil durum planı
 
+Hepsi sahip cüzdanından yapılır. Çoğu, `/setup` sayfasının altındaki **Owner controls** panelinde tek dokunuştur (sahip cüzdanıyla bağlan, her düğme bir işlem).
+
 | Durum | Ne yapılır (sahip cüzdanından) |
 |---|---|
-| Sunucu imza anahtarı sızdı | 1) `FeeVault.setClaimsPaused(true)`. 2) `/setup`'ta yeni bir imza anahtarı üret, Vercel'de `SIGNER_PRIVATE_KEY` değerini onunla değiştir, Redeploy et. 3) Kendi cüzdanından, `/setup`'ta görünen yeni imza adresiyle `FeeVault.setSigner(yeni)` çağır; `/setup` imzalayıcının eşleştiğini gösterir. 4) `setClaimsPaused(false)`. Bakiyeler durdurma sırasında yerinde kalır; eski imzalar geçersizleşir. |
-| Kötüye kullanım / spam coin dalgası | `SplitLaunchpad.setLaunchesPaused(true)`. Mevcut coin'lerin alım satımı bilinçli olarak **durdurulamaz**, kimsenin parası içeride kilitli kalmaz. |
-| Protokol gelirlerini çekmek | `SplitLaunchpad.withdrawProtocolFees(adres)` |
+| Sunucu imza anahtarı sızdı | 1) Owner controls → **Pause claims** (`FeeVault.setClaimsPaused(true)`). 2) Vercel'de `SIGNER_PRIVATE_KEY`'i sil → Redeploy (anahtar tanımlıyken `/setup` yenisini önermez; bu arada launch ve claim kapalıdır). 3) `/setup` → **Generate signing key** → Vercel'e `SIGNER_PRIVATE_KEY` olarak ekle → Redeploy. 4) Owner controls → **Use this site's key** (`FeeVault.setSigner(yeni)`); panel imzalayıcının eşleştiğini gösterir. 5) Owner controls → **Resume claims**. Bakiyeler durdurma sırasında yerinde kalır; eski imzalar geçersizleşir. |
+| Kötüye kullanım / spam coin dalgası | Owner controls → **Pause launches** (`SplitLaunchpad.setLaunchesPaused(true)`). Mevcut coin'lerin alım satımı bilinçli olarak **durdurulamaz**, kimsenin parası içeride kilitli kalmaz. |
+| Protokol gelirlerini çekmek | Owner controls → **Withdraw to this wallet** (`SplitLaunchpad.withdrawProtocolFees`) |
 | Sahipliği devretmek | `transferOwnership(yeni)` → yeni adres `acceptOwnership()` (iki adımlı) |
 
 ## Tasarım gereği güven varsayımları

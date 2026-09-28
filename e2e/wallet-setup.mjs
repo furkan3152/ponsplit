@@ -4,7 +4,8 @@
 //   node wallet-setup.mjs deploy   app built with NEXT_PUBLIC_SETUP_MODE=wallet, nothing pinned:
 //                                  deploys through the UI, checks the chain and that a reload
 //                                  resumes instead of deploying again; writes wallet-deploy.env
-//   node wallet-setup.mjs pinned   app rebuilt with those addresses pinned: checks /api/setup
+//   node wallet-setup.mjs pinned   app rebuilt with those addresses pinned: checks /api/setup, then
+//                                  pauses and resumes launches with the owner controls on /setup
 //
 // Env: BASE (default http://localhost:3000), RPC (default http://127.0.0.1:8545), OWNER (default
 // Hardhat #4), OUT (screenshots, default ./shots).
@@ -45,6 +46,32 @@ await waitFor(`${BASE}/api/config`);
 const status = await (await fetch(`${BASE}/api/setup`)).json();
 if (status.mode !== "wallet") fail(`expected wallet mode, got ${status.mode}`);
 
+/** EIP-1193/6963 wallet backed by the node's unlocked OWNER account. */
+const walletScript = `(() => {
+  let id = 0;
+  const rpc = async (method, params) => {
+    const r = await fetch(${JSON.stringify(RPC)}, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params: params || [] }) });
+    const j = await r.json();
+    if (j.error) { const e = new Error(j.error.message); e.code = j.error.code; throw e; }
+    return j.result;
+  };
+  const eth = {
+    request: async ({ method, params }) => {
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [${JSON.stringify(OWNER)}];
+      if (method === "wallet_switchEthereumChain" || method === "wallet_addEthereumChain") return null;
+      if (method === "wallet_requestPermissions" || method === "wallet_getPermissions") return [{ parentCapability: "eth_accounts" }];
+      return rpc(method, params);
+    },
+    on: () => {}, removeListener: () => {},
+  };
+  window.ethereum = eth;
+  const info = { uuid: "e2e-wallet", name: "E2E Wallet", icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>", rdns: "com.example.e2e" };
+  const announce = () => window.dispatchEvent(new CustomEvent("eip6963:announceProvider", { detail: Object.freeze({ info, provider: eth }) }));
+  window.addEventListener("eip6963:requestProvider", announce);
+  announce();
+})();`;
+
 if (phase === "deploy") {
   if (status.pinned) fail("addresses are already pinned");
   if (!status.admin) fail("the server has no signing key");
@@ -52,30 +79,6 @@ if (phase === "deploy") {
   if (refused.ok) fail("the server deployed in wallet mode");
   ok("the server refuses to deploy in wallet mode");
 
-  const walletScript = `(() => {
-    let id = 0;
-    const rpc = async (method, params) => {
-      const r = await fetch(${JSON.stringify(RPC)}, { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params: params || [] }) });
-      const j = await r.json();
-      if (j.error) { const e = new Error(j.error.message); e.code = j.error.code; throw e; }
-      return j.result;
-    };
-    const eth = {
-      request: async ({ method, params }) => {
-        if (method === "eth_requestAccounts" || method === "eth_accounts") return [${JSON.stringify(OWNER)}];
-        if (method === "wallet_switchEthereumChain" || method === "wallet_addEthereumChain") return null;
-        if (method === "wallet_requestPermissions" || method === "wallet_getPermissions") return [{ parentCapability: "eth_accounts" }];
-        return rpc(method, params);
-      },
-      on: () => {}, removeListener: () => {},
-    };
-    window.ethereum = eth;
-    const info = { uuid: "e2e-wallet", name: "E2E Wallet", icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>", rdns: "com.example.e2e" };
-    const announce = () => window.dispatchEvent(new CustomEvent("eip6963:announceProvider", { detail: Object.freeze({ info, provider: eth }) }));
-    window.addEventListener("eip6963:requestProvider", announce);
-    announce();
-  })();`;
 
   const nonceBefore = await provider.getTransactionCount(OWNER);
   const browser = await chromium.launch();
@@ -127,6 +130,39 @@ if (phase === "deploy") {
   if (!status.signerMatches) fail("FeeVault's signer isn't this server's key");
   if (!same(status.owner, OWNER) || !same(status.vaultOwner, OWNER)) fail("the wallet doesn't own both contracts");
   ok("the pinned site sees its contracts, owned by the wallet, trusting its signing key");
+
+  // The owner's controls on /setup, from a phone: pause launches, then resume them.
+  const l = new ethers.Contract(status.launchpad, ["function launchesPaused() view returns (bool)"], provider);
+  const browser = await chromium.launch();
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await ctx.addInitScript(walletScript);
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    page.on("dialog", (d) => d.accept());
+    await page.goto(`${BASE}/setup`, { timeout: 180_000 });
+    const pause = page.getByRole("button", { name: "Pause launches" });
+    const resume = page.getByRole("button", { name: "Resume launches" });
+    const connectButton = page.getByRole("button", { name: "Connect the owner wallet" });
+    await pause.or(connectButton).first().waitFor({ timeout: 60_000 });
+    await page.waitForTimeout(3000);
+    if (!(await pause.count())) {
+      await connectButton.click({ timeout: 30_000 });
+      await page.waitForTimeout(1200);
+      await page.getByText("E2E Wallet").first().click({ force: true, timeout: 10_000 });
+    }
+    await pause.click({ timeout: 60_000 });
+    await resume.waitFor({ timeout: 60_000 });
+    if (!(await l.launchesPaused())) fail("pausing launches on /setup didn't reach the chain");
+    await resume.click();
+    await pause.waitFor({ timeout: 60_000 });
+    if (await l.launchesPaused()) fail("resuming launches on /setup didn't reach the chain");
+    if (errors.length) fail(`page errors: ${errors.join("; ")}`);
+    ok("the owner pauses and resumes launches from /setup");
+  } finally {
+    await browser.close();
+  }
 } else {
   fail("usage: node wallet-setup.mjs deploy|pinned");
 }

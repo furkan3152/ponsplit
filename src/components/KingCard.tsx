@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { compact, formatPrice } from "@/lib/format";
+import { compact, formatPrice, progressText } from "@/lib/format";
 import { useHandleChecks } from "@/lib/hooks";
 import { describe } from "@/lib/market";
 import type { TokenView } from "@/lib/types";
@@ -44,7 +44,7 @@ export function KingCard({ t }: { t: TokenView }) {
             <div className="flex-1">
               <Progress value={progress} />
             </div>
-            <span className="num text-neon text-[15px] font-bold">{progress.toFixed(1)}%</span>
+            <span className="num text-neon text-[15px] font-bold">{progressText(progress, 1)}%</span>
           </div>
         </div>
       </div>

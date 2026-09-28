@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { compact, formatEth, shortAddress, timeAgo } from "@/lib/format";
+import { compact, formatEth, progressText, shortAddress, timeAgo } from "@/lib/format";
 import { describe } from "@/lib/market";
 import type { TokenView } from "@/lib/types";
 import { Progress } from "./Progress";
@@ -36,7 +36,7 @@ export function TokenCard({ t }: { t: TokenView }) {
         <div className="flex-1">
           <Progress value={progress} graduated={graduated} size="sm" />
         </div>
-        <span className={`num text-[11px] font-semibold ${graduated ? "text-up-ink" : "text-ink-2"}`}>{graduated ? "PonSwap" : `${progress.toFixed(0)}%`}</span>
+        <span className={`num text-[11px] font-semibold ${graduated ? "text-up-ink" : "text-ink-2"}`}>{graduated ? "PonSwap" : `${progressText(progress)}%`}</span>
       </div>
       <div className="flex items-center justify-between border-t border-line pt-2.5 font-mono text-[11px] text-ink-3">
         <span>split so far</span>

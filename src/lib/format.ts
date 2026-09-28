@@ -50,6 +50,15 @@ export function spotPrice(virtualEth: bigint, virtualToken: bigint): number {
 /** Trade record price (wei per 1e18 units) → ETH per token. */
 export const recordPrice = (price: bigint) => Number(price) / 1e18;
 
+/**
+ * A curve progress for display, rounded down: a coin that hasn't graduated never reads 100%.
+ * (The epsilon absorbs float noise such as 0.29 * 100 = 28.999999999999996.)
+ */
+export function progressText(progress: number, digits = 0): string {
+  const f = 10 ** digits;
+  return (Math.floor(progress * f + 1e-6) / f).toFixed(digits);
+}
+
 /** Curve progress 0..100: share of curve supply already sold. */
 export function curveProgress(realToken: bigint, curveSupply: bigint, graduated: boolean): number {
   if (graduated) return 100;

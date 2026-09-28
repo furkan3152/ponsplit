@@ -66,8 +66,10 @@ const walletScript = (account) => `(() => {
   announce();
 })();`;
 
-async function openAs(browser, account, opts = {}) {
+async function openAs(browser, account, { theme, ...opts } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, ...opts });
+  // The site's theme is <html data-theme> from localStorage (dark by default), not the OS setting.
+  if (theme) await ctx.addInitScript((t) => localStorage.setItem("ponsplit:theme", t), theme);
   await ctx.addInitScript(walletScript(account));
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`${account.slice(0, 8)}: ${e.message}`));
@@ -209,12 +211,12 @@ try {
   step(`@alpha_e2e claimed: ${await sent.textContent()}`);
   await claimer.screenshot({ path: `${OUT}/03-claim.png`, fullPage: true });
 
-  // ── 7. Every page on desktop, mobile and dark mode ───────────────────────────────────
+  // ── 7. Every page on desktop, mobile and in the light theme (on a phone) ────────────────
   const pages = ["/", "/create", tokenUrl.replace(BASE, ""), "/claim", "/me", "/how", "/setup", "/does-not-exist"];
   for (const [label, opts] of [
     ["desktop", { viewport: { width: 1280, height: 900 } }],
     ["mobile", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }],
-    ["dark", { viewport: { width: 1280, height: 900 }, colorScheme: "dark" }],
+    ["light", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, theme: "light" }],
   ]) {
     const p = await openAs(browser, A, opts);
     for (const path of pages) {

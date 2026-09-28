@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { ImageResponse } from "next/og";
-import { compact, curveProgress, formatEth, pct, spotPrice } from "@/lib/format";
+import { compact, curveProgress, formatEth, pct, progressText, spotPrice } from "@/lib/format";
 import { parseMetadata } from "@/lib/metadata";
 import { fetchImageDataUrl } from "@/lib/safe-image";
 import { fetchToken } from "@/lib/server-token";
@@ -83,7 +83,7 @@ export default async function TokenOgImage({ params }: { params: { address: stri
           split so far<b style={{ color: "#1d1d1f", marginLeft: 10 }}>{formatEth(t.creatorFees, 4)} ETH</b>
         </div>
         <div style={{ display: "flex" }}>
-          {t.market.graduated ? <b style={{ color: "#12a150" }}>Graduated</b> : <span>{progress.toFixed(0)}% bonded</span>}
+          {t.market.graduated ? <b style={{ color: "#12a150" }}>Graduated</b> : <span>{progressText(progress)}% bonded</span>}
         </div>
       </div>
     </div>
