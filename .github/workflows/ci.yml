@@ -68,6 +68,12 @@ jobs:
         run: node scripts/simulate.js
         env:
           RPC_URL: ${{ matrix.rpc }}
+      - name: Deep randomized simulation on Robinhood Chain ${{ matrix.network }}
+        run: node scripts/deep-simulate.js
+        env:
+          RPC_URL: ${{ matrix.rpc }}
+          STEPS: "120"
+          TRADERS: "16"
 
   web:
     runs-on: ubuntu-latest
@@ -84,3 +90,58 @@ jobs:
       - run: npx next build
         env:
           NEXT_TELEMETRY_DISABLED: 1
+
+  # The real web app (production build) in a real browser with several wallets, against a fork of
+  # Robinhood Chain testnet: setup, ownership, launch, trading, graduation, pool, claim, all pages.
+  # A second instance uses the real X resolver to check username → id and on-chain attestation.
+  e2e-fork:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      NEXT_PUBLIC_CHAIN: local
+      SIGNER_SEED: ci-e2e-seed-not-secret
+      OWNER_ADDRESS: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            contracts/package-lock.json
+            e2e/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: contracts
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Fork Robinhood Chain testnet
+        working-directory: contracts
+        run: |
+          npx hardhat node --fork https://rpc.testnet.chain.robinhood.com > ../fork.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf -X POST -H 'content-type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' http://127.0.0.1:8545 && break; sleep 2; done
+          echo; head -20 ../fork.log
+      - run: npx next build
+      - name: Start app (mock X) and app (real X)
+        run: |
+          X_RESOLVER=mock npx next start -p 3000 > app.log 2>&1 &
+          X_RESOLVER=fxtwitter npx next start -p 3001 > app-real.log 2>&1 &
+      - name: End-to-end
+        working-directory: e2e
+        run: node full.mjs
+        env:
+          BASE: http://localhost:3000
+          REAL_BASE: http://localhost:3001
+          OUT: shots
+      - name: Logs
+        if: always()
+        run: tail -50 app.log app-real.log fork.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: e2e/shots
