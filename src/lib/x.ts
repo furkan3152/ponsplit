@@ -20,8 +20,11 @@ export function mockXId(handle: string): bigint {
 }
 
 const TTL_MS = 10 * 60 * 1000;
-/** Unknown usernames can be registered at any moment, so "doesn't exist" is remembered briefly. */
-const MISS_TTL_MS = 2 * 60 * 1000;
+/**
+ * "Doesn't exist" is remembered only briefly: the username can be registered at any moment, and
+ * the mirror occasionally answers 404 for accounts that do exist.
+ */
+const MISS_TTL_MS = 60 * 1000;
 const MAX_CACHE = 5_000;
 const cache = new Map<string, { at: number; profile: XProfile | null }>();
 
@@ -131,7 +134,8 @@ export async function resolveHandles(
   const missing: string[] = [];
   for (const h of handles) {
     const hit = readable.map((src) => cached(`${src}:${h}`)).find((p) => p !== undefined);
-    if (hit !== undefined) out[h] = hit;
+    // A launch looks "doesn't exist" up again rather than failing on a remembered miss.
+    if (hit !== undefined && !(hit === null && purpose === "attest")) out[h] = hit;
     else missing.push(h);
   }
   if (missing.length === 0) return out;
@@ -220,16 +224,29 @@ async function resolveXApi(handles: string[]) {
 }
 
 async function resolveFx(handles: string[]) {
-  const results = await Promise.all(
-    handles.map(async (h) => {
-      const res = await fxFetch(`https://api.fxtwitter.com/${h}`);
-      if (res.status === 404) return [h, null] as const;
-      if (!res.ok) throw new Error(`Profile lookup failed for @${h} (${res.status})`);
-      const body = (await res.json()) as { user?: { id: string; screen_name: string; name: string; avatar_url?: string } };
-      const u = body.user;
-      if (!u?.id || !/^\d+$/.test(u.id)) return [h, null] as const;
-      return [h, { id: u.id, username: u.screen_name.toLowerCase(), name: u.name, image: u.avatar_url }] as const;
-    })
-  );
+  const results = await Promise.all(handles.map(async (h) => [h, await fxProfile(h)] as const));
   return Object.fromEntries(results.filter(([, p]) => p !== null)) as Record<string, XProfile>;
+}
+
+/**
+ * One username through the mirror, or null when it doesn't exist. The mirror sometimes answers 404
+ * for an account that exists (when its own upstream call fails), and may cache that answer for a
+ * little while, so a 404 is confirmed once through its other endpoint before it counts.
+ */
+async function fxProfile(h: string): Promise<XProfile | null> {
+  const first = await fxUser(`https://api.fxtwitter.com/${h}`, h);
+  if (first !== null) return first;
+  await new Promise((r) => setTimeout(r, 300));
+  return fxUser(`https://api.fxtwitter.com/2/profile/${h}`, h);
+}
+
+async function fxUser(url: string, h: string): Promise<XProfile | null> {
+  const res = await fxFetch(url);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Profile lookup failed for @${h} (${res.status})`);
+  const body = (await res.json().catch(() => ({}))) as { user?: { id?: string; screen_name?: string; name?: string; avatar_url?: string } };
+  const u = body.user;
+  if (!u?.id || !/^\d+$/.test(u.id) || !u.screen_name) return null;
+  // The mirror links the 48 px avatar; ask for the same larger size the X API path uses.
+  return { id: u.id, username: u.screen_name.toLowerCase(), name: u.name ?? u.screen_name, image: u.avatar_url?.replace("_normal.", "_200x200.") };
 }

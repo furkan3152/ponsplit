@@ -61,6 +61,9 @@ Bu adımları kod çözemez; karar ve sorumluluk proje sahibinde.
    - Sabitlenmezse site kontrat adreslerini imza anahtarından hesaplar. O durumda `SIGNER_SEED` değişirse site boş adreslere bakar.
    - Sabitlendikten sonra `/setup` başka kontrat deploy etmez.
 6. OAuth, `NEXTAUTH_URL` ve `X_BEARER_TOKEN` ortam değişkenlerini ekle, servisi yeniden başlat.
+7. **Zincirden doğrula.** GitHub → Actions → **Inspect deployment** → Run workflow. `network: mainnet`, iki kontrat adresi, `/setup`'taki yönetici adresi ve site adresini (`site`) gir.
+   - İş, kontratları sunucuya sormadan doğrudan zincirden okur: kod, birbirine bağlılık, imzalayıcı, sahipler, ücretler.
+   - `site` verilirse sitenin gerçek X hesaplarını çözüp imzaladığı bir launch'ı `eth_call` ile dener. Hiçbir işlem gönderilmez, anahtar gerekmez.
 
 ## Acil durum planı
 

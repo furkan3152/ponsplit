@@ -5,8 +5,8 @@
 //
 //   SITE=https://ponsplit-testnet.onrender.com NETWORK=testnet LAUNCHPAD=0x... [HANDLES=jack,x] \
 //     node --experimental-strip-types scripts/smoke-live.mjs
-import { createPublicClient, formatEther, getAddress, http, parseEther } from "viem";
-import { launchpadAbi } from "../src/lib/abi.ts";
+import { BaseError, ContractFunctionRevertedError, createPublicClient, formatEther, getAddress, http, parseEther } from "viem";
+import { feeVaultAbi, launchpadAbi } from "../src/lib/abi.ts";
 
 const NETWORKS = {
   testnet: "https://rpc.testnet.chain.robinhood.com",
@@ -21,6 +21,8 @@ const handles = (process.env.HANDLES || "jack").split(",").map((h) => h.trim().r
 // Any address works for a simulation; the attestation is bound to it.
 const creator = getAddress("0x000000000000000000000000000000000000dEaD");
 const client = createPublicClient({ transport: http(rpc) });
+// FeeVault errors bubble up through the launchpad, so decode reverts against both.
+const abi = [...launchpadAbi, ...feeVaultAbi.filter((x) => x.type === "error")];
 
 const res = await fetch(`${site}/api/attest`, {
   method: "POST",
@@ -43,7 +45,7 @@ const args = ["Smoke Test", "SMOKE", "", split, 0n, termsVersion];
 async function simulate(label, value) {
   const { result } = await client.simulateContract({
     address: launchpad,
-    abi: launchpadAbi,
+    abi,
     functionName: "createToken",
     args,
     value,
@@ -58,11 +60,10 @@ await simulate("without a first buy", creationFee);
 await simulate(`with a ${formatEther(parseEther("0.001"))} ETH first buy`, creationFee + parseEther("0.001"));
 
 // The same attestation must not work for someone else.
-try {
-  await client.simulateContract({ address: launchpad, abi: launchpadAbi, functionName: "createToken", args, value: creationFee, account: getAddress("0x000000000000000000000000000000000000bEEF") });
-  throw new Error("an attestation for another creator was accepted");
-} catch (e) {
-  if (e instanceof Error && e.message.includes("was accepted")) throw e;
-  console.log("✔ the attestation is rejected for a different creator");
-}
+const reverted = await client
+  .simulateContract({ address: launchpad, abi, functionName: "createToken", args, value: creationFee, account: getAddress("0x000000000000000000000000000000000000bEEF") })
+  .then(() => undefined)
+  .catch((e) => (e instanceof BaseError ? e.walk((x) => x instanceof ContractFunctionRevertedError) : undefined));
+if (reverted?.data?.errorName !== "BadSignature") throw new Error(`another creator's launch wasn't refused with BadSignature (${reverted?.shortMessage ?? "it went through"})`);
+console.log("✔ the attestation is refused (BadSignature) for a different creator");
 console.log("\nLive launch path works.");

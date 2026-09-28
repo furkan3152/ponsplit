@@ -191,7 +191,7 @@ function ProofClaim() {
             </div>
           </div>
         ) : valid && profiles.data && prof === null ? (
-          <p className="mt-2 text-[13px] text-down-ink">@{handle} doesn&apos;t exist on X.</p>
+          <p className="mt-2 text-[13px] text-down-ink">Couldn&apos;t find @{handle} on X. Check the spelling.</p>
         ) : valid && profiles.error ? (
           <p className="mt-2 text-[13px] text-ink-2">Couldn&apos;t look up @{handle} right now. You can still create and verify your proof post.</p>
         ) : null}
@@ -399,7 +399,7 @@ function Lookup() {
             </div>
           </div>
         ) : valid && profiles.data && prof === null ? (
-          <p className="text-[14px] text-ink-2">@{handle} doesn&apos;t exist on X.</p>
+          <p className="text-[14px] text-ink-2">Couldn&apos;t find @{handle} on X. Check the spelling.</p>
         ) : valid && profiles.error ? (
           <p className="text-[14px] text-ink-2">Lookup unavailable right now.</p>
         ) : null}
