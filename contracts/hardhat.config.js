@@ -25,6 +25,15 @@ module.exports = {
     settings: { optimizer: { enabled: true, runs: 200 }, viaIR: true, evmVersion: "cancun" },
   },
   networks: {
+    // Room for the deep eth_call simulations on a local node.
+    hardhat: {
+      blockGasLimit: 200_000_000,
+      // Lets `hardhat node --fork <robinhood rpc>` execute on forked Robinhood Chain state.
+      chains: {
+        46630: { hardforkHistory: { cancun: 0 } },
+        4663: { hardforkHistory: { cancun: 0 } },
+      },
+    },
     robinhoodTestnet: {
       url: process.env.ROBINHOOD_TESTNET_RPC_URL || "https://rpc.testnet.chain.robinhood.com",
       chainId: 46630,
