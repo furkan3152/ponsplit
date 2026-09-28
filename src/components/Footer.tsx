@@ -50,7 +50,7 @@ export function Footer() {
           className="display pointer-events-none mt-4 select-none whitespace-nowrap bg-clip-text text-[21vw] leading-[0.84] text-transparent sm:text-[168px]"
           style={{ backgroundImage: "linear-gradient(to bottom, var(--line-2) 10%, transparent 92%)" }}
         >
-          PonSplit
+          PonsEarn
         </div>
       </div>
     </footer>

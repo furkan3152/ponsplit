@@ -203,7 +203,7 @@ try {
   await claimer.getByLabel("Your X username").fill("@alpha_e2e");
   await claimer.getByText("Ready to claim").waitFor({ timeout: 30_000 });
   await claimer.getByRole("button", { name: "Create my proof post" }).click();
-  await claimer.getByText(/proof PS-/).waitFor({ timeout: 30_000 });
+  await claimer.getByText(/proof PE-/).waitFor({ timeout: 30_000 });
   await claimer.getByLabel("Link to your post").fill("mock:alpha_e2e");
   await claimer.getByRole("button", { name: "Verify & claim" }).click();
   const sent = claimer.getByText(/^Sent /);

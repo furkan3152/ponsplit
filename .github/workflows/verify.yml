@@ -2,8 +2,10 @@ name: Verify contracts
 
 # Publishes the source of a deployed FeeVault + SplitLaunchpad on Blockscout, so anyone can read
 # the code behind the site and the explorer's Read/Write contract tabs work. Nothing is sent to the
-# chain and no key is needed. Run it right after deploying: the constructor arguments are read back
-# from the contracts (owner, signer, vault, curve), which match only until they are changed.
+# chain and no key is needed. The constructor arguments are taken from each contract's creation
+# transaction (the explorer names it), so this works at any time; only if that can't be read does
+# it fall back to the contracts' current state (owner, signer, vault, curve), which matches only
+# until the owner changes them.
 on:
   workflow_dispatch:
     inputs:
@@ -40,27 +42,51 @@ jobs:
       - run: npm ci
       # verify matches the chain's code against local artifacts, so they must exist first.
       - run: npx hardhat compile
-      - name: Read the constructor arguments back from the chain
+      - name: Find the constructor arguments
         run: |
           node -e '
             const { ethers } = require("ethers");
+            const fs = require("fs");
             const addr = (s) => { if (!/^0x[0-9a-fA-F]{40}$/.test(s || "")) throw new Error("not an address: " + s); return ethers.getAddress(s); };
+            const EXPLORER = process.env.NETWORK === "robinhood" ? "https://robinhoodchain.blockscout.com" : "https://explorer.testnet.chain.robinhood.com";
+            const coder = ethers.AbiCoder.defaultAbiCoder();
+            const p = new ethers.JsonRpcProvider(process.env.RPC);
+            // The arguments are the tail of the creation transaction input (bytecode + abi-encoded args).
+            async function fromCreation(address, types) {
+              try {
+                const j = await (await fetch(EXPLORER + "/api/v2/addresses/" + address)).json();
+                const hash = j.creation_transaction_hash || j.creation_tx_hash;
+                const tx = hash && (await p.getTransaction(hash));
+                if (!tx || tx.to !== null) return null;
+                const bytes = types.length === 2 ? 64 : 192;
+                return coder.decode(types, "0x" + tx.data.slice(tx.data.length - bytes * 2));
+              } catch (e) {
+                console.log("creation transaction not readable (" + e.message + ")");
+                return null;
+              }
+            }
             (async () => {
-              const p = new ethers.JsonRpcProvider(process.env.RPC);
-              const vault = new ethers.Contract(addr(process.env.VAULT), ["function owner() view returns (address)", "function signer() view returns (address)"], p);
-              const lp = new ethers.Contract(addr(process.env.LAUNCHPAD), [
-                "function owner() view returns (address)",
-                "function vault() view returns (address)",
-                "function curveConfig() view returns (uint256 virtualEth, uint256 virtualToken, uint256 curveSupply, uint256 lpSupply)",
-              ], p);
-              const [vOwner, signer, lOwner, lVault] = await Promise.all([vault.owner(), vault.signer(), lp.owner(), lp.vault()]);
-              const c = await lp.curveConfig();
-              const cfg = [c[0], c[1], c[2], c[3]].map(String);
-              const fs = require("fs");
-              fs.writeFileSync("vault-args.js", "module.exports = " + JSON.stringify([vOwner, signer]) + ";");
-              fs.writeFileSync("launchpad-args.js", "module.exports = " + JSON.stringify([lOwner, lVault, cfg]) + ";");
-              console.log("FeeVault(owner", vOwner, "signer", signer, ")");
-              console.log("SplitLaunchpad(owner", lOwner, "vault", lVault, "curve", cfg.join(", "), ")");
+              const vaultAddr = addr(process.env.VAULT);
+              const lpAddr = addr(process.env.LAUNCHPAD);
+              let v = await fromCreation(vaultAddr, ["address", "address"]);
+              let l = await fromCreation(lpAddr, ["address", "address", "tuple(uint256,uint256,uint256,uint256)"]);
+              if (!v || !l) {
+                console.log("::warning::Using the contracts current state as constructor arguments; this only matches if owner and signer are unchanged.");
+                const vault = new ethers.Contract(vaultAddr, ["function owner() view returns (address)", "function signer() view returns (address)"], p);
+                const lp = new ethers.Contract(lpAddr, [
+                  "function owner() view returns (address)",
+                  "function vault() view returns (address)",
+                  "function curveConfig() view returns (uint256, uint256, uint256, uint256)",
+                ], p);
+                if (!v) v = [await vault.owner(), await vault.signer()];
+                if (!l) l = [await lp.owner(), await lp.vault(), await lp.curveConfig()];
+              }
+              const vaultArgs = [v[0], v[1]];
+              const lpArgs = [l[0], l[1], [...l[2]].map(String)];
+              fs.writeFileSync("vault-args.js", "module.exports = " + JSON.stringify(vaultArgs) + ";");
+              fs.writeFileSync("launchpad-args.js", "module.exports = " + JSON.stringify(lpArgs) + ";");
+              console.log("FeeVault(owner", vaultArgs[0], "signer", vaultArgs[1], ")");
+              console.log("SplitLaunchpad(owner", lpArgs[0], "vault", lpArgs[1], "curve", lpArgs[2].join(", "), ")");
             })().catch((e) => { console.error(e); process.exit(1); });
           '
       - name: Verify FeeVault

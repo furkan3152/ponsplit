@@ -50,7 +50,7 @@ export function ConfigBanner() {
       <span className="relative mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[13px] font-medium text-ink">
         <span className="inline-flex items-center gap-2">
           <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-sun shadow-[0_0_10px_var(--sun)]" aria-hidden />
-          <span>PonSplit isn&apos;t set up on {activeChain.name} yet.</span>
+          <span>PonsEarn isn&apos;t set up on {activeChain.name} yet.</span>
         </span>{" "}
         <span className="inline-flex items-center gap-1 rounded-full bg-sun px-2.5 py-0.5 text-[12px] font-semibold text-[var(--lime-ink)] shadow-[inset_0_-1.5px_0_rgba(0,0,0,0.18)] transition-transform duration-300 group-hover:translate-x-0.5">
           Finish setup →

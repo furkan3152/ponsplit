@@ -452,7 +452,7 @@ function PostPreview({ handle, name, image, photo, text }: { handle: string; nam
         <XLogo className="h-4 w-4 shrink-0 text-ink-3" />
       </figcaption>
       <pre className="mt-3 whitespace-pre-wrap font-mono text-[13px] leading-relaxed text-ink [overflow-wrap:anywhere]">
-        {text.split(/(PS-[0-9A-F]+)/).map((part, i) =>
+        {text.split(/(PE-[0-9A-F]+)/).map((part, i) =>
           i % 2 ? (
             <mark key={i} className="rounded bg-lime-soft px-1 text-ink">
               {part}
