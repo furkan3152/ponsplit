@@ -1,4 +1,4 @@
 {
-  "testnet": { "launchpad": "", "feeVault": "", "startBlock": 0, "deployedAt": "" },
-  "mainnet": { "launchpad": "", "feeVault": "", "startBlock": 0, "deployedAt": "" }
+  "testnet": { "launchpad": "", "feeVault": "", "startBlock": 0, "deployedAt": "", "hidden": ["0xd2d892e94738A8C5962FC359208fecE1b23C9744"] },
+  "mainnet": { "launchpad": "", "feeVault": "", "startBlock": 0, "deployedAt": "", "hidden": [] }
 }

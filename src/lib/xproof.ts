@@ -31,11 +31,11 @@ function secret(): Buffer {
 
 export function proofCode(handle: string, wallet: Address, day = currentDay()): string {
   const mac = createHmac("sha256", secret()).update(`${normalizeHandle(handle)}|${getAddress(wallet)}|${day}`).digest("hex");
-  return `PS-${mac.slice(0, 10).toUpperCase()}`;
+  return `PE-${mac.slice(0, 10).toUpperCase()}`;
 }
 
 export function proofText(handle: string, wallet: Address, day = currentDay()): string {
-  return `Claiming my PonSplit coin fees to wallet ${getAddress(wallet)}\nproof ${proofCode(handle, wallet, day)}`;
+  return `Claiming my PonsEarn coin fees to wallet ${getAddress(wallet)}\nproof ${proofCode(handle, wallet, day)}`;
 }
 
 function currentDay() {

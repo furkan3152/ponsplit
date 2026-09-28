@@ -14,13 +14,17 @@ import { TokenAvatar } from "@/components/TokenAvatar";
 import { TradePanel } from "@/components/TradePanel";
 import { TradesTable } from "@/components/TradesTable";
 import { explorerUrl } from "@/lib/chains";
+import { isHiddenCoin } from "@/lib/config";
 import { compact, formatEth, formatPrice, formatTokens, progressText, recordPrice, shortAddress, timeAgo } from "@/lib/format";
 import { useHandleChecks, useNow, useToken, useTrades } from "@/lib/hooks";
 import { describe } from "@/lib/market";
 import type { TokenView, TradeRecord } from "@/lib/types";
 
 export default function TokenPage({ params }: { params: { address: string } }) {
-  const token = isAddress(params.address) ? getAddress(params.address) : undefined;
+  const parsed = isAddress(params.address) ? getAddress(params.address) : undefined;
+  // A hidden coin (src/deployment.json) isn't read at all; the page says it isn't listed.
+  const hidden = Boolean(parsed && isHiddenCoin(parsed));
+  const token = hidden ? undefined : parsed;
   const { data: t, isLoading, isError, refetch } = useToken(token);
   const trades = useTrades(token, t?.tradeCount);
   const { address } = useAccount();
@@ -44,11 +48,12 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   useNow(15_000);
   useGraduationCelebration(t?.token, t?.market.graduated);
 
+  if (hidden) return <Missing text="This coin isn't listed on PonsEarn." />;
   if (!token) return <Missing text="That is not a valid coin address." />;
   if (isLoading) return <PageSkeleton />;
   // A failed read is a network problem, not proof the coin doesn't exist.
   if (!t && isError) return <Missing text="Couldn't load this coin right now. Retrying…" />;
-  if (!t || t.token === zeroAddress) return <Missing text="This coin wasn't launched on PonSplit." />;
+  if (!t || t.token === zeroAddress) return <Missing text="This coin wasn't launched on PonsEarn." />;
 
   const { price, marketCap, progress, meta } = describe(t);
   const links = [
@@ -446,7 +451,7 @@ function ShareButton({
     // @-mention only usernames confirmed to still belong to the fee recipient; a renamed account's
     // old name may now be someone else's, so it is written without the @.
     const who = checks.map((c) => (c.status === "current" ? `@${c.handle}` : c.handle)).join(" ");
-    const text = `${t.name} ($${t.symbol}) on PonSplit: every trade splits fees to ${who}`;
+    const text = `${t.name} ($${t.symbol}) on PonsEarn: every trade splits fees to ${who}`;
     const url = `${location.origin}/token/${t.token}`;
     window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, "_blank", "noopener,noreferrer");
   }

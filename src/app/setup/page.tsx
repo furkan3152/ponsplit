@@ -4,7 +4,18 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { formatEther, getContractAddress, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
+import {
+  BaseError,
+  ContractFunctionRevertedError,
+  ContractFunctionZeroDataError,
+  RawContractError,
+  formatEther,
+  getContractAddress,
+  zeroAddress,
+  type Address,
+  type Hex,
+  type PublicClient,
+} from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { useAccount, useBalance, useDeployContract, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { GraduatedArt } from "@/components/art";
@@ -120,7 +131,7 @@ export default function SetupPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 pt-4">
       <div>
-        <h1 className="font-display text-[40px] font-bold tracking-[-0.03em]">Set up PonSplit</h1>
+        <h1 className="font-display text-[40px] font-bold tracking-[-0.03em]">Set up PonsEarn</h1>
         <p className="mt-1 text-[15px] text-ink-2">A few taps, all from your phone. Network: {s?.chain ?? "…"}.</p>
       </div>
 
@@ -463,13 +474,19 @@ async function findDeployment(client: PublicClient, wallet: Address, signer: Add
   for (let n = latest - 1; n >= Math.max(0, latest - SCAN); n--) candidates.push(getContractAddress({ from: wallet, nonce: BigInt(n) }));
   const codes = await Promise.all(candidates.map((address) => client.getCode({ address })));
   const live = candidates.filter((_, i) => codes[i] && codes[i] !== "0x");
-  // Each read fails harmlessly on contracts that don't have that function.
+  // A contract without the function reverts, which just means "not that kind of contract". Any
+  // other failure (rate limit, timeout) must stop the page: taken as "nothing deployed", it would
+  // offer to deploy everything again.
+  const orNone = (e: unknown) => {
+    if (e instanceof BaseError && e.walk((c) => c instanceof ContractFunctionRevertedError || c instanceof ContractFunctionZeroDataError || c instanceof RawContractError)) return undefined;
+    throw e;
+  };
   const info = await Promise.all(
     live.map(async (address) => {
       const [owner, vaultSigner, itsVault] = await Promise.all([
-        client.readContract({ address, abi: feeVaultAbi, functionName: "owner" }).catch(() => undefined),
-        client.readContract({ address, abi: feeVaultAbi, functionName: "signer" }).catch(() => undefined),
-        client.readContract({ address, abi: launchpadAbi, functionName: "vault" }).catch(() => undefined),
+        client.readContract({ address, abi: feeVaultAbi, functionName: "owner" }).catch(orNone),
+        client.readContract({ address, abi: feeVaultAbi, functionName: "signer" }).catch(orNone),
+        client.readContract({ address, abi: launchpadAbi, functionName: "vault" }).catch(orNone),
       ]);
       return { address, owner, vaultSigner, itsVault };
     })
@@ -531,7 +548,7 @@ function WalletSetup({ s, onKey }: { s: Status; onKey: (key: string | null) => v
         {s.pinned ? (
           <ContractList vault={s.vault} launchpad={s.launchpad} owner={s.owner} />
         ) : signer ? (
-          <WalletDeploy signer={signer} found={d} checking={found.isLoading} onChange={() => found.refetch()} />
+          <WalletDeploy signer={signer} found={d} checking={found.isLoading} unreadable={found.isError && !d} onChange={() => found.refetch()} />
         ) : (
           <p className="text-[14px] text-ink-2">Finish step 1 first.</p>
         )}
@@ -572,7 +589,20 @@ function ContractList({ vault, launchpad, owner }: { vault?: Address; launchpad?
 }
 
 /** Deploys FeeVault and SplitLaunchpad from the connected wallet and wires them: three transactions. */
-function WalletDeploy({ signer, found, checking, onChange }: { signer: Address; found?: Found; checking: boolean; onChange: () => void }) {
+function WalletDeploy({
+  signer,
+  found,
+  checking,
+  unreadable,
+  onChange,
+}: {
+  signer: Address;
+  found?: Found;
+  checking: boolean;
+  /** The chain couldn't be read yet; Deploy re-reads it and stops rather than guess. */
+  unreadable?: boolean;
+  onChange: () => void;
+}) {
   const { address, isConnected, chainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
@@ -588,7 +618,10 @@ function WalletDeploy({ signer, found, checking, onChange }: { signer: Address; 
   const busy = useRef(false);
   // Contracts this page has seen confirmed or found; a later read that misses one of them comes
   // from a node that is behind, and must not lead to deploying it again.
-  const seen = useRef<{ vault?: Address; launchpad?: Address }>({});
+  const seen = useRef<{ scope?: string; vault?: Address; launchpad?: Address }>({});
+  // Only what was seen for this wallet and this signing key counts.
+  const scope = `${address}:${signer}`;
+  if (seen.current.scope !== scope) seen.current = { scope };
   if (found?.vault) seen.current.vault ??= found.vault;
   if (found?.launchpad) seen.current.launchpad ??= found.launchpad;
 
@@ -601,7 +634,7 @@ function WalletDeploy({ signer, found, checking, onChange }: { signer: Address; 
     return (
       <div className="space-y-3">
         <p className="text-[14px] text-ink-2">
-          Connect the wallet that should own PonSplit. It deploys both contracts and pays the gas; its key never leaves the wallet. On a phone, open this page in your wallet app&apos;s browser.
+          Connect the wallet that should own PonsEarn. It deploys both contracts and pays the gas; its key never leaves the wallet. On a phone, open this page in your wallet app&apos;s browser.
         </p>
         <button className="btn-primary" onClick={openConnectModal}>
           Connect wallet
@@ -616,6 +649,8 @@ function WalletDeploy({ signer, found, checking, onChange }: { signer: Address; 
   async function run() {
     if (busy.current || !publicClient || !address) return;
     busy.current = true;
+    // What this run confirms belongs to the wallet and key it started with, even if they change mid-run.
+    const mark = seen.current;
     setRunning("Checking…");
     setErr(null);
     try {
@@ -639,14 +674,14 @@ function WalletDeploy({ signer, found, checking, onChange }: { signer: Address; 
         setRunning("Deploying FeeVault (1 of 3)…");
         const r = await confirm(await deployContractAsync({ abi: feeVaultAbi, bytecode: feeVaultBytecode, args: [address, signer], chainId: activeChain.id }));
         if (!r.contractAddress) throw new Error("FeeVault deployment returned no address.");
-        seen.current.vault = r.contractAddress;
+        mark.vault = r.contractAddress;
         f = { ...f, vault: r.contractAddress };
       }
       if (!f.launchpad) {
         setRunning("Deploying the launchpad (2 of 3)…");
         const r = await confirm(await deployContractAsync({ abi: launchpadAbi, bytecode: launchpadBytecode, args: [address, f.vault!, CURVE], chainId: activeChain.id }));
         if (!r.contractAddress) throw new Error("Launchpad deployment returned no address.");
-        seen.current.launchpad = r.contractAddress;
+        mark.launchpad = r.contractAddress;
         f = { ...f, launchpad: r.contractAddress };
       }
       if (!f.wired) {
@@ -684,6 +719,7 @@ function WalletDeploy({ signer, found, checking, onChange }: { signer: Address; 
           </button>
         </>
       ) : null}
+      {unreadable && !err ? <p className="text-[13px] text-ink-2">Couldn&apos;t read this wallet&apos;s earlier transactions from the chain yet. Retrying…</p> : null}
       {err ? <p className="text-[13px] text-down-ink">{err}</p> : null}
       {txs.length ? (
         <ul className="space-y-1 text-[12px] text-ink-2">
@@ -833,7 +869,7 @@ function KeyGenerator({ problem, onChange, walletMode = false }: { problem?: str
         <p className="text-[14px] text-ink-2">
           {walletMode
             ? "The server needs its own signing key. It only signs launches and claims: it never holds funds or owns the contracts, and it is not your wallet. Create it here in your browser; it is never sent anywhere."
-            : "PonSplit needs one key that deploys the contracts and signs launches and claims. A Render Blueprint deploy creates it automatically (SIGNER_SEED). Otherwise create it here in your browser; it is never sent anywhere."}
+            : "PonsEarn needs one key that deploys the contracts and signs launches and claims. A Render Blueprint deploy creates it automatically (SIGNER_SEED). Otherwise create it here in your browser; it is never sent anywhere."}
         </p>
         <button
           className="btn-primary"

@@ -56,6 +56,15 @@ function predictedAddresses() {
     checkAddress(entry.feeVault, `src/deployment.json ${chain}.feeVault`);
     checkAddress(entry.launchpad, `src/deployment.json ${chain}.launchpad`);
   }
+  (process.env.NEXT_PUBLIC_HIDDEN_COINS || "")
+    .split(",")
+    .map((a) => a.trim())
+    .filter(Boolean)
+    .forEach((a, i) => checkAddress(a, `NEXT_PUBLIC_HIDDEN_COINS entry ${i + 1}`));
+  if (entry.hidden !== undefined) {
+    if (!Array.isArray(entry.hidden)) throw new Error(`src/deployment.json: ${chain}.hidden must be a list of coin addresses.`);
+    entry.hidden.forEach((a, i) => checkAddress(a, `src/deployment.json ${chain}.hidden[${i}]`));
+  }
   const committed = Boolean(entry.launchpad);
   // Must match SETUP_MODE in src/lib/config.ts. Contracts deployed from the owner's wallet can't
   // be predicted from the server key; they are pinned once deployed.

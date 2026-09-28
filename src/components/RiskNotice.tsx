@@ -23,11 +23,12 @@ export function useRiskGate() {
   const [ack, setAck] = useState(true);
   useEffect(() => setAck(!activeChain.testnet ? acknowledged() : true), []);
   const box = useRef<HTMLDivElement>(null);
+  // Recorded when the gate opens: by the time an effect runs, Cancel's autoFocus has taken focus.
+  const opener = useRef<HTMLElement | null>(null);
   // While open it behaves like a modal: Escape cancels, Tab stays inside, the page behind doesn't
   // scroll, and focus goes back to the button that opened it.
   useEffect(() => {
     if (!pending) return;
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
@@ -49,12 +50,13 @@ export function useRiskGate() {
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = overflow;
-      opener?.focus();
+      opener.current?.focus();
     };
   }, [pending]);
 
   const guard = (fn: () => void) => {
     if (ack) return fn();
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setPending(() => fn);
   };
 

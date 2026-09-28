@@ -11,8 +11,8 @@ export async function generateMetadata({ params }: { params: { address: string }
   return {
     title: `${t.name} ($${t.symbol})`,
     description,
-    openGraph: { title: `${t.name} ($${t.symbol}) on PonSplit`, description },
-    twitter: { card: "summary_large_image", title: `${t.name} ($${t.symbol}) on PonSplit`, description },
+    openGraph: { title: `${t.name} ($${t.symbol}) on PonsEarn`, description },
+    twitter: { card: "summary_large_image", title: `${t.name} ($${t.symbol}) on PonsEarn`, description },
   };
 }
 

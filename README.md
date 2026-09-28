@@ -1,6 +1,6 @@
-<p align="center"><img src="public/hero.svg" width="480" alt="PonSplit"></p>
+<p align="center"><img src="public/hero.svg" width="480" alt="PonsEarn"></p>
 
-# PonSplit
+# PonsEarn
 
 **Tek coin, birden fazla X hesabı, fee'ler otomatik bölünür.** Robinhood Chain üzerinde bir coin çıkar. Her al/sat işleminden kesilen fee, seçtiğin X (Twitter) hesapları arasında paylaştırılır. Bu hem bonding curve aşamasında hem de coin "mezun olduktan" sonra geçerli. Hesap sahipleri X ile giriş yapıp paylarını istedikleri cüzdana çeker.
 

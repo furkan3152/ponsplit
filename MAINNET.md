@@ -62,8 +62,9 @@ Bu adımları kod çözemez; karar ve sorumluluk proje sahibinde.
 4. **Adresleri sabitle.** `/setup` iki satır gösterir: `NEXT_PUBLIC_FEE_VAULT_ADDRESS=…` ve `NEXT_PUBLIC_LAUNCHPAD_ADDRESS=…`.
    - Bunları `src/deployment.json` içindeki `mainnet` kaydına yaz (push'la Vercel yeniden build eder) ya da Vercel ortam değişkeni olarak ekleyip Redeploy et.
    - Site bundan sonra bu kontratları kullanır.
-5. OAuth, `NEXTAUTH_URL` ve `X_BEARER_TOKEN` ortam değişkenlerini ekle, Redeploy et (isteğe bağlı ama önerilir).
-6. **Zincirden doğrula.** GitHub → Actions → **Inspect deployment** → Run workflow. `network: mainnet`, iki kontrat adresi, `owner` olarak kendi cüzdan adresin ve site adresini (`site`) gir. `admin` alanını boş bırak: kontratları sunucu değil, cüzdanın deploy etti.
+5. **Kaynak kodu yayınla.** GitHub → Actions → **Verify contracts** → Run workflow: `network: robinhood` ve iki kontrat adresi. Kod Blockscout'ta herkese açık olur, explorer'ın Read/Write sekmeleri çalışır (Owner controls'a erişilemediği anlar için yedek yol).
+6. OAuth, `NEXTAUTH_URL` ve `X_BEARER_TOKEN` ortam değişkenlerini ekle, Redeploy et (isteğe bağlı ama önerilir).
+7. **Zincirden doğrula.** GitHub → Actions → **Inspect deployment** → Run workflow. `network: mainnet`, iki kontrat adresi, `owner` olarak kendi cüzdan adresin ve site adresini (`site`) gir. `admin` alanını boş bırak: kontratları sunucu değil, cüzdanın deploy etti.
    - İş, kontratları sunucuya sormadan doğrudan zincirden okur: kod, birbirine bağlılık, imzalayıcı, sahipler, ücretler.
    - `site` verilirse sitenin gerçek X hesaplarını çözüp imzaladığı bir launch'ı `eth_call` ile dener. Hiçbir işlem gönderilmez, anahtar gerekmez.
 

@@ -14,7 +14,7 @@ import { Flash, Reveal } from "@/components/motion";
 import { launchpadAbi } from "@/lib/abi";
 import { activeChain } from "@/lib/chains";
 import { BPS, LAUNCHPAD_ADDRESS, MAX_RECIPIENTS } from "@/lib/config";
-import { compact, errorMessage, formatEth, pct, shortAddress, spotPrice } from "@/lib/format";
+import { compact, errorMessage, formatEth, pct, progressText, shortAddress, spotPrice } from "@/lib/format";
 import { isValidHandle, normalizeHandle } from "@/lib/handles";
 import { readLaunchTerms, useDebounced, useLaunchesPaused, useLaunchTerms, useXProfiles, type LaunchTerms } from "@/lib/hooks";
 import { encodeMetadata, safeUrl } from "@/lib/metadata";
@@ -611,7 +611,7 @@ export default function CreatePage() {
                 <Progress value={launch?.progress ?? 0} graduated={launch?.soldOut} size="sm" />
               </div>
               <span className={`num text-[11px] font-semibold ${launch?.soldOut ? "text-up-ink" : "text-ink-2"}`}>
-                {launch?.soldOut ? "PonSwap" : `${(launch?.progress ?? 0).toFixed(0)}%`}
+                {launch?.soldOut ? "PonSwap" : `${progressText(launch?.progress ?? 0)}%`}
               </span>
             </div>
             <div className="flex items-center justify-between border-t border-line pt-2.5 font-mono text-[11px] text-ink-3">

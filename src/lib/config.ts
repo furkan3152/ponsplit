@@ -15,11 +15,24 @@ export const CHAIN_NAME = process.env.NEXT_PUBLIC_CHAIN || "testnet";
 // network (never another network's). When neither exists, next.config.mjs predicts them from the
 // admin key and sets NEXT_PUBLIC_ADDRESSES_PREDICTED.
 // NEXT_PUBLIC_* values must be referenced literally so Next.js can inline them.
-const committed: { launchpad?: string; feeVault?: string } =
-  (deployment as Record<string, { launchpad?: string; feeVault?: string }>)[CHAIN_NAME] ?? {};
+const committed: { launchpad?: string; feeVault?: string; hidden?: string[] } =
+  (deployment as Record<string, { launchpad?: string; feeVault?: string; hidden?: string[] }>)[CHAIN_NAME] ?? {};
 export const LAUNCHPAD_ADDRESS = address(process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS || committed.launchpad);
 export const FEE_VAULT_ADDRESS = address(process.env.NEXT_PUBLIC_FEE_VAULT_ADDRESS || committed.feeVault);
 export const isConfigured = Boolean(LAUNCHPAD_ADDRESS && FEE_VAULT_ADDRESS);
+
+/**
+ * Coins the site doesn't list: src/deployment.json's "hidden" for this network (e.g. the owner's
+ * test coins) plus NEXT_PUBLIC_HIDDEN_COINS (comma-separated, so a spam coin can be hidden from the
+ * host's settings with a redeploy). They stay on-chain; the site leaves them out of every list,
+ * search, stat and the ticker, and their page says they aren't listed.
+ */
+export const HIDDEN_COINS: readonly Address[] = [
+  ...(committed.hidden ?? []),
+  ...(process.env.NEXT_PUBLIC_HIDDEN_COINS || "").split(",").map((a) => a.trim()).filter(Boolean),
+].map((a) => getAddress(a));
+const hiddenSet = new Set(HIDDEN_COINS.map((a) => a.toLowerCase()));
+export const isHiddenCoin = (token: string) => hiddenSet.has(token.toLowerCase());
 /**
  * True when the addresses were set explicitly (env or committed file) instead of being derived
  * from the admin key. Pinned addresses keep working after the signing key is rotated.

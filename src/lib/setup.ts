@@ -166,7 +166,7 @@ export async function setupStatus(): Promise<SetupStatus> {
       status.signerMatches = same(status.signer, admin);
     } catch (e) {
       if (!isRevert(e)) throw e;
-      return { ...status, problem: `The contract at ${vault} is not a PonSplit FeeVault.` };
+      return { ...status, problem: `The contract at ${vault} is not a PonsEarn FeeVault.` };
     }
   }
   if (launchpadDeployed) {
@@ -180,7 +180,7 @@ export async function setupStatus(): Promise<SetupStatus> {
       return {
         ...status,
         problem: ADDRESSES_PINNED
-          ? `The contract at ${launchpad} is not a PonSplit launchpad for ${vault}. Check NEXT_PUBLIC_LAUNCHPAD_ADDRESS / NEXT_PUBLIC_FEE_VAULT_ADDRESS.`
+          ? `The contract at ${launchpad} is not a PonsEarn launchpad for ${vault}. Check NEXT_PUBLIC_LAUNCHPAD_ADDRESS / NEXT_PUBLIC_FEE_VAULT_ADDRESS.`
           : `The launchpad address ${launchpad} holds a different contract, so this admin key can't finish setup. Use a fresh admin key.`,
       };
     }

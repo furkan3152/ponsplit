@@ -103,7 +103,7 @@ export default function HowPage() {
               </span>
             </Reveal>
             <Reveal as="h1" delay={60} className="display mt-6 text-[52px] leading-[0.9] sm:text-[84px]">
-              How PonSplit <span className="accent text-neon pr-2">works.</span>
+              How PonsEarn <span className="accent text-neon pr-2">works.</span>
             </Reveal>
             <Reveal delay={140}>
               <p className="mt-6 max-w-lg text-[17px] leading-relaxed text-ink-2 sm:text-[18px]">

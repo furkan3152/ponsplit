@@ -7,7 +7,7 @@ import { fetchImageDataUrl } from "@/lib/safe-image";
 import { fetchToken } from "@/lib/server-token";
 
 export const runtime = "nodejs";
-export const alt = "Coin on PonSplit";
+export const alt = "Coin on PonsEarn";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -32,7 +32,7 @@ export default async function TokenOgImage({ params }: { params: { address: stri
         <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f5f7", fontSize: 64, fontWeight: 800, color: "#1d1d1f", gap: 24 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={logo} width={96} height={96} alt="" />
-          PonSplit
+          PonsEarn
         </div>
       ),
       { ...size, headers: MISS }
@@ -51,7 +51,7 @@ export default async function TokenOgImage({ params }: { params: { address: stri
       <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 30, fontWeight: 700 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logo} width={48} height={48} alt="" />
-        PonSplit
+        PonsEarn
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 36, marginTop: 44 }}>
         {image ? (

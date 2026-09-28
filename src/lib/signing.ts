@@ -5,7 +5,8 @@ import { activeChain } from "./chains";
 import { adminKey } from "./adminKey";
 import { FEE_VAULT_ADDRESS } from "./config";
 
-// Must stay in sync with FeeVault's EIP712("PonSplit FeeVault", "2") and its typehashes.
+// Must stay in sync with FeeVault's EIP712("PonSplit FeeVault", "2") and its typehashes. The domain keeps the
+// project's first name: every signature the deployed contracts accept is bound to it.
 const domain = () => ({
   name: "PonSplit FeeVault",
   version: "2",
