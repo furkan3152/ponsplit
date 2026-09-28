@@ -26,6 +26,22 @@ export const isConfigured = Boolean(LAUNCHPAD_ADDRESS && FEE_VAULT_ADDRESS);
  */
 export const ADDRESSES_PINNED = isConfigured && process.env.NEXT_PUBLIC_ADDRESSES_PREDICTED !== "1";
 
+/**
+ * How /setup deploys the contracts:
+ * - "wallet": from the owner's own wallet, in the browser. The owner holds the contracts from the
+ *   start and the server key only signs (it never holds funds). Default on mainnet.
+ * - "server": from the server's admin key, which then hands ownership to OWNER_ADDRESS. Default on
+ *   testnet and locally (a faucet-funded key makes setup one tap).
+ * The contract addresses of a wallet deployment can't be derived from the server key, so they
+ * must be pinned (NEXT_PUBLIC_*_ADDRESS or src/deployment.json) before the site can use them.
+ */
+export const SETUP_MODE: "wallet" | "server" =
+  process.env.NEXT_PUBLIC_SETUP_MODE === "wallet" || process.env.NEXT_PUBLIC_SETUP_MODE === "server"
+    ? process.env.NEXT_PUBLIC_SETUP_MODE
+    : CHAIN_NAME === "mainnet"
+      ? "wallet"
+      : "server";
+
 export const MAX_RECIPIENTS = 10;
 export const BPS = 10_000;
 export const FAUCET_URL = "https://faucet.testnet.chain.robinhood.com";
