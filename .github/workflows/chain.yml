@@ -1,0 +1,59 @@
+name: Chain script
+
+# Diagnostic: runs a JavaScript (ESM) snippet on the runner, which can reach Robinhood Chain.
+# - fork: no  → against the real network, read-only (the script gets no keys).
+# - fork: yes → against a local Hardhat fork of that network, with the contracts compiled; the
+#   script may send transactions there from Hardhat's unlocked test accounts. Nothing reaches the
+#   real chain.
+# `viem` resolves from the repo's node_modules; RPC holds the URL to use, UPSTREAM the real one.
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: ESM JavaScript to run (process.env.RPC is the URL to use)
+        required: true
+      network:
+        description: mainnet or testnet
+        default: mainnet
+      fork:
+        description: yes = run against a local Hardhat fork
+        default: "no"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      UPSTREAM: ${{ inputs.network == 'testnet' && 'https://rpc.testnet.chain.robinhood.com' || 'https://rpc.mainnet.chain.robinhood.com' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Start a fork
+        if: inputs.fork == 'yes'
+        working-directory: contracts
+        run: |
+          npm ci
+          npx hardhat compile
+          nohup npx hardhat node --fork "$UPSTREAM" > ../fork.log 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -s -m 2 -X POST -H 'content-type: application/json' \
+              --data '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' http://127.0.0.1:8545 | grep -q result; then
+              echo "fork ready"; exit 0
+            fi
+            sleep 2
+          done
+          cat ../fork.log; exit 1
+      - name: Run
+        env:
+          SCRIPT: ${{ inputs.script }}
+          RPC: ${{ inputs.fork == 'yes' && 'http://127.0.0.1:8545' || '' }}
+        run: |
+          printf '%s' "$SCRIPT" > chain-script.mjs
+          RPC="${RPC:-$UPSTREAM}" node chain-script.mjs
+      - name: Fork log (tail)
+        if: always() && inputs.fork == 'yes'
+        run: tail -n 60 fork.log || true
