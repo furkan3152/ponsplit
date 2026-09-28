@@ -25,6 +25,8 @@ export function useInView<T extends Element>({ once = true, rootMargin = "0px 0p
   const ref = useRef<T>(null);
   const [inView, setInView] = useState(false);
   useEffect(() => {
+    // Tells THEME_SCRIPT's failsafe that the app is running (see src/lib/theme.ts).
+    document.documentElement.setAttribute("data-hydrated", "");
     const el = ref.current;
     if (!el) return;
     if (typeof IntersectionObserver === "undefined") {
@@ -90,16 +92,18 @@ export function CountUp({
   placeholder?: string;
   className?: string;
 }) {
-  const [ref, inView] = useInView<HTMLSpanElement>();
+  const [ref, inView] = useInView<HTMLSpanElement>({ rootMargin: "0px" });
   const [shown, setShown] = useState<number | undefined>(undefined);
   const from = useRef(0);
   useEffect(() => {
-    if (value === undefined || !inView) return;
+    if (value === undefined) return;
+    // Without motion the number is simply shown, whether or not it has scrolled into view yet.
     if (prefersReducedMotion() || !Number.isFinite(value)) {
       setShown(value);
       from.current = value;
       return;
     }
+    if (!inView) return;
     const start = performance.now();
     const a = from.current;
     let raf = 0;

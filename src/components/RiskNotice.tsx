@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { activeChain } from "@/lib/chains";
 
@@ -22,14 +22,35 @@ export function useRiskGate() {
   const [pending, setPending] = useState<(() => void) | null>(null);
   const [ack, setAck] = useState(true);
   useEffect(() => setAck(!activeChain.testnet ? acknowledged() : true), []);
-  // Escape cancels, like any dialog.
+  const box = useRef<HTMLDivElement>(null);
+  // While open it behaves like a modal: Escape cancels, Tab stays inside, the page behind doesn't
+  // scroll, and focus goes back to the button that opened it.
   useEffect(() => {
     if (!pending) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setPending(null);
+      if (e.key !== "Tab" || !box.current) return;
+      const buttons = Array.from(box.current.querySelectorAll<HTMLElement>("button"));
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      if (!first || !last) return;
+      if (e.shiftKey && (document.activeElement === first || !box.current.contains(document.activeElement))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !box.current.contains(document.activeElement))) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflow;
+      opener?.focus();
+    };
   }, [pending]);
 
   const guard = (fn: () => void) => {
@@ -44,7 +65,7 @@ export function useRiskGate() {
       aria-modal="true"
       aria-labelledby="risk-title"
     >
-      <div className="card relative isolate w-full max-w-md animate-slide-up overflow-hidden rounded-[28px] border-line-2 p-6 shadow-[0_40px_80px_-24px_rgba(0,0,0,0.6)] sm:animate-pop sm:p-7">
+      <div ref={box} className="card relative isolate w-full max-w-md animate-slide-up overflow-hidden rounded-[28px] border-line-2 p-6 shadow-[0_40px_80px_-24px_rgba(0,0,0,0.6)] sm:animate-pop sm:p-7">
         <div aria-hidden className="bg-grid absolute inset-0 -z-10 opacity-70" />
         <div aria-hidden className="absolute -right-12 -top-16 -z-10 h-44 w-44 rounded-full bg-sun opacity-[0.16] blur-3xl" />
         <div className="flex items-center gap-4">
