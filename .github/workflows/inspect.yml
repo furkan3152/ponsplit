@@ -16,7 +16,10 @@ on:
         description: SplitLaunchpad address
         required: true
       admin:
-        description: Admin address shown on /setup (optional; also checks the addresses are its nonce 0/1 contracts)
+        description: Server-deployed setups only (testnet) - admin address from /setup; checks its nonce 0/1 contracts and signer
+        default: ""
+      owner:
+        description: Expected owner of both contracts (optional), e.g. the wallet that deployed them on mainnet
         default: ""
       site:
         description: Site URL to simulate a launch through (optional), e.g. https://ponsplit-testnet.onrender.com
@@ -41,6 +44,7 @@ jobs:
           VAULT: ${{ inputs.vault }}
           LAUNCHPAD: ${{ inputs.launchpad }}
           ADMIN: ${{ inputs.admin }}
+          OWNER: ${{ inputs.owner }}
       - if: inputs.site != ''
         run: node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/smoke-live.mjs
         env:

@@ -39,7 +39,7 @@ contracts/      Solidity (Hardhat): SplitLaunchpad, FeeVault, SplitToken
 
 ## Mainnet
 
-Mainnet kontrol listesi, deploy adımları ve acil durum planı için bkz. **[MAINNET.md](MAINNET.md)**. Her push'ta CI; testleri, Slither'ı ve gerçek testnet/mainnet üzerindeki yaşam döngüsü simülasyonunu çalıştırır.
+Mainnet sitesi Vercel'de çalışır; kontratları sahibi kendi cüzdanıyla `/setup`'tan deploy eder. Kontrol listesi, deploy adımları ve acil durum planı için bkz. **[MAINNET.md](MAINNET.md)**. Her push'ta CI; testleri, Slither'ı ve gerçek testnet/mainnet üzerindeki yaşam döngüsü simülasyonunu çalıştırır.
 
 ## Testnet'e çıkış (en kolay yol: Render)
 

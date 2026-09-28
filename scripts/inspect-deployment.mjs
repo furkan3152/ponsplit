@@ -1,11 +1,12 @@
 // Read-only check of a live deployment, straight from the chain (no server, no key): contract code,
 // wiring, signer, owners and launch terms. Exits non-zero if anything is inconsistent.
 //
-//   NETWORK=testnet VAULT=0x... LAUNCHPAD=0x... [ADMIN=0x...] \
+//   NETWORK=testnet VAULT=0x... LAUNCHPAD=0x... [ADMIN=0x...] [OWNER=0x...] \
 //     node --experimental-strip-types scripts/inspect-deployment.mjs
 //
-// ADMIN (the address /setup shows) also checks that the contracts are the ones that key deployed
-// at nonces 0 and 1, i.e. the addresses the site predicts.
+// ADMIN (the server-deployed setup's admin, testnet) also checks that the contracts are the ones
+// that key deployed at nonces 0 and 1 and that it is the signer. OWNER checks who owns both
+// contracts (e.g. the wallet that deployed them on mainnet).
 import { createPublicClient, formatEther, getAddress, getContractAddress, http, isAddressEqual } from "viem";
 import { feeVaultAbi, launchpadAbi } from "../src/lib/abi.ts";
 
@@ -18,6 +19,7 @@ if (!net) throw new Error(`NETWORK must be one of ${Object.keys(NETWORKS).join("
 const vault = getAddress(process.env.VAULT ?? "");
 const launchpad = getAddress(process.env.LAUNCHPAD ?? "");
 const admin = process.env.ADMIN ? getAddress(process.env.ADMIN) : undefined;
+const owner = process.env.OWNER ? getAddress(process.env.OWNER) : undefined;
 
 const client = createPublicClient({ transport: http(process.env.RPC_URL || net.rpc) });
 const problems = [];
@@ -49,6 +51,7 @@ else console.log(`  FeeVault.signer        ${signer}`);
 const [vOwner, vPending, lOwner, lPending] = await Promise.all([v("owner"), v("pendingOwner"), l("owner"), l("pendingOwner")]);
 console.log(`  FeeVault owner         ${vOwner}${/^0x0+$/.test(vPending) ? "" : ` (pending ${vPending})`}`);
 console.log(`  SplitLaunchpad owner   ${lOwner}${/^0x0+$/.test(lPending) ? "" : ` (pending ${lPending})`}`);
+if (owner) check(isAddressEqual(vOwner, owner) && isAddressEqual(lOwner, owner), `both contracts are owned by ${owner}`);
 
 const [feeBps, protocolShareBps, graduationFeeBps, creationFee, termsVersion, launchesPaused, tokenCount, trades] = await Promise.all([
   l("feeBps"),

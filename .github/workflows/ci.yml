@@ -97,6 +97,12 @@ jobs:
       - run: npx next build
         env:
           NEXT_TELEMETRY_DISABLED: 1
+      # What the production host builds: mainnet, wallet-mode setup, nothing deployed yet.
+      - name: Mainnet build
+        run: npx next build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+          NEXT_PUBLIC_CHAIN: mainnet
 
   # The real web app (production build) in a real browser with several wallets, against a fork of
   # Robinhood Chain testnet: setup, ownership, launch, trading, graduation, pool, claim, all pages.
@@ -154,4 +160,72 @@ jobs:
         if: always()
         with:
           name: e2e-screenshots
+          path: e2e/shots
+
+  # Wallet-mode setup (the mainnet default) on a local chain: the owner deploys both contracts from
+  # their own wallet through /setup, a reload must not deploy again, then the site is rebuilt with
+  # the addresses pinned and a launch is simulated through it.
+  e2e-wallet-setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      NEXT_PUBLIC_CHAIN: local
+      NEXT_PUBLIC_SETUP_MODE: wallet
+      X_RESOLVER: mock
+    steps:
+      - name: Random signing seed
+        run: echo "SIGNER_SEED=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            contracts/package-lock.json
+            e2e/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: contracts
+      - run: npm ci
+        working-directory: e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Local chain
+        working-directory: contracts
+        run: |
+          npx hardhat node > ../node.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf -X POST -H 'content-type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' http://127.0.0.1:8545 && break; sleep 2; done
+      - run: npx next build
+      - name: Deploy from the owner's wallet through /setup
+        run: |
+          # node directly (not npx), so the PID is the server itself and kill really stops it.
+          node node_modules/.bin/next start -p 3000 > app.log 2>&1 &
+          echo "APP_PID=$!" >> "$GITHUB_ENV"
+          cd e2e && node wallet-setup.mjs deploy
+          cat wallet-deploy.env >> "$GITHUB_ENV"
+        env:
+          OUT: shots
+      - name: Rebuild with the addresses pinned
+        run: |
+          kill "$APP_PID"
+          npx next build
+          node node_modules/.bin/next start -p 3000 > app-pinned.log 2>&1 &
+      - name: The pinned site works with the wallet-owned contracts
+        run: |
+          (cd e2e && node wallet-setup.mjs pinned)
+          node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/smoke-live.mjs
+        env:
+          SITE: http://localhost:3000
+          RPC_URL: http://127.0.0.1:8545
+          LAUNCHPAD: ${{ env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS }}
+          HANDLES: alpha,beta
+      - name: Logs
+        if: always()
+        run: tail -n 50 app.log app-pinned.log node.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wallet-setup-screenshots
           path: e2e/shots
