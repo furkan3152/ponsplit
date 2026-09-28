@@ -25,7 +25,7 @@ function siteUrl(): string {
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
-  title: { default: "PonsEarn · One coin, many X accounts", template: "%s · PonsEarn" },
+  title: { default: "SplitEarn · One coin, many X accounts", template: "%s · SplitEarn" },
   description: "Launch a coin on Robinhood Chain and split its trading fees across any set of X accounts.",
 };
 

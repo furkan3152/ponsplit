@@ -88,7 +88,7 @@ export function toCoin(v: LaunchView): Coin {
   };
 }
 
-/** The part of a payout that reaches the X accounts (PonsEarn keeps `platformBps` of it). */
+/** The part of a payout that reaches the X accounts (SplitEarn keeps `platformBps` of it). */
 export const toRecipients = (amount: bigint, platformBps: number) => amount - (amount * BigInt(platformBps)) / BPS;
 
 // ------------------------------------------------------------------ quotes

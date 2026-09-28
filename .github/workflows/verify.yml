@@ -1,6 +1,6 @@
 name: Verify contracts
 
-# Publishes the source of a PonsEarn deployment on Blockscout, so anyone can read the code behind
+# Publishes the source of a SplitEarn deployment on Blockscout, so anyone can read the code behind
 # the site and the explorer's Read/Write contract tabs work: the launcher, its FeeVault, the
 # FeeSplitter implementation every coin clones and the router. Nothing is sent to the chain and no
 # key is needed. The launcher and FeeVault were deployed through the CREATE2 proxy from /setup, so
@@ -15,7 +15,7 @@ on:
         options: [robinhood, robinhoodTestnet]
         default: robinhood
       launcher:
-        description: PonsEarnLauncher address
+        description: SplitEarnLauncher address
         required: true
 
 jobs:
@@ -79,7 +79,7 @@ jobs:
               const [vaultAddr, factory, escrow, hook, poolManager, router, splitter] = await Promise.all([
                 launcher.feeVault(), launcher.ponsFactory(), launcher.ponsEscrow(), launcher.ponsHook(), launcher.poolManager(), launcher.router(), launcher.splitterImplementation(),
               ]);
-              let l = await fromCreation(launcherAddr, "PonsEarnLauncher", ["address", "address", "address"]);
+              let l = await fromCreation(launcherAddr, "SplitEarnLauncher", ["address", "address", "address"]);
               let v = await fromCreation(vaultAddr, "FeeVault", ["address", "address"]);
               if (!l || !v) {
                 console.log("::warning::Using the contracts current state as constructor arguments; this only matches if the owner and signer are unchanged.");
@@ -93,13 +93,13 @@ jobs:
               write("splitter-args.js", [launcherAddr, vaultAddr, escrow, hook]);
               write("router-args.js", [poolManager, factory]);
               fs.writeFileSync("addresses.env", ["VAULT=" + vaultAddr, "SPLITTER=" + splitter, "ROUTER=" + router].join("\n") + "\n");
-              console.log("PonsEarnLauncher", launcherAddr, [...l]);
+              console.log("SplitEarnLauncher", launcherAddr, [...l]);
               console.log("FeeVault", vaultAddr, [...v]);
-              console.log("FeeSplitter", splitter, "PonsEarnRouter", router);
+              console.log("FeeSplitter", splitter, "SplitEarnRouter", router);
             })().catch((e) => { console.error(e); process.exit(1); });
           '
           cat addresses.env >> "$GITHUB_ENV"
-      - name: Verify PonsEarnLauncher
+      - name: Verify SplitEarnLauncher
         run: npx hardhat verify --network "$NETWORK" --constructor-args launcher-args.js "$LAUNCHER"
       - name: Verify FeeVault
         if: always()
@@ -107,6 +107,6 @@ jobs:
       - name: Verify FeeSplitter (the implementation coins clone)
         if: always()
         run: npx hardhat verify --network "$NETWORK" --constructor-args splitter-args.js "$SPLITTER"
-      - name: Verify PonsEarnRouter
+      - name: Verify SplitEarnRouter
         if: always()
         run: npx hardhat verify --network "$NETWORK" --constructor-args router-args.js "$ROUTER"

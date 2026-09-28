@@ -1,11 +1,11 @@
-# PonsEarn (repo: ponsplit): working notes for Claude
+# SplitEarn (repo: ponsplit): working notes for Claude
 
 The owner (GitHub: furkan3152) writes in Turkish, so answer in Turkish. They often work from a
 phone and can't edit environments by hand. Keep instructions to taps and copy/paste.
 
 ## What this is
 
-PonsEarn is a launchpad on **pons** (ponsfamily.com, Robinhood Chain) where a coin's creator fees are
+SplitEarn is a launchpad on **pons** (ponsfamily.com, Robinhood Chain) where a coin's creator fees are
 split between up to 10 X (Twitter) accounts. The site is not affiliated with pons, and says so.
 
 - **Two networks at once.** A Main / Test switch at the top of every page picks the network (cookie
@@ -13,19 +13,19 @@ split between up to 10 X (Twitter) accounts. The site is not affiliated with pon
   `network-context.tsx`). Mainnet chainId 4663, testnet 46630. RPCs:
   `https://rpc.mainnet.chain.robinhood.com`, `https://rpc.testnet.chain.robinhood.com`.
   - Mainnet: the real pons v2 (factory `0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e`).
-  - Testnet: pons isn't there, so PonsEarn deploys its own copy of pons's verified v2 contracts
+  - Testnet: pons isn't there, so SplitEarn deploys its own copy of pons's verified v2 contracts
     (contracts/vendor) with pons's mainnet terms, on the testnet's real Uniswap v4.
-- **Coins are pons coins.** `PonsEarnLauncher.launch` calls pons's factory with a per-coin
+- **Coins are pons coins.** `SplitEarnLauncher.launch` calls pons's factory with a per-coin
   `FeeSplitter` clone as the creator fee recipient. pons mints (1B supply), runs the bonding curve
   (phantom 1.68 ETH, graduation at 4.2 ETH, 3 s snipe tax) and graduates two-phase into a locked
   Uniswap v4 pool (`createGraduatedPool`, permissionless; the coin page has a button for it).
-  Trading: curve buy/sell directly on pons's curve, pool trades through `PonsEarnRouter`.
-- **Fees.** pons's 1% fee: 30% pons, 70% creator. Of the creator part 20% goes to PonsEarn
+  Trading: curve buy/sell directly on pons's curve, pool trades through `SplitEarnRouter`.
+- **Fees.** pons's 1% fee: 30% pons, 70% creator. Of the creator part 20% goes to SplitEarn
   (`platformShareBps`, max 30%) and 80% to the X accounts; the optional creator tax (0-10%, chosen
   at launch, default 0) goes 100% to the accounts. Each coin snapshots `platformBps`. FeeVault keys
   balances by the permanent numeric X user id. Claims use `collectAndClaim` to collect first.
 - **Signing.** One server key (both networks) signs EIP-712 messages, domain
-  `PonsEarn FeeVault` v1 with chainId + vault:
+  `SplitEarn FeeVault` v1 with chainId + vault:
   - `SplitAttestation` for launches: username → id, bound to the creator.
   - `Claim` for payouts, bound to the destination wallet.
 - **Proving account ownership.** Either X OAuth (next-auth, optional), or a proof post. A proof
@@ -37,7 +37,7 @@ split between up to 10 X (Twitter) accounts. The site is not affiliated with pon
   networks with real X accounts (@jack = 12, @x = 783214).
 - **X Money is intentionally NOT used.** The owner decided this. It has no API, is US-only and needs KYC.
 
-Layout: `contracts/` holds Hardhat: `PonsEarnLauncher`, `FeeSplitter`, `FeeVault`, `PonsEarnRouter`,
+Layout: `contracts/` holds Hardhat: `SplitEarnLauncher`, `FeeSplitter`, `FeeVault`, `SplitEarnRouter`,
 `interfaces/`, `vendor/` (pons v2 + Uniswap v4 + Permit2 verified sources, `vendor/build.js` compiles
 them byte for byte into `vendor/out`), `scripts/lib/pons-stack.js` (deploys the real stack for tests).
 The Next.js 14 app is at the repo root: `src/app`, `src/lib` (data layer: `hooks.ts`, `pons.ts`
@@ -197,8 +197,8 @@ Gotchas:
 - If you change anything substantial, run a review → fix → verify loop again. Unit tests live in
   `src/lib/*.test.ts` and run with `npm test`.
 - **Pons integration (2026-09-28).** The owner asked for coins to be minted and graduated the pons
-  way, trading inside PonsEarn, 20% of the creator share to PonsEarn / 80% to the X accounts, a
-  creator tax (0-10%, default 0) all to the accounts, the name PonsEarn with a not-affiliated note,
+  way, trading inside SplitEarn, 20% of the creator share to SplitEarn / 80% to the X accounts, a
+  creator tax (0-10%, default 0) all to the accounts, the name SplitEarn with a not-affiliated note,
   and then both networks selectable at the top with no mock data and deploys from their own wallet.
   Built: the contracts above (29 unit tests on the real stack; fork tests on both real networks,
   including a byte-for-byte check of the vendored pons code against mainnet), the two-network site,

@@ -225,7 +225,7 @@ function NotLiveNotice() {
   return (
     <Reveal>
       <div className="rounded-[22px] border border-line bg-card-2 p-4 text-[14px] leading-relaxed text-ink-2 sm:p-5">
-        PonsEarn isn&apos;t live on {n.label.toLowerCase()} yet, so there is nothing to claim here. Switch networks at the top of the page.
+        SplitEarn isn&apos;t live on {n.label.toLowerCase()} yet, so there is nothing to claim here. Switch networks at the top of the page.
       </div>
     </Reveal>
   );

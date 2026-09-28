@@ -1,14 +1,14 @@
-<p align="center"><img src="public/hero.svg" width="480" alt="PonsEarn"></p>
+<p align="center"><img src="public/hero.svg" width="480" alt="SplitEarn"></p>
 
-# PonsEarn
+# SplitEarn
 
 **Tek coin, birden fazla X hesabı, fee'ler otomatik bölünür.** Robinhood Chain üzerinde, **pons** (ponsfamily.com) altyapısında bir coin çıkar. Coin'in creator fee'leri, seçtiğin en fazla 10 X (Twitter) hesabı arasında paylaştırılır. Bu hem bonding curve aşamasında hem de coin Uniswap v4 havuzuna "mezun olduktan" sonra geçerli. Hesap sahipleri hesabın kendilerine ait olduğunu kanıtlayıp paylarını istedikleri cüzdana çeker.
 
-PonsEarn bağımsız bir uygulamadır; pons ile resmi bir bağı yoktur, pons tarafından onaylanmamış ya da işletilmemektedir.
+SplitEarn bağımsız bir uygulamadır; pons ile resmi bir bağı yoktur, pons tarafından onaylanmamış ya da işletilmemektedir.
 
 ```
 src/, public/        Next.js 14 web uygulaması (repo kökü: Vercel ek ayar istemez)
-contracts/           Solidity (Hardhat): PonsEarnLauncher, FeeSplitter, FeeVault, PonsEarnRouter
+contracts/           Solidity (Hardhat): SplitEarnLauncher, FeeSplitter, FeeVault, SplitEarnRouter
 contracts/vendor/    pons v2 ve Uniswap v4'ün Blockscout'ta doğrulanmış kaynakları (birebir derlenir)
 e2e/                 Playwright uçtan uca testleri (gerçek ağların fork'u üzerinde)
 .github/             CI, inceleme ve teşhis iş akışları
@@ -19,7 +19,7 @@ e2e/                 Playwright uçtan uca testleri (gerçek ağların fork'u ü
 Site iki ağı aynı anda sunar; her sayfanın üstündeki **Main / Test** seçicisiyle geçilir (seçim bir çerezde durur, `?network=testnet` bağlantıları da ağı seçer).
 
 - **Mainnet (4663):** coin'ler gerçek pons'ta çıkar.
-- **Testnet (46630):** pons testnet'te yok. Bu yüzden PonsEarn, pons'un açık kaynaklı v2 kontratlarının birebir kopyasını testnet'e kurar (pons'un mainnet ayarlarıyla), Robinhood testnet'teki gerçek Uniswap v4'ün üzerine. Kurulumu sahip kendi cüzdanıyla `/setup`'tan yapar.
+- **Testnet (46630):** pons testnet'te yok. Bu yüzden SplitEarn, pons'un açık kaynaklı v2 kontratlarının birebir kopyasını testnet'e kurar (pons'un mainnet ayarlarıyla), Robinhood testnet'teki gerçek Uniswap v4'ün üzerine. Kurulumu sahip kendi cüzdanıyla `/setup`'tan yapar.
 
 ## Nasıl çalışır?
 
@@ -27,8 +27,8 @@ Site iki ağı aynı anda sunar; her sayfanın üstündeki **Main / Test** seçi
    - Sunucu kullanıcı adlarını **kalıcı X kullanıcı ID'lerine** çevirir ve bu eşleşmeyi imzalar (attestation). FeeVault imzayı doğrulamadan coin'i kaydetmez.
    - Coin'i pons'un kendi fabrikası basar; normal bir pons coin'idir (1B arz). Tek fark, creator fee alıcısının coin'e özel bir **FeeSplitter** olması.
    - İsteğe bağlı **creator vergisi** (%0–10, varsayılan 0) ve aynı işlemde **ilk alım** (pons'un açılış snipe vergisinden muaf).
-2. **Fee'ler:** Her al/sat işleminde pons'un **%1 fee'si** kesilir: %30'u pons'a, %70'i creator payına gider. Creator payının **%80'i X hesaplarına, %20'si PonsEarn'e** gider. Creator vergisinin **tamamı** X hesaplarınındır. Oranlar launch anında coin'e sabitlenir.
-3. **Mezuniyet (pons usulü):** Eğri 4,2 ETH toplayınca kapanır; ETH ve ayrılmış token'lar kilitli likiditeyle bir **Uniswap v4 havuzuna** konur. Havuzu pons genelde hemen açar; açmazsa coin sayfasındaki **Create the pool** düğmesiyle herkes açabilir. İşlemler aynı sayfada, PonsEarn'ün router'ı üzerinden devam eder; havuz fee'leri de aynı hesaplara gider.
+2. **Fee'ler:** Her al/sat işleminde pons'un **%1 fee'si** kesilir: %30'u pons'a, %70'i creator payına gider. Creator payının **%80'i X hesaplarına, %20'si SplitEarn'e** gider. Creator vergisinin **tamamı** X hesaplarınındır. Oranlar launch anında coin'e sabitlenir.
+3. **Mezuniyet (pons usulü):** Eğri 4,2 ETH toplayınca kapanır; ETH ve ayrılmış token'lar kilitli likiditeyle bir **Uniswap v4 havuzuna** konur. Havuzu pons genelde hemen açar; açmazsa coin sayfasındaki **Create the pool** düğmesiyle herkes açabilir. İşlemler aynı sayfada, SplitEarn'ün router'ı üzerinden devam eder; havuz fee'leri de aynı hesaplara gider.
 4. **Claim:** `/claim` sayfasında hesap sahipliği kanıtlanır:
    - **Varsayılan:** tek kullanımlık kod içeren bir post atılıp linki yapıştırılır. Kod kullanıcı adına, cüzdana ve güne bağlı bir HMAC'tir. Post, hesabın kendi attığı yeni bir post olmalı ve metni tam olarak gösterilen metin olmalı; yanıtlar, alıntılar ve kodu sadece içeren postlar sayılmaz.
    - **Opsiyonel:** X anahtarları verilirse "Sign in with X" (OAuth).
@@ -43,7 +43,7 @@ Site iki ağı aynı anda sunar; her sayfanın üstündeki **Main / Test** seçi
 - Attestation coin'i oluşturan adrese bağlıdır ve 30 dakikada geçerliliğini yitirir.
 - X ID çözümlemesi resmi X API ile (`X_BEARER_TOKEN`) ya da ücretsiz, gayriresmî `api.fxtwitter.com` üzerinden yapılır. İkincisi "best effort" çalışır; ciddi kullanımda resmi API önerilir.
 - Coin'ler pons'un kurallarına tabidir (ör. pons'un topluluk devri akışı bir coin'in creator fee'lerini başka bir adrese taşıyabilir; coin sayfası bunu gösterir).
-- PonsEarn kontratları denetimden (audit) geçmedi. Mainnet öncesinde audit ve hukuki kontrol şart.
+- SplitEarn kontratları denetimden (audit) geçmedi. Mainnet öncesinde audit ve hukuki kontrol şart.
 
 ## Kurulum
 
@@ -51,7 +51,7 @@ Adım adım rehber, kontrol listesi ve acil durum planı: **[MAINNET.md](MAINNET
 
 1. Siteyi Vercel'de yayınla (repo kökü, ek ayar yok).
 2. `/setup` → **Generate signing key** → Vercel'e `SIGNER_PRIVATE_KEY` olarak ekle → Redeploy.
-3. Üstten ağı seç, `/setup`'ı cüzdan uygulamanın tarayıcısında aç → **Deploy**. Testnet'te 19 işlem (pons kopyası + PonsEarn), mainnet'te 3 işlem. Yarıda kalırsa sayfa kaldığı yerden devam eder.
+3. Üstten ağı seç, `/setup`'ı cüzdan uygulamanın tarayıcısında aç → **Deploy**. Testnet'te 19 işlem (pons kopyası + SplitEarn), mainnet'te 3 işlem. Yarıda kalırsa sayfa kaldığı yerden devam eder.
 4. `/setup`'ın gösterdiği adresleri `src/deployment.json`'a yaz (ya da Vercel ortam değişkeni olarak ekle). Site yeniden build olunca o ağ canlıdır.
 
 Opsiyonel ortam değişkenleri `.env.example` dosyasında (`TWITTER_CLIENT_ID/SECRET`, `X_BEARER_TOKEN`, `PINATA_JWT`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, ağ başına RPC).

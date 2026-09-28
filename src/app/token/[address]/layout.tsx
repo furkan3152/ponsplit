@@ -13,8 +13,8 @@ export async function generateMetadata({ params }: { params: { address: string }
   return {
     title,
     description,
-    openGraph: { title: `${title} on PonsEarn`, description },
-    twitter: { card: "summary_large_image", title: `${title} on PonsEarn`, description },
+    openGraph: { title: `${title} on SplitEarn`, description },
+    twitter: { card: "summary_large_image", title: `${title} on SplitEarn`, description },
   };
 }
 

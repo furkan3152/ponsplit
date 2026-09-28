@@ -45,12 +45,12 @@ export function Footer() {
         </div>
         <div className="mt-8 space-y-2 text-[12px] leading-relaxed text-ink-3">
           <p>
-            PonsEarn is an independent app built on pons (
+            SplitEarn is an independent app built on pons (
             <a href="https://ponsfamily.com" target="_blank" rel="noreferrer" className="underline-offset-2 hover:text-ink-2 hover:underline">
               ponsfamily.com
             </a>
             ). It is not affiliated with, endorsed by or operated by pons.
-            {n.ponsIsCopy ? " On testnet, coins launch on PonsEarn's own copy of pons's open-source contracts." : ""}
+            {n.ponsIsCopy ? " On testnet, coins launch on SplitEarn's own copy of pons's open-source contracts." : ""}
           </p>
           <p>Experimental software on a {n.isTestnet ? "test network; coins and test ETH have no value" : "live network; trade at your own risk"}.</p>
         </div>
@@ -61,7 +61,7 @@ export function Footer() {
           className="display pointer-events-none mt-4 select-none whitespace-nowrap bg-clip-text text-[21vw] leading-[0.84] text-transparent sm:text-[168px]"
           style={{ backgroundImage: "linear-gradient(to bottom, var(--line-2) 10%, transparent 92%)" }}
         >
-          PonsEarn
+          SplitEarn
         </div>
       </div>
     </footer>

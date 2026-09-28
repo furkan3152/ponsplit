@@ -1,6 +1,6 @@
 // Read-only launch check against a live site. The site's /api/attest resolves real X accounts and
 // signs an attestation with the server key, exactly as for a real launch; the attestation is then
-// used to simulate PonsEarnLauncher.launch on the live contracts with eth_call (with and without a
+// used to simulate SplitEarnLauncher.launch on the live contracts with eth_call (with and without a
 // first buy). Nothing is sent and no key is needed.
 //
 //   SITE=https://... NETWORK=testnet|mainnet LAUNCHER=0x... [HANDLES=jack,x] \

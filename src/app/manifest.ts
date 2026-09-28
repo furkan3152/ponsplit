@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "PonsEarn",
-    short_name: "PonsEarn",
+    name: "SplitEarn",
+    short_name: "SplitEarn",
     description: "One coin, many X accounts. Trading fees split automatically on Robinhood Chain.",
     start_url: "/",
     display: "standalone",

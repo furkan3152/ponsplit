@@ -35,7 +35,7 @@ export function proofCode(handle: string, wallet: Address, day = currentDay()): 
 }
 
 export function proofText(handle: string, wallet: Address, day = currentDay()): string {
-  return `Claiming my PonsEarn coin fees to wallet ${getAddress(wallet)}\nproof ${proofCode(handle, wallet, day)}`;
+  return `Claiming my SplitEarn coin fees to wallet ${getAddress(wallet)}\nproof ${proofCode(handle, wallet, day)}`;
 }
 
 function currentDay() {

@@ -14,11 +14,11 @@ export function signerAccount() {
   return key ? privateKeyToAccount(key) : undefined;
 }
 
-// Must stay in sync with FeeVault's EIP712("PonsEarn FeeVault", "1") and its typehashes. The chain id
+// Must stay in sync with FeeVault's EIP712("SplitEarn FeeVault", "1") and its typehashes. The chain id
 // and the vault's address keep a signature for one network (or one vault) from working on another.
 function domain(n: Network) {
-  if (!n.feeVault) throw new Error(`PonsEarn isn't live on ${n.label} yet.`);
-  return { name: "PonsEarn FeeVault", version: "1", chainId: n.chain.id, verifyingContract: n.feeVault } as const;
+  if (!n.feeVault) throw new Error(`SplitEarn isn't live on ${n.label} yet.`);
+  return { name: "SplitEarn FeeVault", version: "1", chainId: n.chain.id, verifyingContract: n.feeVault } as const;
 }
 
 export function signAttestation(n: Network, args: { creator: Address; xIds: bigint[]; handles: string[]; deadline: bigint }) {

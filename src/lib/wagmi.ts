@@ -23,7 +23,7 @@ const mobile =
  * chain every read and transaction goes to, and the wallet is asked to switch before sending.
  */
 export const wagmiConfig = getDefaultConfig({
-  appName: "PonsEarn",
+  appName: "SplitEarn",
   // A placeholder id still lets browser wallets connect; WalletConnect needs a real one.
   projectId: projectId || "00000000000000000000000000000000",
   chains: [robinhood, robinhoodTestnet],
