@@ -77,7 +77,7 @@ Opsiyonel ortam değişkenleri `.env.example` dosyasında:
 ```bash
 # kontratlar
 cd contracts && npm install
-npm test                  # 19 test
+npm test                  # 25 test
 npm run export-abi        # ABI'leri src/lib/abi.ts dosyasına yazar
 
 # yerel uçtan uca deneme (gerçek zincir ve X hesabı gerekmez)
