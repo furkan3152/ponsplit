@@ -109,11 +109,14 @@ Gotchas:
 
 ## Deployment state (last updated 2026-09-28)
 
-- **Neither network is live on the new (pons) contracts yet.** `src/deployment.json` has empty pins
-  for both. Each goes live when the owner deploys from `/setup` (testnet: 19 wallet txs, mainnet: 3)
-  and the addresses shown there are committed to `src/deployment.json` (or set as
-  `NEXT_PUBLIC_<NET>_LAUNCHER_ADDRESS` / `_FEE_VAULT_ADDRESS` / `NEXT_PUBLIC_TESTNET_PONS_FACTORY`).
-  Check a deployment with the `inspect.yml` workflow (read-only; `site` simulates a launch).
+- **Testnet is live** (2026-09-28): the owner deployed from `/setup` with `0xff3a3cfc42d27e85dba9ea85f0bfec34bd632f9a`
+  (19 txs). Launcher `0x5D95C13c6Ef4874AcDfcd3A68cE62e17E65cFe59`, FeeVault `0x5ad954cd8F5c681a2C3FC2a399868a37e3611aB7`,
+  pons copy factory `0xF2531ee1d731653d3C4F3CE24B98dB5bDFa78c88`, router `0x4d35Bf6f7592c9EFDF179E2f079Aabd99c379333`,
+  pinned in `src/deployment.json`; `inspect.yml` (with the site's launch simulation) passes. Site signer
+  `0xc4d9873e95b8215eBC189c939DBFe06961E71193`.
+- **Mainnet is not deployed yet**: the owner deploys it from `/setup` (3 txs); then pin the addresses in
+  `src/deployment.json` and run `inspect.yml`. None of pons's contracts exist on testnet (checked
+  2026-09-28), so testnet keeps SplitEarn's copy.
 - **Render.** Service `ponsplit-testnet` (id `srv-dasv10bbc2fs73agp3sg`, workspace
   `tea-d7ccecdckfvc73887jo0`) auto-deploys the branch and now serves the two-network site. Its
   `SIGNER_PRIVATE_KEY` was shared in chat once, so it's public and testnet-only; its old
