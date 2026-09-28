@@ -114,7 +114,11 @@ Gotchas:
   1. the owner generates the signing key on `/setup` and pastes it into Vercel as `SIGNER_PRIVATE_KEY`;
   2. connects their own wallet and deploys (3 txs: FeeVault, SplitLaunchpad, setLaunchpad); the
      page resumes from chain state, so nothing is deployed twice;
-  3. the addresses are pinned in `src/deployment.json` (mainnet), and Vercel rebuilds on push.
+  3. the addresses are pinned in `src/deployment.json` (mainnet), and Vercel rebuilds on push;
+  4. `verify.yml` publishes the source on Blockscout (run it right after deploying: it reads the
+     constructor arguments back from the chain), and `inspect.yml` checks everything read-only.
+  After that, `/setup` ends with **Owner controls** for the owner wallet: pause/resume launches
+  and claims, point FeeVault at the site's signing key, withdraw protocol fees.
   MAINNET.md has the owner-facing steps. Vercel Hobby forbids commercial use: Pro before launch.
 
 ## History / where things stand
@@ -175,5 +179,15 @@ Gotchas:
 - Round 5 came back clean (0 confirmed). After it: the `inspect.yml` / `smoke-live.mjs` tools, a
   mirror-404 fix (a 404 is confirmed via fxtwitter's `/2/profile/`, launches re-check cached
   misses), and wallet-mode setup for mainnet on Vercel.
+- Round 6 found 7 (fixed in f4920b6). Then the "split terminal" redesign (f4920b6, 3a4cbe1).
+- Round 7 reviewed the redesign and round-6 fixes through five lenses (coin page, forms, design
+  foundation, infra/mainnet flow, screenshots). All confirmed findings are fixed (6fab242, 9244eaf,
+  75c6c9d), notably:
+  - /setup wallet deploy: a double tap could deploy twice (synchronous guard, stale-read check,
+    prefer the vault's wired launchpad); the e2e double-clicks Deploy and expects 3 txs.
+  - Owner controls on /setup (the emergency plan needed owner calls no page offered).
+  - A negative first buy crashed the launch page; AA contrast for `--ink-3` and the Sell label.
+  - Reveals: THEME_SCRIPT drops the `js` class if the app hasn't hydrated after 2.5 s.
+  - The hero pauses its motion off screen; the e2e's third pass is the light theme on a phone.
 - If you change anything substantial, run a review → fix → verify loop again. Unit tests live in
   `src/lib/*.test.ts` and run with `npm test`.

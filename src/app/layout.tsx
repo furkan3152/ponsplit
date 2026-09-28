@@ -28,9 +28,9 @@ export const metadata: Metadata = {
   description: "Launch a coin on Robinhood Chain and split its trading fees across any set of X accounts.",
 };
 
-export const viewport: Viewport = {
-  themeColor: "#09090b",
-};
+// No themeColor here: Next re-renders its own theme-color tag on every navigation, which would
+// undo the light theme's color. THEME_SCRIPT (src/lib/theme.ts) adds and owns that tag instead.
+export const viewport: Viewport = {};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

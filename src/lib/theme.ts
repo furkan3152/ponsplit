@@ -10,15 +10,22 @@ const BAR = { dark: "#09090b", light: "#f3f2ec" };
 
 /**
  * Runs in <head> before the first paint: applies the saved theme (dark unless the visitor chose
- * light) and marks that JavaScript is running, which enables scroll reveals. If the app hasn't
+ * light), adds the browser toolbar color to match (a tag React doesn't own, so navigation leaves
+ * it alone) and marks that JavaScript is running, which enables scroll reveals. If the app hasn't
  * hydrated 2.5 s later (a failed or very slow bundle), the mark comes off again so no content
  * stays hidden behind a reveal that will never run.
  */
-export const THEME_SCRIPT = `(function(){var d=document.documentElement;try{d.setAttribute("data-theme",localStorage.getItem("${THEME_KEY}")==="light"?"light":"dark")}catch(e){}d.classList.add("js");setTimeout(function(){if(!d.hasAttribute("data-hydrated"))d.classList.remove("js")},2500)})();`;
+export const THEME_SCRIPT = `(function(){var d=document.documentElement,t="dark";try{if(localStorage.getItem("${THEME_KEY}")==="light")t="light"}catch(e){}d.setAttribute("data-theme",t);var m=document.createElement("meta");m.name="theme-color";m.content=t==="light"?"${BAR.light}":"${BAR.dark}";document.head.appendChild(m);d.classList.add("js");setTimeout(function(){if(!d.hasAttribute("data-hydrated"))d.classList.remove("js")},2500)})();`;
 
 /** Keeps the browser toolbar in the page's color. */
 function paintBar(t: Theme) {
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", BAR[t]);
+  let m = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (!m) {
+    m = document.createElement("meta");
+    m.name = "theme-color";
+    document.head.appendChild(m);
+  }
+  m.content = BAR[t];
 }
 
 function current(): Theme {
