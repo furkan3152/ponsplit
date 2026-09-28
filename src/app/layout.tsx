@@ -3,6 +3,7 @@ import { Bricolage_Grotesque, Instrument_Sans, Instrument_Serif, Martian_Mono } 
 import { ConfigBanner } from "@/components/ConfigBanner";
 import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
+import { Sidebar } from "@/components/Sidebar";
 import { TabBar } from "@/components/TabBar";
 import { Ticker } from "@/components/Ticker";
 import { visitorNetworkId } from "@/lib/server-network";
@@ -48,11 +49,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-screen">
         <Providers network={network}>
-          <Nav />
-          <Ticker />
-          <ConfigBanner />
-          <main className="mx-auto w-full max-w-6xl px-4 pb-28 pt-6 sm:px-6 md:pb-24">{children}</main>
-          <Footer />
+          <Sidebar />
+          <div className="shell">
+            <Nav />
+            <Ticker />
+            <ConfigBanner />
+            <main className="mx-auto w-full max-w-[1240px] px-4 pb-28 pt-6 sm:px-6 lg:pb-16">{children}</main>
+            <Footer />
+          </div>
           <TabBar />
         </Providers>
       </body>

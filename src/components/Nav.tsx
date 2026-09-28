@@ -2,48 +2,33 @@
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useSwitchChain } from "wagmi";
 import { useNetwork, useSwitchNetwork } from "@/lib/network-context";
 import { NETWORK_IDS, NETWORKS } from "@/lib/networks";
 import { ThemeToggle } from "./ThemeToggle";
 import { Wordmark } from "./art";
+import { SearchBox } from "./SearchBox";
 
-const NAV = [
-  { href: "/", label: "Explore" },
-  { href: "/create", label: "Launch" },
-  { href: "/claim", label: "Claim" },
-  { href: "/me", label: "Portfolio" },
-];
-
+/**
+ * The top bar: search in the middle, the network switch, the wallet and the Launch button on the
+ * right. On phones it carries the logo (the sidebar is desktop only; the tab bar takes over).
+ */
 export function Nav() {
-  const pathname = usePathname();
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-[var(--glass)] backdrop-blur-xl backdrop-saturate-150">
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-2 px-4 sm:gap-3 sm:px-6">
-        <Link href="/" className="group shrink-0" aria-label="SplitEarn home">
-          <Wordmark textClassName="hidden min-[420px]:inline" />
+    <header className="sticky top-0 z-30 border-b border-line bg-[var(--glass)] backdrop-blur-xl backdrop-saturate-150">
+      <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-2 px-4 sm:gap-3 sm:px-6">
+        <Link href="/" className="group shrink-0 lg:hidden" aria-label="SplitEarn home">
+          <Wordmark textClassName="hidden min-[440px]:inline" />
         </Link>
-        <nav className="no-scrollbar ml-4 hidden items-center gap-1 md:flex lg:ml-6">
-          {NAV.map((n) => {
-            const active = n.href === "/" ? pathname === "/" : pathname.startsWith(n.href);
-            return (
-              <Link
-                key={n.href}
-                href={n.href}
-                aria-current={active ? "page" : undefined}
-                className={`relative whitespace-nowrap rounded-full px-3.5 py-2 text-[14px] font-medium transition ${active ? "text-ink" : "text-ink-2 hover:text-ink"}`}
-              >
-                {n.label}
-                {active ? <span className="absolute inset-x-3.5 -bottom-[13px] h-[2px] rounded-full bg-lime shadow-[0_0_14px_var(--glow)]" aria-hidden /> : null}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="ml-auto flex min-w-0 items-center gap-2">
+        <SearchBox className="hidden flex-1 md:block lg:mx-auto lg:max-w-[560px]" />
+        <div className="ml-auto flex min-w-0 items-center gap-2 lg:ml-0">
+          <SearchBox className="md:hidden" compact />
           <NetworkSwitch />
-          <ThemeToggle compact className="hidden lg:inline-flex" />
+          <ThemeToggle compact className="hidden xl:inline-flex" />
           <WalletButton />
+          <Link href="/create" className="btn-primary hidden shrink-0 px-5 py-2 text-[14px] md:inline-flex">
+            Launch
+          </Link>
         </div>
       </div>
     </header>

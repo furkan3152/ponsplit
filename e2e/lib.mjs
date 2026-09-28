@@ -87,3 +87,24 @@ export async function connect(page) {
   await page.getByText("E2E Wallet").first().click({ force: true, timeout: 5000 }).catch(() => {});
   await page.locator("header").getByText(/0x[0-9a-f]{2}/i).first().waitFor({ timeout: 20_000 });
 }
+
+/**
+ * On /setup, signs in as the site's admin with the injected wallet (a message signature; nothing
+ * is sent on-chain), if the page asks for it. Returns once the setup page itself is showing.
+ */
+export async function adminSignIn(page) {
+  const gate = page.getByRole("heading", { name: "Admin sign-in" });
+  const setup = page.getByRole("heading", { name: "Set up SplitEarn" });
+  await gate.or(setup).first().waitFor({ timeout: 90_000 });
+  if (await setup.count()) return;
+  const signIn = page.getByRole("button", { name: /^Sign in as / });
+  const connectButton = page.getByRole("button", { name: "Connect wallet" });
+  await page.waitForTimeout(2500);
+  if (!(await signIn.count())) {
+    await connectButton.first().click({ timeout: 30_000 });
+    await page.waitForTimeout(1200);
+    await page.getByText("E2E Wallet").first().click({ force: true, timeout: 10_000 });
+  }
+  await signIn.click({ timeout: 60_000 });
+  await setup.waitFor({ timeout: 60_000 });
+}
