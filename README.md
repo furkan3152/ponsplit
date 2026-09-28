@@ -50,11 +50,12 @@ Site iki ağı aynı anda sunar; her sayfanın üstündeki **Main / Test** seçi
 Adım adım rehber, kontrol listesi ve acil durum planı: **[MAINNET.md](MAINNET.md)**. Kısaca:
 
 1. Siteyi Vercel'de yayınla (repo kökü, ek ayar yok).
-2. `/setup` → **Generate signing key** → Vercel'e `SIGNER_PRIVATE_KEY` olarak ekle → Redeploy.
+2. `/setup` → **Generate signing key** → Vercel'e `SIGNER_PRIVATE_KEY` olarak ekle. Aynı yere `ADMIN_ADDRESSES` olarak kendi cüzdan adresini ekle (yalnızca bu cüzdan `/setup`'a girebilir) → Redeploy.
+   - `/setup`'a giren herkes önce **Admin sign-in** ekranını görür: cüzdanını bağlayıp bir mesaj imzalarsın (zincire bir şey gitmez, ücretsiz). Başka cüzdanlar içeri giremez.
 3. Üstten ağı seç, `/setup`'ı cüzdan uygulamanın tarayıcısında aç → **Deploy**. Testnet'te 19 işlem (pons kopyası + SplitEarn), mainnet'te 3 işlem. Yarıda kalırsa sayfa kaldığı yerden devam eder.
 4. `/setup`'ın gösterdiği adresleri `src/deployment.json`'a yaz (ya da Vercel ortam değişkeni olarak ekle). Site yeniden build olunca o ağ canlıdır.
 
-Opsiyonel ortam değişkenleri `.env.example` dosyasında (`TWITTER_CLIENT_ID/SECRET`, `X_BEARER_TOKEN`, `PINATA_JWT`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, ağ başına RPC).
+Opsiyonel ortam değişkenleri `.env.example` dosyasında (`TWITTER_CLIENT_ID/SECRET`, `X_BEARER_TOKEN`, `BLOB_READ_WRITE_TOKEN` (Vercel Blob; coin resimleri dosyadan yüklenir, Vercel projeye bağlayınca kendisi ekler) ya da `PINATA_JWT`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, ağ başına RPC).
 
 ## Geliştirme
 

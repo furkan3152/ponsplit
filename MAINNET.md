@@ -35,7 +35,8 @@ Bu adımları kod çözemez; karar ve sorumluluk proje sahibinde.
 
 1. **Site.** Vercel projesi bu repodan build edilir; her push'ta kendiliğinden yeniden deploy olur. Tek site iki ağı da sunar.
 2. **İmza anahtarı.** Siteyi aç → `/setup` → **Generate signing key** → **Copy**.
-   - Vercel → proje → **Settings → Environment Variables** → `SIGNER_PRIVATE_KEY` olarak yapıştır (Sensitive) → Save → **Deployments → ⋯ → Redeploy**.
+   - Vercel → proje → **Settings → Environment Variables** → `SIGNER_PRIVATE_KEY` olarak yapıştır (Sensitive) → Save.
+   - Aynı yere `ADMIN_ADDRESSES` = kendi cüzdan adresin (0x…; gizli değildir) → Save → **Deployments → ⋯ → Redeploy**. `/setup` yalnızca bu cüzdana (ve deploy sonrası kontratların sahibine) açılır: **Admin sign-in** → cüzdanı bağla → mesajı imzala.
 3. **Ağı seç.** Sayfanın üstündeki **Main / Test** seçicisinden kurulacak ağı seç.
 4. **Deploy.** `/setup`'ı cüzdan uygulamanın tarayıcısında aç (MetaMask, Rabby…) ve bağlan → **Deploy**.
    - **Testnet:** 19 işlem. Önce pons kopyası (7 kontrat + 9 bağlantı: pons'un mainnet ayarları, %1 fee, 4,2 ETH mezuniyet, 3 saniyelik snipe vergisi), sonra SplitEarn (FeeVault, launcher, bağlantı). Gas için faucet: https://faucet.testnet.chain.robinhood.com
