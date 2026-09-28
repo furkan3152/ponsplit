@@ -820,7 +820,7 @@ function Lookup() {
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
             <div className="p-4 sm:p-6">
               <div className="flex items-center gap-3 rounded-2xl border border-line bg-card-2 pl-4 pr-3.5 transition focus-within:border-[var(--line-2)] focus-within:bg-card focus-within:ring-4 focus-within:ring-[var(--lime-soft)]">
-                <span aria-hidden className="font-mono text-[18px] font-bold leading-none text-neon">
+                <span aria-hidden className="font-mono text-[18px] font-bold leading-none text-lime [[data-theme=light]_&]:text-ink">
                   ›
                 </span>
                 <input

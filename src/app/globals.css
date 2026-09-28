@@ -167,7 +167,7 @@ body::after {
     background: linear-gradient(transparent 58%, var(--lime) 58%, var(--lime) 92%, transparent 92%);
   }
   .input {
-    @apply w-full rounded-2xl border border-line bg-card-2 px-4 py-3 text-[15px] text-ink outline-none transition placeholder:text-ink-3 focus:border-[var(--line-2)] focus:bg-card focus:ring-4 focus:ring-[var(--lime-soft)];
+    @apply w-full rounded-2xl border border-line bg-card-2 px-4 py-3 text-[15px] text-ink outline-none transition placeholder:text-ink-3 focus:border-ink-2 focus:bg-card focus:ring-4 focus:ring-[var(--lime-soft)];
   }
   .label {
     @apply mb-2 block text-[13px] font-medium text-ink-2;
@@ -274,7 +274,13 @@ body::after {
     mask-composite: exclude;
     animation: ring-spin 6s linear infinite;
   }
-  /* Scroll reveal (see <Reveal>): only hidden when JavaScript runs, so content never gets stuck invisible. */
+  /* Motion that is off screen (see SplitMachine) holds still instead of repainting every frame. */
+  .motion-paused,
+  .motion-paused * {
+    animation-play-state: paused !important;
+  }
+  /* Scroll reveal (see <Reveal>): only hidden while JavaScript runs; THEME_SCRIPT drops the "js"
+     class again if the app never hydrates, so content can't get stuck invisible. */
   .js .reveal {
     opacity: 0;
     transform: translateY(18px);

@@ -1,7 +1,8 @@
 "use client";
 
 import { useId } from "react";
-import { useReducedMotion } from "../motion";
+import { useEffect } from "react";
+import { useInView, useReducedMotion } from "../motion";
 import { Avatar, C, type Hair, INK, splitHalves } from "./parts";
 
 const CX = 280;
@@ -12,7 +13,7 @@ const NODES: { x: number; y: number; color: string; hair: Hair; hairColor: strin
   { x: 92, y: 96, color: C.sky, hair: 0, hairColor: C.sun, handle: "@ada", pct: "40%", bend: -46, face: "happy" },
   { x: 470, y: 84, color: C.pink, hair: 3, hairColor: C.lilac, handle: "@kofi", pct: "25%", bend: 44, face: "joy" },
   { x: 498, y: 292, color: C.sun, hair: 1, hairColor: C.green, handle: "@mei", pct: "15%", bend: -40, face: "happy" },
-  { x: 318, y: 404, color: C.lilac, hair: 2, hairColor: C.orange, handle: "@noor", pct: "10%", bend: 34, face: "joy" },
+  { x: 318, y: 390, color: C.lilac, hair: 2, hairColor: C.orange, handle: "@noor", pct: "10%", bend: 34, face: "joy" },
   { x: 72, y: 318, color: C.orange, hair: 4, hairColor: C.sky, handle: "@sol", pct: "10%", bend: 38, face: "happy" },
 ];
 
@@ -26,6 +27,14 @@ const r2 = (n: number) => Math.round(n * 10) / 10;
 export function SplitMachine({ className }: { className?: string }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const reduced = useReducedMotion();
+  // All of this motion repaints the whole drawing every frame, so it only runs while on screen.
+  const [ref, onScreen] = useInView<SVGSVGElement>({ once: false, rootMargin: "0px" });
+  useEffect(() => {
+    const svg = ref.current;
+    if (!svg?.pauseAnimations) return;
+    if (onScreen) svg.unpauseAnimations();
+    else svg.pauseAnimations();
+  }, [onScreen, ref]);
   const [a, b] = splitHalves(CX, CY, R, 9);
   const streams = NODES.map((n, i) => {
     const dx = n.x - CX;
@@ -43,7 +52,13 @@ export function SplitMachine({ className }: { className?: string }) {
   });
 
   return (
-    <svg viewBox="0 0 560 450" className={className} role="img" aria-label="A coin splitting its trading fees between five X accounts">
+    <svg
+      ref={ref}
+      viewBox="0 0 560 450"
+      className={`${className ?? ""} ${onScreen ? "" : "motion-paused"}`}
+      role="img"
+      aria-label="A coin splitting its trading fees between five X accounts"
+    >
       <defs>
         <radialGradient id={`${uid}glow`}>
           <stop offset="0%" stopColor="var(--lime)" stopOpacity="0.38" />
@@ -99,7 +114,8 @@ export function SplitMachine({ className }: { className?: string }) {
             <text x={-34} y={4} className="fill-[var(--ink)] font-mono" fontSize={11}>
               {n.handle}
             </text>
-            <text x={36} y={4} textAnchor="end" className="font-mono" fill={n.color} fontSize={11} fontWeight={600}>
+            {/* The pastel reads on the dark pill; on the paper edition's white pill the share is ink. */}
+            <text x={36} y={4} textAnchor="end" className="font-mono [[data-theme=light]_&]:fill-[var(--ink)]" fill={n.color} fontSize={11} fontWeight={600}>
               {n.pct}
             </text>
           </g>

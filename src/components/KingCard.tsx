@@ -14,9 +14,12 @@ export function KingCard({ t }: { t: TokenView }) {
   const { price, marketCap, progress, meta } = describe(t);
   const checks = useHandleChecks(t.handles, t.xIds);
   return (
-    <Link href={`/token/${t.token}`} className="card ring-glow group relative block overflow-hidden rounded-[28px] p-5 sm:p-7">
-      <div aria-hidden className="bg-grid absolute inset-0 -z-10 opacity-70" />
-      <div aria-hidden className="absolute -right-20 -top-24 -z-10 h-72 w-72 rounded-full bg-lime opacity-[0.13] blur-3xl" />
+    <Link href={`/token/${t.token}`} className="card ring-glow group relative block rounded-[28px] p-5 sm:p-7">
+      {/* Decorations are clipped in their own layer: clipping the card would hide its neon edge. */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-[inherit]">
+        <div className="bg-grid absolute inset-0 opacity-70" />
+        <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-lime opacity-[0.13] blur-3xl" />
+      </div>
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex items-center gap-2 rounded-full bg-lime px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--lime-ink)]">
           <span aria-hidden>👑</span> King of the hill
