@@ -161,7 +161,7 @@ export default function HowPage() {
             {FAQ.map((f, i) => (
               <Reveal key={f.q} delay={i * 60}>
                 <details name="faq" className={ACCORDION}>
-                  <summary className="flex min-h-[64px] cursor-pointer list-none items-center gap-4 px-5 py-4 transition-colors duration-200 hover:bg-card-2 focus-visible:bg-card-2 focus-visible:outline-none sm:px-6 [&::-webkit-details-marker]:hidden">
+                  <summary className="flex min-h-[64px] cursor-pointer list-none items-center gap-4 px-5 py-4 transition-colors duration-200 hover:bg-card-2 focus-visible:bg-card-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink sm:px-6 [&::-webkit-details-marker]:hidden">
                     <span className="num w-6 shrink-0 text-[12px] text-ink-3 transition-colors group-open:text-ink">{String(i + 1).padStart(2, "0")}</span>
                     <span className="flex-1 text-[16px] font-semibold leading-snug sm:text-[17px]">{f.q}</span>
                     <span
