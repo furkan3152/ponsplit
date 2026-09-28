@@ -10,11 +10,11 @@ export function LogoMark({ size = 32, className }: { size?: number; className?: 
 }
 
 /** LogoMark + "PonsEarn" wordmark as a flex row. The mark turns a little when its link is hovered. */
-export function Wordmark({ className, size = 28 }: { className?: string; size?: number }) {
+export function Wordmark({ className, textClassName = "", size = 28 }: { className?: string; textClassName?: string; size?: number }) {
   return (
     <span className={`inline-flex items-center gap-2 ${className ?? ""}`}>
       <LogoMark size={size} className="transition-transform duration-500 group-hover:-rotate-12 group-hover:scale-110" />
-      <span className="display text-[20px] leading-none">PonsEarn</span>
+      <span className={`display text-[20px] leading-none ${textClassName}`}>PonsEarn</span>
     </span>
   );
 }

@@ -3,30 +3,35 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { formatUnits, getAddress, isAddress, zeroAddress } from "viem";
+import { getAddress, isAddress } from "viem";
 import { useAccount } from "wagmi";
 import { GraduatedArt, NotFoundArt, StepLaunch } from "@/components/art";
 import { Flash, Reveal, celebrate } from "@/components/motion";
 import { PriceChart } from "@/components/PriceChart";
 import { Progress } from "@/components/Progress";
-import { SplitCard } from "@/components/SplitCard";
+import { SplitCard, accountsPct } from "@/components/SplitCard";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { TradePanel } from "@/components/TradePanel";
 import { TradesTable } from "@/components/TradesTable";
-import { explorerUrl } from "@/lib/chains";
-import { isHiddenCoin } from "@/lib/config";
-import { compact, formatEth, formatPrice, formatTokens, progressText, recordPrice, shortAddress, timeAgo } from "@/lib/format";
-import { useHandleChecks, useNow, useToken, useTrades } from "@/lib/hooks";
-import { describe } from "@/lib/market";
-import type { TokenView, TradeRecord } from "@/lib/types";
+import { coinImage } from "@/lib/coin-ui";
+import { compact, formatEth, formatPrice, formatTokens, progressText, shortAddress, timeAgo } from "@/lib/format";
+import { useCoin, useCoinElsewhere, useCoinTrades, useHandleChecks, useNow, useTokenInfo } from "@/lib/hooks";
+import { safeUrl } from "@/lib/metadata";
+import { useNetwork, useSwitchNetwork } from "@/lib/network-context";
+import { NETWORKS, explorerLink, isHidden, onNetwork, type NetworkId } from "@/lib/networks";
+import { TOTAL_SUPPLY, toRecipients } from "@/lib/pons";
+import type { Coin, Trade } from "@/lib/types";
 
 export default function TokenPage({ params }: { params: { address: string } }) {
+  const n = useNetwork();
   const parsed = isAddress(params.address) ? getAddress(params.address) : undefined;
   // A hidden coin (src/deployment.json) isn't read at all; the page says it isn't listed.
-  const hidden = Boolean(parsed && isHiddenCoin(parsed));
+  const hidden = Boolean(parsed && isHidden(n, parsed));
   const token = hidden ? undefined : parsed;
-  const { data: t, isLoading, isError, refetch } = useToken(token);
-  const trades = useTrades(token, t?.tradeCount);
+  const { data: t, isLoading, isError, refetch } = useCoin(token);
+  const elsewhere = useCoinElsewhere(token, t === null);
+  const trades = useCoinTrades(t);
+  const info = useTokenInfo(t ? t.token : undefined);
   const { address } = useAccount();
   const router = useRouter();
   const pathname = usePathname();
@@ -37,7 +42,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   useEffect(() => {
     if (fromLaunch) router.replace(pathname, { scroll: false });
   }, [fromLaunch, pathname, router]);
-  const launched = fromLaunch && Boolean(t && address && t.market.creator.toLowerCase() === address.toLowerCase());
+  const launched = fromLaunch && Boolean(t && address && t.creator.toLowerCase() === address.toLowerCase());
   const celebrated = useRef(false);
   useEffect(() => {
     if (launched && !celebrated.current) {
@@ -46,25 +51,32 @@ export default function TokenPage({ params }: { params: { address: string } }) {
     }
   }, [launched]);
   useNow(15_000);
-  useGraduationCelebration(t?.token, t?.market.graduated);
+  useGraduationCelebration(t?.token, t?.phase);
 
   if (hidden) return <Missing text="This coin isn't listed on PonsEarn." />;
   if (!token) return <Missing text="That is not a valid coin address." />;
   if (isLoading) return <PageSkeleton />;
   // A failed read is a network problem, not proof the coin doesn't exist.
-  if (!t && isError) return <Missing text="Couldn't load this coin right now. Retrying…" />;
-  if (!t || t.token === zeroAddress) return <Missing text="This coin wasn't launched on PonsEarn." />;
+  if (t === undefined && isError) return <Missing text="Couldn't load this coin right now. Retrying…" />;
+  if (!t) {
+    if (elsewhere.data) return <OnOtherNetwork id={elsewhere.data} />;
+    if (elsewhere.isLoading) return <PageSkeleton />;
+    return <Missing text={`This coin wasn't launched on PonsEarn ${n.isTestnet ? "testnet" : "mainnet"}.`} />;
+  }
 
-  const { price, marketCap, progress, meta } = describe(t);
+  const socials = info.data?.socials;
   const links = [
-    meta.website && { label: "Website", href: meta.website },
-    meta.telegram && { label: "Telegram", href: meta.telegram },
-    meta.twitter && { label: "X", href: meta.twitter },
-  ].filter(Boolean) as { label: string; href: string }[];
-  const graduated = t.market.graduated;
-  const mine = Boolean(address && t.market.creator.toLowerCase() === address.toLowerCase());
-  const supply = Number(formatUnits(t.totalSupply, 18));
-  const creatorPct = (t.market.feeBps * (10_000 - t.market.protocolShareBps)) / 1e6;
+    socials?.website && { label: "Website", href: safeUrl(socials.website) },
+    socials?.telegram && { label: "Telegram", href: safeUrl(socials.telegram) },
+    socials?.twitter && { label: "X", href: safeUrl(socials.twitter) },
+    socials?.discord && { label: "Discord", href: safeUrl(socials.discord) },
+    socials?.farcaster && { label: "Farcaster", href: safeUrl(socials.farcaster) },
+  ].filter((l): l is { label: string; href: string } => Boolean(l && l.href));
+  const description = info.data?.description?.trim();
+  const onPool = t.phase === "pool";
+  const graduated = t.graduated;
+  const mine = Boolean(address && t.creator.toLowerCase() === address.toLowerCase());
+  const pending = toRecipients(t.feesPending, t.platformBps);
 
   return (
     <div className="space-y-6 pt-1 sm:space-y-8">
@@ -75,9 +87,12 @@ export default function TokenPage({ params }: { params: { address: string } }) {
         <div aria-hidden className="pointer-events-none absolute -top-6 right-0 -z-10 h-64 w-64 rounded-full bg-lime opacity-[0.07] blur-3xl sm:h-80 sm:w-80" />
 
         <div className="flex items-center justify-between gap-3">
-          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-2">
-            <span aria-hidden className={`h-1.5 w-1.5 animate-pulse-dot rounded-full ${graduated ? "bg-up" : "bg-lime"}`} />
-            {graduated ? "Trading on PonSwap" : "On the bonding curve"}
+          <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-2">
+            <span aria-hidden className={`h-1.5 w-1.5 shrink-0 animate-pulse-dot rounded-full ${onPool ? "bg-up" : "bg-lime"}`} />
+            <span className="truncate">
+              {onPool ? "Uniswap v4 pool" : t.phase === "curve" ? "pons bonding curve" : t.phase === "graduating" ? "Graduating" : "Rescued"}
+              {n.isTestnet ? " · testnet" : ""}
+            </span>
           </span>
           <ShareButton t={t} />
         </div>
@@ -85,14 +100,15 @@ export default function TokenPage({ params }: { params: { address: string } }) {
         <div className="mt-5 flex items-start gap-4 sm:mt-7 sm:gap-6">
           <div className="relative shrink-0">
             <span aria-hidden className="absolute -inset-1.5 rounded-[26px] border border-dashed border-line-2 sm:-inset-2 sm:rounded-[42px]" />
-            <TokenAvatar src={meta.image} seed={t.token} size={72} className="relative sm:hidden" />
-            <TokenAvatar src={meta.image} seed={t.token} size={120} className="relative hidden sm:block" />
+            <TokenAvatar src={coinImage(t)} seed={t.token} size={72} className="relative sm:hidden" />
+            <TokenAvatar src={coinImage(t)} seed={t.token} size={120} className="relative hidden sm:block" />
           </div>
           <div className="min-w-0 flex-1 sm:pt-1">
             <h1 className="display text-[40px] leading-[0.92] [overflow-wrap:anywhere] sm:text-[64px]">{t.name}</h1>
             {/* x-clip: the stamp starts at 1.8x scale, which must not widen the page next to a long ticker. */}
             <div className="mt-3 flex flex-wrap items-center gap-2 overflow-x-clip sm:mt-4">
               <span className="num inline-flex items-center rounded-full border border-line-2 bg-card px-2.5 py-1 text-[12px] font-semibold text-ink">${t.symbol}</span>
+              {t.creatorTaxBps ? <span className="chip num">{t.creatorTaxBps / 100}% creator tax</span> : null}
               {graduated ? (
                 <span
                   className="inline-flex animate-stamp items-center gap-1.5 rounded-lg border-2 border-up bg-up-soft px-2.5 py-0.5 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-up-ink"
@@ -112,21 +128,21 @@ export default function TokenPage({ params }: { params: { address: string } }) {
           <CopyAddress value={token} />
           <span className="px-1">
             by{" "}
-            <a className="text-ink underline-offset-2 hover:underline" href={explorerUrl("address", t.market.creator)} target="_blank" rel="noreferrer">
-              {mine ? "you" : shortAddress(t.market.creator)}
+            <a className="text-ink underline-offset-2 hover:underline" href={explorerLink(n, "address", t.creator)} target="_blank" rel="noreferrer">
+              {mine ? "you" : shortAddress(t.creator)}
             </a>
           </span>
           <span aria-hidden className="text-ink-3">
             /
           </span>
-          <span className="px-1">{timeAgo(t.market.createdAt)} ago</span>
+          <span className="px-1">{timeAgo(t.createdAt)} ago</span>
           {links.map((l) => (
             <a
               key={l.label}
               href={l.href}
               target="_blank"
               rel="noreferrer nofollow"
-              className="relative after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] inline-flex min-h-[32px] items-center rounded-full border border-line px-2.5 font-sans text-[12.5px] font-medium text-ink transition hover:border-line-2 hover:bg-card-2 sm:px-3"
+              className="relative inline-flex min-h-[32px] items-center rounded-full border border-line px-2.5 font-sans text-[12.5px] font-medium text-ink transition after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] hover:border-line-2 hover:bg-card-2 sm:px-3"
             >
               {l.label} ↗
             </a>
@@ -134,73 +150,85 @@ export default function TokenPage({ params }: { params: { address: string } }) {
         </div>
       </header>
 
+      {t.feesMoved ? (
+        <p className="card px-4 py-3.5 text-[13px] leading-relaxed text-ink-2">
+          pons now sends this coin&apos;s creator fees to <span className="num text-ink">{shortAddress(t.feeRecipient)}</span> instead of its PonsEarn split, so new
+          fees no longer reach the X accounts below. What they already earned stays theirs to claim.
+        </p>
+      ) : null}
+
       <Reveal delay={60}>
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-[22px] border border-line bg-line shadow-card lg:grid-cols-4">
-          <Tile label="Price" foot={<Sparkline trades={trades.data} />}>
-            <Flash value={price}>{`${formatPrice(price)} Ξ`}</Flash>
+          <Tile label="Price" foot={<Sparkline trades={trades.trades} />}>
+            <Flash value={t.price}>{`${formatPrice(t.price)} Ξ`}</Flash>
           </Tile>
-          <Tile label="Market cap" foot={<Foot>{compact(supply)} supply</Foot>}>
-            <Flash value={marketCap}>{`${compact(marketCap)} Ξ`}</Flash>
+          <Tile label="Market cap" foot={<Foot>{compact(TOTAL_SUPPLY)} supply</Foot>}>
+            <Flash value={t.marketCap}>{`${compact(t.marketCap)} Ξ`}</Flash>
           </Tile>
           <Tile
-            label={graduated ? "Pool liquidity" : "Raised on curve"}
+            label={graduated ? "Graduated at" : "Raised on curve"}
             foot={
               graduated ? (
                 <Foot>
-                  <LockIcon /> locked forever
+                  <LockIcon /> liquidity locked by pons
                 </Foot>
               ) : (
                 <div className="flex w-full items-center gap-2">
                   <div className="flex-1">
-                    <Progress value={progress} size="sm" />
+                    <Progress value={t.progress} size="sm" />
                   </div>
-                  <span className="num text-[11px] font-semibold text-ink-2">{progressText(progress)}%</span>
+                  <span className="num text-[11px] font-semibold text-ink-2">{progressText(t.progress)}%</span>
                 </div>
               )
             }
           >
-            <Flash value={t.market.realEth}>{`${formatEth(t.market.realEth, 3)} Ξ`}</Flash>
+            <Flash value={graduated ? t.threshold : t.raised}>{`${formatEth(graduated ? t.threshold : t.raised, 3)} Ξ`}</Flash>
           </Tile>
           <Tile
             label="Paid to X accounts"
             foot={
               <Foot>
-                <span className="hidden sm:inline">
-                  {t.handles.length} {t.handles.length === 1 ? "account" : "accounts"} ·{" "}
-                </span>
-                {creatorPct.toLocaleString("en-US", { maximumFractionDigits: 2 })}% of each trade
+                {pending > 0n ? `+${formatEth(pending, 4)} on the way · ` : ""}
+                {accountsPct(t.creatorTaxBps, t.platformBps).toLocaleString("en-US", { maximumFractionDigits: 2 })}% of each trade
               </Foot>
             }
           >
-            <Flash value={t.creatorFees} className="text-up-ink">{`${formatEth(t.creatorFees, 4)} Ξ`}</Flash>
+            <Flash value={t.feesSplit} className="text-up-ink">{`${formatEth(t.feesSplit, 4)} Ξ`}</Flash>
           </Tile>
         </dl>
       </Reveal>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_372px] lg:gap-6">
         <div className="min-w-0 space-y-5 lg:space-y-6">
-          {trades.isError && !trades.data ? (
+          {trades.error && !trades.trades ? (
             <p className="card flex items-center gap-2.5 px-4 py-3.5 text-[14px] font-medium text-down-ink">
               <span aria-hidden className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-down" />
               Couldn&apos;t load this coin&apos;s trades right now. Retrying…
             </p>
           ) : null}
           <Reveal delay={120}>
-            <PriceChart trades={trades.data} loading={trades.isLoading || (trades.isError && !trades.data)} total={t.tradeCount} symbol={t.symbol} />
+            <PriceChart trades={trades.trades} loading={!trades.trades} partial={trades.hasOlder} symbol={t.symbol} />
           </Reveal>
           <Reveal delay={60}>
-            <TradesTable trades={trades.data} total={t.tradeCount} symbol={t.symbol} me={address} />
+            <TradesTable
+              trades={trades.trades}
+              symbol={t.symbol}
+              me={address}
+              hasOlder={trades.hasOlder}
+              loadOlder={trades.loadOlder}
+              loadingOlder={trades.loadingOlder}
+            />
           </Reveal>
-          {meta.description ? (
+          {description ? (
             <Reveal delay={60}>
-              <About text={meta.description} />
+              <About text={description} />
             </Reveal>
           ) : null}
         </div>
 
         <aside className="order-first min-w-0 space-y-5 lg:sticky lg:top-20 lg:order-none lg:space-y-6 lg:self-start">
-          <TradePanel token={token} symbol={t.symbol} graduated={t.market.graduated} onTraded={() => refetch()} />
-          <Reveal delay={120}>{graduated ? <GraduatedCard t={t} /> : <CurveCard t={t} progress={progress} />}</Reveal>
+          <TradePanel coin={t} onTraded={() => refetch()} />
+          <Reveal delay={120}>{graduated ? <GraduatedCard t={t} /> : <CurveCard t={t} />}</Reveal>
           <Reveal delay={180}>
             <SplitCard t={t} />
           </Reveal>
@@ -210,18 +238,35 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   );
 }
 
+/** The coin exists on the other network: say so and offer to switch there. */
+function OnOtherNetwork({ id }: { id: NetworkId }) {
+  const switchTo = useSwitchNetwork();
+  const other = NETWORKS[id];
+  return (
+    <div className="card relative isolate mx-auto mt-6 flex max-w-lg flex-col items-center gap-4 overflow-hidden px-6 py-14 text-center">
+      <div aria-hidden className="bg-grid absolute inset-0 -z-10" />
+      <NotFoundArt className="h-36 w-48 animate-float" />
+      <div className="eyebrow">Coin page</div>
+      <p className="display max-w-sm text-[26px] leading-[1.05]">This coin is on {other.label.toLowerCase()}.</p>
+      <button className="btn-neon mt-1" onClick={() => switchTo(id)}>
+        Switch to {other.label.toLowerCase()}
+      </button>
+    </div>
+  );
+}
+
 /** Confetti when a coin graduates while its page is open (not when opening an already graduated coin). */
-function useGraduationCelebration(token: string | undefined, graduated: boolean | undefined) {
-  const prev = useRef<{ token?: string; graduated?: boolean }>({});
+function useGraduationCelebration(token: string | undefined, phase: Coin["phase"] | undefined) {
+  const prev = useRef<{ token?: string; phase?: Coin["phase"] }>({});
   useEffect(() => {
     const p = prev.current;
-    if (token && p.token === token && p.graduated === false && graduated === true) void celebrate();
-    prev.current = { token, graduated };
-  }, [token, graduated]);
+    if (token && p.token === token && p.phase === "curve" && phase && phase !== "curve") void celebrate();
+    prev.current = { token, phase };
+  }, [token, phase]);
 }
 
 /** The creator's first look at their live coin: a neon ticket with the share button. */
-function LaunchBanner({ t }: { t: TokenView }) {
+function LaunchBanner({ t }: { t: Coin }) {
   return (
     <div className="relative isolate animate-pop overflow-hidden rounded-[26px] bg-lime text-[var(--lime-ink)] shadow-[0_24px_60px_-30px_var(--glow)] [[data-theme=light]_&]:border-2 [[data-theme=light]_&]:border-outline [[data-theme=light]_&]:shadow-sticker">
       <div
@@ -269,8 +314,8 @@ function LockIcon() {
 }
 
 /** The last few dozen trade prices as a tiny line, green if the price rose over them, red if it fell. */
-function Sparkline({ trades }: { trades: readonly TradeRecord[] | undefined }) {
-  const prices = (trades ?? []).slice(-48).map((r) => recordPrice(r.price));
+function Sparkline({ trades }: { trades: readonly Trade[] | undefined }) {
+  const prices = (trades ?? []).filter((r) => r.price > 0).slice(-48).map((r) => r.price);
   if (prices.length < 2) return <Foot>{!trades ? "…" : trades.length ? "1 trade so far" : "waiting for trades"}</Foot>;
   const W = 100;
   const H = 26;
@@ -288,24 +333,25 @@ function Sparkline({ trades }: { trades: readonly TradeRecord[] | undefined }) {
 }
 
 /** Where the coin sits on its bonding curve, and how much is left before it graduates. */
-function CurveCard({ t, progress }: { t: TokenView; progress: number }) {
-  // The curve's shape: the share of the virtual token reserve the curve sells (793.1M of 1.073B at launch terms).
-  const sold = t.curveSupply > t.market.realToken ? t.curveSupply - t.market.realToken : 0n;
-  const start = t.market.virtualToken + sold;
-  const r = start > 0n ? Number((t.curveSupply * 10_000n) / start) / 10_000 : 0;
+function CurveCard({ t }: { t: Coin }) {
+  // The curve's shape: the share of the supply it sells before only the pool's reserve is left.
+  const supply = BigInt(TOTAL_SUPPLY) * 10n ** 18n;
+  const r = t.reservedTokens > 0n && t.reservedTokens < supply ? 1 - Number((t.reservedTokens * 10_000n) / supply) / 10_000 : 0.714;
+  const left = t.threshold > t.raised ? t.threshold - t.raised : 0n;
   return (
     <section className="card relative isolate overflow-hidden p-5">
       <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 -z-10 h-52 w-52 rounded-full bg-lime opacity-[0.08] blur-3xl" />
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="eyebrow">Road to PonSwap</div>
+          <div className="eyebrow">Road to Uniswap</div>
           <h2 className="display mt-1 text-[26px] leading-none">Bonding curve</h2>
         </div>
-        <span className="num text-neon text-[24px] font-bold leading-none">{progressText(progress, 1)}%</span>
+        <span className="num text-neon text-[24px] font-bold leading-none">{progressText(t.progress, 1)}%</span>
       </div>
-      <CurveSketch progress={progress} ratio={r > 0.05 && r < 0.98 ? r : 0.739} />
+      <CurveSketch progress={t.progress} ratio={r > 0.05 && r < 0.98 ? r : 0.714} />
       <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
-        {formatTokens(t.market.realToken)} {t.symbol} left to sell. When it sells out, the coin graduates to PonSwap and keeps trading here.
+        {formatTokens(t.sellable)} {t.symbol} left on the curve, about {formatEth(left, 3)} ETH more to raise. Then pons graduates it into a Uniswap v4 pool
+        with locked liquidity, and it keeps trading here.
       </p>
     </section>
   );
@@ -366,9 +412,9 @@ function CurveSketch({ progress, ratio }: { progress: number; ratio: number }) {
   );
 }
 
-/** A graduated coin's certificate: a slowly turning seal and what now sits in the pool. */
-function GraduatedCard({ t }: { t: TokenView }) {
-  const year = new Date(Number(t.market.graduatedAt) * 1000).getUTCFullYear();
+/** A graduated coin's certificate: a slowly turning seal and where it trades now. */
+function GraduatedCard({ t }: { t: Coin }) {
+  const n = useNetwork();
   return (
     <section className="card ring-glow relative p-5">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-[inherit]">
@@ -379,18 +425,23 @@ function GraduatedCard({ t }: { t: TokenView }) {
       <div className="flex items-center gap-4">
         <Seal />
         <div className="min-w-0">
-          <div className="eyebrow !text-up-ink">Class of {year}</div>
-          <h2 className="display mt-1.5 text-[26px] leading-[0.98]">Graduated to PonSwap</h2>
+          <div className="eyebrow !text-up-ink">Graduated</div>
+          <h2 className="display mt-1.5 text-[26px] leading-[0.98]">{t.phase === "pool" ? "Trading on Uniswap v4" : t.phase === "graduating" ? "Opening its pool" : "Rescued by pons"}</h2>
         </div>
       </div>
       <p className="mt-4 text-[13px] leading-relaxed text-ink-2">
-        The curve sold out {timeAgo(t.market.graduatedAt)} ago. {formatTokens(t.market.realToken)} {t.symbol} and {formatEth(t.market.realEth, 3)} ETH sit in a pool
-        with locked liquidity. Fees keep flowing to the X accounts.
+        The curve raised {formatEth(t.threshold, 2)} ETH and sold out. pons put that ETH and {formatTokens(t.reservedTokens)} {t.symbol} into a Uniswap v4 pool whose
+        liquidity is locked. Its creator fees keep flowing to the X accounts.
       </p>
-      <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-line-2 bg-card px-3 py-1.5 font-mono text-[11px] font-medium text-ink">
+      <a
+        href={explorerLink(n, "address", t.token)}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-4 inline-flex items-center gap-2 rounded-full border border-line-2 bg-card px-3 py-1.5 font-mono text-[11px] font-medium text-ink transition hover:bg-card-2"
+      >
         <LockIcon />
-        Liquidity locked forever
-      </div>
+        Liquidity locked by pons ↗
+      </a>
     </section>
   );
 }
@@ -441,18 +492,20 @@ function ShareButton({
   tone = "default",
   className = "",
 }: {
-  t: { name: string; symbol: string; handles: readonly string[]; xIds: readonly bigint[]; token: string };
+  t: Pick<Coin, "name" | "symbol" | "handles" | "xIds" | "token">;
   /** "ink": the dark pill used on the neon launch banner. */
   tone?: "default" | "ink";
   className?: string;
 }) {
+  const n = useNetwork();
   const checks = useHandleChecks(t.handles, t.xIds);
   function share() {
     // @-mention only usernames confirmed to still belong to the fee recipient; a renamed account's
     // old name may now be someone else's, so it is written without the @.
     const who = checks.map((c) => (c.status === "current" ? `@${c.handle}` : c.handle)).join(" ");
-    const text = `${t.name} ($${t.symbol}) on PonsEarn: every trade splits fees to ${who}`;
-    const url = `${location.origin}/token/${t.token}`;
+    const text = `${t.name} ($${t.symbol}) on PonsEarn${n.isTestnet ? " testnet" : ""}: every trade pays ${who}`;
+    // The link opens the coin on its own network, whatever the reader was browsing.
+    const url = `${location.origin}${onNetwork(`/token/${t.token}`, n.id)}`;
     window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, "_blank", "noopener,noreferrer");
   }
   const look =

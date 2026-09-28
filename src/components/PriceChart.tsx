@@ -4,7 +4,7 @@ import { ColorType, CrosshairMode, LineStyle, createChart, type IChartApi, type 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildCandles } from "@/lib/candles";
 import { formatPrice } from "@/lib/format";
-import type { TradeRecord } from "@/lib/types";
+import type { Trade } from "@/lib/types";
 import { StepTrade } from "./art";
 import { Flash } from "./motion";
 
@@ -43,7 +43,7 @@ function volume(n: number) {
 type Ohlcv = { o: number; h: number; l: number; c: number; v?: number };
 
 /**
- * Candles from on-chain trade records, drawn like a terminal: mono type, dotted grid, volume at the
+ * Candles from on-chain trades (the pons curve, then its Uniswap v4 pool), drawn like a terminal: mono type, dotted grid, volume at the
  * foot. Up candles have a faint body and down candles a solid one, so direction never relies on
  * red/green alone (deuteranopia), and the crosshair readout spells out OHLC. Colors come from the
  * theme's CSS variables; the chart is rebuilt whenever the theme changes.
@@ -51,12 +51,13 @@ type Ohlcv = { o: number; h: number; l: number; c: number; v?: number };
 export function PriceChart({
   trades,
   loading,
-  total,
+  partial = false,
   symbol,
 }: {
-  trades: readonly TradeRecord[] | undefined;
+  trades: readonly Trade[] | undefined;
   loading?: boolean;
-  total?: bigint;
+  /** Older trades exist that aren't loaded yet. */
+  partial?: boolean;
   /** Shown faintly behind the candles, the way trading terminals label a chart. */
   symbol?: string;
 }) {
@@ -169,7 +170,6 @@ export function PriceChart({
   }, [symbol, candles.length, epoch]);
 
   const shown: Ohlcv | null = hover ?? (last ? { o: last.open, h: last.high, l: last.low, c: last.close, v: last.volume } : null);
-  const partial = Boolean(trades && total !== undefined && total > BigInt(trades.length));
 
   return (
     <section className="card relative isolate overflow-hidden">

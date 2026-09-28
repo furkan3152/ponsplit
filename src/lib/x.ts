@@ -1,22 +1,17 @@
 import "server-only";
-import { keccak256, toBytes } from "viem";
 import { isValidHandle, normalizeHandle } from "./handles";
 import { networkKey } from "./ip";
 import { charge, remaining } from "./ratelimit";
 
 export type XProfile = { id: string; username: string; name: string; image?: string };
 
-type Mode = "x-api" | "fxtwitter" | "mock";
+type Mode = "x-api" | "fxtwitter";
 
+/** Real X accounts only: the official X API when a bearer token is set, else the fxtwitter mirror. */
 export function resolverMode(): Mode {
-  const m = process.env.X_RESOLVER as Mode | undefined;
-  if (m === "mock" || m === "x-api" || m === "fxtwitter") return m;
+  const m = process.env.X_RESOLVER;
+  if (m === "x-api" || m === "fxtwitter") return m;
   return process.env.X_BEARER_TOKEN ? "x-api" : "fxtwitter";
-}
-
-/** Deterministic fake ids for local development. Must match mockXId in contracts/scripts/local-demo.js. */
-export function mockXId(handle: string): bigint {
-  return (BigInt(keccak256(toBytes(`mock-x:${handle}`))) >> 200n) + 1n;
 }
 
 const TTL_MS = 10 * 60 * 1000;
@@ -116,7 +111,6 @@ export class ResolverBusyError extends Error {
  *  - x-api:     official X API v2 users lookup (needs X_BEARER_TOKEN; most reliable). Falls back
  *               to fxtwitter when X rate-limits us or our own X API cap is reached.
  *  - fxtwitter: the public api.fxtwitter.com mirror (no key; unofficial, best effort)
- *  - mock:      fake deterministic ids for local development only
  */
 export async function resolveHandles(
   input: string[],
@@ -129,7 +123,7 @@ export async function resolveHandles(
   const useXApi = mode === "x-api" && purpose === "attest" && remaining(X_API_KEY, X_API_CALLS_PER_MIN) > 0;
   // Results are cached per source. A launch that asks X only trusts X API answers; everything
   // else may reuse either (an fxtwitter answer is what it would get anyway).
-  const readable: Source[] = mode === "mock" ? ["mock"] : useXApi ? ["x"] : ["x", "fx"];
+  const readable: Source[] = useXApi ? ["x"] : ["x", "fx"];
   const out: Record<string, XProfile | null> = {};
   const missing: string[] = [];
   for (const h of handles) {
@@ -142,29 +136,25 @@ export async function resolveHandles(
 
   let fresh: Record<string, XProfile>;
   let source: Source;
-  if (mode === "mock") {
-    [fresh, source] = [resolveMock(missing), "mock"];
-  } else {
-    const allowed = available(purpose, client, missing.length);
-    // A launch needs every account resolved; a preview shows what fits and leaves the rest unknown.
-    if (purpose === "attest" && allowed < missing.length) throw new ResolverBusyError();
-    if (allowed === 0) {
-      if (Object.keys(out).length === 0) throw new ResolverBusyError();
-      return out;
-    }
-    missing.splice(allowed);
-    spend(purpose, client, allowed);
-    if (useXApi) {
-      charge(X_API_KEY, 1, WINDOW_MS);
-      try {
-        [fresh, source] = [await resolveXApi(missing), "x"];
-      } catch (e) {
-        if (!(e instanceof XApiRateLimited)) throw e;
-        [fresh, source] = [await resolveFx(missing), "fx"];
-      }
-    } else {
+  const allowed = available(purpose, client, missing.length);
+  // A launch needs every account resolved; a preview shows what fits and leaves the rest unknown.
+  if (purpose === "attest" && allowed < missing.length) throw new ResolverBusyError();
+  if (allowed === 0) {
+    if (Object.keys(out).length === 0) throw new ResolverBusyError();
+    return out;
+  }
+  missing.splice(allowed);
+  spend(purpose, client, allowed);
+  if (useXApi) {
+    charge(X_API_KEY, 1, WINDOW_MS);
+    try {
+      [fresh, source] = [await resolveXApi(missing), "x"];
+    } catch (e) {
+      if (!(e instanceof XApiRateLimited)) throw e;
       [fresh, source] = [await resolveFx(missing), "fx"];
     }
+  } else {
+    [fresh, source] = [await resolveFx(missing), "fx"];
   }
 
   let misses = 0;
@@ -173,7 +163,7 @@ export async function resolveHandles(
     if (out[h] === null) misses++;
     remember(`${source}:${h}`, out[h]);
   }
-  if (misses && mode !== "mock") {
+  if (misses) {
     charge(`x-misses:${purpose}:${client}`, misses, WINDOW_MS);
     // Misses also weigh more against the lookup budgets.
     spend(purpose, client, misses * (MISS_WEIGHT - 1));
@@ -181,7 +171,7 @@ export async function resolveHandles(
   return out;
 }
 
-type Source = "x" | "fx" | "mock";
+type Source = "x" | "fx";
 
 /** The FxTwitter API asks every client to identify itself with a descriptive User-Agent. */
 const FX_HEADERS = { "user-agent": "PonsEarn/1.0 (+https://github.com/furkan3152/ponsplit)" };
@@ -193,10 +183,6 @@ export async function fxFetch(url: string): Promise<Response> {
   if (res.status !== 429) return res;
   await new Promise((r) => setTimeout(r, 750));
   return get();
-}
-
-function resolveMock(handles: string[]) {
-  return Object.fromEntries(handles.map((h) => [h, { id: mockXId(h).toString(), username: h, name: h }]));
 }
 
 class XApiRateLimited extends Error {}

@@ -49,13 +49,13 @@ const TABS = [
   },
 ];
 
-/** A floating tab bar on small screens; the header nav takes over from `sm` up. */
+/** A floating tab bar on phones and small tablets; the header nav takes over from `md` up. */
 export function TabBar() {
   const pathname = usePathname();
   return (
     <nav
       aria-label="Main"
-      className="fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-40 rounded-full border border-line-2 bg-[var(--glass)] p-1.5 shadow-[0_24px_48px_-20px_rgba(0,0,0,0.75)] backdrop-blur-xl backdrop-saturate-150 sm:hidden"
+      className="fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-40 rounded-full border border-line-2 bg-[var(--glass)] p-1.5 shadow-[0_24px_48px_-20px_rgba(0,0,0,0.75)] backdrop-blur-xl backdrop-saturate-150 md:hidden"
     >
       <div className="grid grid-cols-4 gap-1">
         {TABS.map((t) => {

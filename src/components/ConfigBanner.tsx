@@ -3,20 +3,21 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useBytecode } from "wagmi";
-import { activeChain } from "@/lib/chains";
-import { LAUNCHPAD_ADDRESS } from "@/lib/config";
+import { useNetwork, useSwitchNetwork } from "@/lib/network-context";
+import { NETWORKS, isLive, otherNetwork } from "@/lib/networks";
 
-/** Nudges to /setup until the launchpad actually exists on-chain. */
+/** Nudges to /setup until PonsEarn is live on the network being browsed, and says when its RPC is down. */
 export function ConfigBanner() {
   const pathname = usePathname();
+  const n = useNetwork();
+  const switchTo = useSwitchNetwork();
+  const live = isLive(n);
   const { data: code, isSuccess, isError } = useBytecode({
-    address: LAUNCHPAD_ADDRESS,
-    chainId: activeChain.id,
-    query: { enabled: Boolean(LAUNCHPAD_ADDRESS), refetchInterval: 15_000 },
+    address: n.launcher,
+    chainId: n.chain.id,
+    query: { enabled: live, refetchInterval: 15_000 },
   });
-  // Only a successful read of empty code means "not set up"; a failed read means the RPC is down.
-  const missing = !LAUNCHPAD_ADDRESS || (isSuccess && (!code || code === "0x"));
-  if (isError && !code) {
+  if (live && isError && !code) {
     return (
       <p
         role="status"
@@ -26,16 +27,16 @@ export function ConfigBanner() {
           <span className="absolute inset-0 animate-ping rounded-full bg-down opacity-60" />
           <span className="relative h-2 w-2 rounded-full bg-down" />
         </span>
-        <span>Can&apos;t reach {activeChain.name} right now. Retrying…</span>
+        <span>Can&apos;t reach {n.chain.name} right now. Retrying…</span>
       </p>
     );
   }
+  // Only a successful read of empty code means the pinned contract isn't there.
+  const missing = !live || (isSuccess && (!code || code === "0x"));
   if (!missing || pathname === "/setup") return null;
+  const other = NETWORKS[otherNetwork(n.id)];
   return (
-    <Link
-      href="/setup"
-      className="group relative block overflow-hidden border-b border-line bg-[color-mix(in_oklab,var(--sun)_13%,var(--paper))] px-4 py-2 transition-colors duration-300 hover:bg-[color-mix(in_oklab,var(--sun)_20%,var(--paper))]"
-    >
+    <div className="relative overflow-hidden border-b border-line bg-[color-mix(in_oklab,var(--sun)_13%,var(--paper))] px-4 py-2">
       {/* hazard tape at both ends */}
       <span
         aria-hidden
@@ -50,12 +51,24 @@ export function ConfigBanner() {
       <span className="relative mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[13px] font-medium text-ink">
         <span className="inline-flex items-center gap-2">
           <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-sun shadow-[0_0_10px_var(--sun)]" aria-hidden />
-          <span>PonsEarn isn&apos;t set up on {activeChain.name} yet.</span>
-        </span>{" "}
-        <span className="inline-flex items-center gap-1 rounded-full bg-sun px-2.5 py-0.5 text-[12px] font-semibold text-[var(--lime-ink)] shadow-[inset_0_-1.5px_0_rgba(0,0,0,0.18)] transition-transform duration-300 group-hover:translate-x-0.5">
-          Finish setup →
+          <span>PonsEarn isn&apos;t live on {n.label.toLowerCase()} yet.</span>
         </span>
+        {isLive(other) ? (
+          <button
+            type="button"
+            onClick={() => switchTo(other.id)}
+            className="inline-flex items-center gap-1 rounded-full border border-outline px-2.5 py-0.5 text-[12px] font-semibold text-ink transition hover:bg-card"
+          >
+            Go to {other.label.toLowerCase()} →
+          </button>
+        ) : null}
+        <Link
+          href="/setup"
+          className="inline-flex items-center gap-1 rounded-full bg-sun px-2.5 py-0.5 text-[12px] font-semibold text-[var(--lime-ink)] shadow-[inset_0_-1.5px_0_rgba(0,0,0,0.18)] transition-transform duration-300 hover:translate-x-0.5"
+        >
+          Set it up →
+        </Link>
       </span>
-    </Link>
+    </div>
   );
 }

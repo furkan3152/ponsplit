@@ -1,61 +1,20 @@
 "use client";
 
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { useConnectModal } from "@rainbow-me/rainbowkit";
-import {
-  BaseError,
-  ContractFunctionRevertedError,
-  ContractFunctionZeroDataError,
-  RawContractError,
-  formatEther,
-  getContractAddress,
-  zeroAddress,
-  type Address,
-  type Hex,
-  type PublicClient,
-} from "viem";
+import { formatEther, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { useAccount, useBalance, useDeployContract, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
+import { useAccount, useBalance, useReadContracts, useSendTransaction, useSwitchChain, useWriteContract } from "wagmi";
 import { GraduatedArt } from "@/components/art";
-import { feeVaultAbi, launchpadAbi } from "@/lib/abi";
-import { activeChain, explorerUrl } from "@/lib/chains";
-import { FAUCET_URL, SETUP_MODE } from "@/lib/config";
-import { CURVE } from "@/lib/deploy-config";
+import { feeVaultAbi, launcherAbi } from "@/lib/abi";
 import { errorMessage, shortAddress } from "@/lib/format";
-
-type Status = {
-  error?: string;
-  chain: string;
-  mode?: "wallet" | "server";
-  admin?: `0x${string}`;
-  balance?: string;
-  nonce?: number;
-  vault?: `0x${string}`;
-  launchpad?: `0x${string}`;
-  vaultDeployed: boolean;
-  launchpadDeployed: boolean;
-  wired: boolean;
-  addressesMatch: boolean;
-  done: boolean;
-  testnet: boolean;
-  ownerTarget?: `0x${string}`;
-  owner?: `0x${string}`;
-  pendingOwner?: `0x${string}`;
-  vaultOwner?: `0x${string}`;
-  vaultPendingOwner?: `0x${string}`;
-  ownershipDone: boolean;
-  ownershipProposed: boolean;
-  launchesPaused?: boolean;
-  claimsPaused?: boolean;
-  pinned: boolean;
-  keyProblem?: string;
-  problem?: string;
-  busy: boolean;
-  signer?: `0x${string}`;
-  signerMatches?: boolean;
-};
+import { clientFor } from "@/lib/hooks";
+import { useNetwork } from "@/lib/network-context";
+import { explorerLink, isLive, type Network } from "@/lib/networks";
+import copyTerms from "@/lib/pons-copy-terms.json";
+import { useServerConfig, type ServerConfig } from "@/lib/useServerConfig";
 
 const STORAGE_KEY = "ponsplit:pending-admin-key";
 
@@ -75,83 +34,53 @@ function save(v: string | null) {
   }
 }
 
+const same = (a?: string, b?: string) => Boolean(a && b && a.toLowerCase() === b.toLowerCase());
+
+/**
+ * Setting PonsEarn up on the network picked at the top of the page, from a phone:
+ *  1. the server's signing key (made here in the browser, pasted into the host by the owner);
+ *  2. every contract deployed from the owner's own wallet (testnet: PonsEarn's copy of pons, then
+ *     PonsEarn; mainnet: PonsEarn on the real pons), resumable at any point;
+ *  3. the addresses pinned in the site, after which the owner's switches appear here.
+ */
 export default function SetupPage() {
-  const { data: s, refetch, isLoading, error } = useQuery({
-    queryKey: ["setup"],
-    refetchInterval: 6_000,
-    retry: 1,
-    // Throwing on a failed check keeps the last good status on screen instead of replacing it
-    // with an error body (which would look like "no admin key yet").
-    queryFn: async () => {
-      const res = await fetch("/api/setup");
-      const body = (await res.json().catch(() => ({}))) as Status & { error?: string };
-      if (!res.ok) throw new Error(body.error || `Status check failed (${res.status})`);
-      return body;
-    },
-  });
-  const [deploying, setDeploying] = useState(false);
-  const [deployErr, setDeployErr] = useState<string | null>(null);
-  const [txs, setTxs] = useState<string[]>([]);
+  const n = useNetwork();
+  const server = useServerConfig();
   const [stored, setStored] = useState<string | null>(null);
   useEffect(() => setStored(load()), []);
 
   // Once the server runs on the key generated here, the browser copy is no longer needed.
   useEffect(() => {
-    if (!s?.admin || !stored) return;
+    if (!server?.signer || !stored) return;
     try {
-      if (privateKeyToAccount(stored as `0x${string}`).address === s.admin) {
+      if (same(privateKeyToAccount(stored as Hex).address, server.signer)) {
         save(null);
         setStored(null);
       }
     } catch {
       // not a key; leave it for the Forget button
     }
-  }, [s?.admin, stored]);
+  }, [server?.signer, stored]);
 
-  const funded = s?.balance !== undefined && s.balance !== "0";
-  const step = !s?.admin ? 1 : !funded && !s.done ? 2 : !s.done ? 3 : !s.ownershipDone ? 4 : 5;
-  const testnet = s?.testnet ?? true;
-
-  async function deploy() {
-    setDeploying(true);
-    setDeployErr(null);
-    try {
-      const res = await fetch("/api/setup", { method: "POST" });
-      const body = (await res.json()) as { error?: string; txs?: string[] };
-      if (!res.ok) throw new Error(body.error || "Setup failed");
-      setTxs((t) => [...t, ...(body.txs ?? [])]);
-    } catch (e) {
-      setDeployErr(errorMessage(e));
-    } finally {
-      setDeploying(false);
-      refetch();
-    }
-  }
+  const live = isLive(n);
+  const signer = server?.signer ?? undefined;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pt-4">
       <div>
-        <h1 className="font-display text-[40px] font-bold tracking-[-0.03em]">Set up PonsEarn</h1>
-        <p className="mt-1 text-[15px] text-ink-2">A few taps, all from your phone. Network: {s?.chain ?? "…"}.</p>
+        <div className="eyebrow">{n.chain.name}</div>
+        <h1 className="display mt-2 text-[40px] leading-none">Set up PonsEarn</h1>
+        <p className="mt-2 text-[15px] leading-relaxed text-ink-2">
+          {n.isTestnet
+            ? "On testnet, your wallet deploys PonsEarn's own copy of pons (pons itself isn't on testnet) and then PonsEarn. Pick the network at the top of the page."
+            : "On mainnet, your wallet deploys PonsEarn on top of the real pons. Pick the network at the top of the page."}
+        </p>
       </div>
 
-      {isLoading ? <div className="card h-40 animate-pulse" /> : null}
-      {error ? (
-        <div className="card space-y-3 p-5 text-[14px]">
-          <p className="font-medium text-down-ink">
-            {s ? "Couldn't refresh the status; showing the last known state. " : "Couldn't check the setup status. "}
-            {errorMessage(error)}
-          </p>
-          <p className="text-ink-2">This is usually the network RPC being slow or rate-limited. Nothing needs to change on your side.</p>
-          <button className="btn-secondary" onClick={() => refetch()}>
-            Retry
-          </button>
-        </div>
-      ) : null}
-      {s?.problem ? <p className="card p-5 text-[14px] font-medium text-down-ink">{s.problem}</p> : null}
-      {stored && !(s && step === 1) ? (
+      {/* A key made here earlier that the server doesn't use (step 1 shows it while it's still needed). */}
+      {stored && server?.signer ? (
         <div className="card flex flex-wrap items-center justify-between gap-3 p-4 text-[14px]">
-          <span className="text-ink-2">An admin private key generated on this device is still saved in this browser.</span>
+          <span className="text-ink-2">A signing key generated on this device is still saved in this browser.</span>
           <button
             className="btn-secondary px-3 py-2 text-[13px]"
             onClick={() => {
@@ -164,477 +93,96 @@ export default function SetupPage() {
         </div>
       ) : null}
 
-      {/* A configuration problem with no admin in sight: don't offer to generate a key over it. */}
-      {s && !(s.problem && !s.admin) && (s.mode ?? SETUP_MODE) === "wallet" ? <WalletSetup s={s} onKey={setStored} /> : null}
-      {s && !(s.problem && !s.admin) && (s.mode ?? SETUP_MODE) === "server" ? (
-        <>
-          <StepCard n={1} title="Create the admin key" state={step > 1 ? "done" : "active"}>
-            {step > 1 ? (
-              <p className="text-[14px] text-ink-2">
-                The server is using admin <span className="num break-all text-ink">{s?.admin}</span>.
-              </p>
-            ) : (
-              <KeyGenerator problem={s.keyProblem} onChange={setStored} />
-            )}
-          </StepCard>
-
-          <StepCard n={2} title={testnet ? "Get free test ETH" : "Fund the admin address"} state={step > 2 ? "done" : step === 2 ? "active" : "todo"}>
-            {s?.admin ? (
-              <div className="space-y-3">
-                <p className="text-[14px] text-ink-2">
-                  {testnet
-                    ? "Open the faucet, paste this address and request ETH."
-                    : "Send about 0.01 ETH on Robinhood Chain to this address; it pays the gas for deployment and signs nothing else on-chain."}{" "}
-                  This page updates by itself.
-                  {funded ? <span className="ml-1 font-semibold text-up-ink">Balance: {formatEther(BigInt(s.balance!))} ETH ✓</span> : null}
-                </p>
-                <CopyField value={s.admin} />
-                {!funded && testnet ? (
-                  <a className="btn-primary" href={FAUCET_URL} target="_blank" rel="noreferrer">
-                    Open faucet ↗
-                  </a>
-                ) : null}
-              </div>
-            ) : (
-              <p className="text-[14px] text-ink-2">Finish step 1 first.</p>
-            )}
-          </StepCard>
-
-          <StepCard n={3} title="Deploy the contracts" state={step > 3 ? "done" : step === 3 ? "active" : "todo"}>
-            {s?.done ? (
-              <ul className="space-y-1 text-[14px]">
-                <li>
-                  FeeVault{" "}
-                  <a className="num break-all underline" href={explorerUrl("address", s.vault!)} target="_blank" rel="noreferrer">
-                    {s.vault}
-                  </a>
-                </li>
-                <li>
-                  Launchpad{" "}
-                  <a className="num break-all underline" href={explorerUrl("address", s.launchpad!)} target="_blank" rel="noreferrer">
-                    {s.launchpad}
-                  </a>
-                </li>
-              </ul>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-[14px] text-ink-2">One tap. The server sends three transactions with the admin key (about 20 seconds).</p>
-                <button className="btn-sticker" disabled={step !== 3 || deploying || s.busy || Boolean(s.problem)} onClick={deploy}>
-                  {deploying ? "Deploying…" : "Deploy contracts"}
-                </button>
-                {deployErr ? <p className="text-[13px] text-down-ink">{deployErr}</p> : null}
-              </div>
-            )}
-            {txs.length ? (
-              <ul className="mt-3 space-y-1 text-[12px] text-ink-2">
-                {txs.map((t) => (
-                  <li key={t}>
-                    <a className="num underline" href={explorerUrl("tx", t)} target="_blank" rel="noreferrer">
-                      {t.slice(0, 18)}…
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </StepCard>
-
-          <StepCard n={4} title="Hand ownership to your wallet" state={step > 4 ? "done" : step === 4 ? "active" : "todo"}>
-            <Ownership s={s} onDone={() => refetch()} onStart={deploy} busy={deploying} />
-          </StepCard>
-
-          {s.done && !s.pinned ? (
-            <div className="card p-5">
-              <PinAddresses
-                vault={s.vault!}
-                launchpad={s.launchpad!}
-                important={!s.testnet}
-                note="Until then the site finds its contracts from the admin key, so changing SIGNER_SEED / SIGNER_PRIVATE_KEY would point it at empty addresses."
-              />
-            </div>
-          ) : null}
-          <AfterDeploy s={s} />
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-/** Pause notices, a signer mismatch, and the "you're live" card, once the contracts are wired. */
-function AfterDeploy({ s }: { s: Status }) {
-  if (!s.done) return null;
-  return (
-    <>
-      {s.launchesPaused || s.claimsPaused ? (
-        <p className="card p-4 text-[14px] font-medium text-down-ink">
-          Paused by the owner: {[s.launchesPaused && "new launches", s.claimsPaused && "claims"].filter(Boolean).join(" and ")}.
-        </p>
-      ) : null}
-      {s.signerMatches === false ? (
-        <p className="card p-5 text-[14px] font-medium text-down-ink">
-          FeeVault accepts signatures from <span className="num break-all">{s.signer}</span>, but this server signs as{" "}
-          <span className="num break-all">{s.admin}</span>. Launches and claims fail until the owner calls{" "}
-          <code className="num break-all">FeeVault.setSigner({s.admin})</code>, or the previous key is restored.
-        </p>
-      ) : null}
-      <div className="card flex flex-col items-center gap-3 p-8 text-center">
-        <GraduatedArt className="h-20 w-20" />
-        <h2 className="font-display text-[26px] font-bold tracking-tight">You&apos;re live 🎉</h2>
-        {s.addressesMatch ? (
-          <p className="text-[15px] text-ink-2">Everything is set. Launch the first coin.</p>
-        ) : (
-          <p className="text-[15px] text-down-ink">
-            The contracts are deployed, but this build of the site doesn&apos;t point at them yet. Rebuild the site (Vercel: Deployments → ⋯ → Redeploy; Render: Manual Deploy → Deploy latest commit).
-          </p>
-        )}
-        <Link href="/create" className="btn-sticker">
-          Launch a coin
-        </Link>
-      </div>
-      <OwnerControls s={s} />
-    </>
-  );
-}
-
-/**
- * The owner's switches, usable from a phone once the contracts are live: pause or resume launches
- * and claims, point FeeVault at the site's signing key, and withdraw the protocol's share of fees.
- * Only the owner wallet can send these; anyone else sees the state read-only.
- */
-function OwnerControls({ s }: { s: Status }) {
-  const { address, isConnected, chainId } = useAccount();
-  const { openConnectModal } = useConnectModal();
-  const { switchChainAsync } = useSwitchChain();
-  const publicClient = usePublicClient({ chainId: activeChain.id });
-  const { writeContractAsync } = useWriteContract();
-  const fees = useReadContract({
-    address: s.launchpad,
-    abi: launchpadAbi,
-    functionName: "protocolFees",
-    chainId: activeChain.id,
-    query: { enabled: Boolean(s.launchpad), refetchInterval: 30_000 },
-  });
-  const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const lock = useRef(false);
-  const vault = s.vault;
-  const launchpad = s.launchpad;
-  if (!vault || !launchpad || !s.owner) return null;
-  const isOwner = same(address, s.owner) && same(address, s.vaultOwner);
-
-  async function send(label: string, question: string, write: () => Promise<Hex>) {
-    if (lock.current || !publicClient) return;
-    if (!window.confirm(question)) return;
-    lock.current = true;
-    setBusy(label);
-    setMsg(null);
-    try {
-      if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
-      const hash = await write();
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("The transaction reverted.");
-      setMsg({ ok: true, text: `${label}: done. The page updates in a few seconds.` });
-    } catch (e) {
-      setMsg({ ok: false, text: errorMessage(e) });
-    } finally {
-      lock.current = false;
-      setBusy(null);
-      void fees.refetch();
-    }
-  }
-
-  const rows: { label: string; state: string; ok: boolean; action?: { text: string; run: () => void } }[] = [
-    {
-      label: "New launches",
-      state: s.launchesPaused ? "Paused" : "Open",
-      ok: !s.launchesPaused,
-      action: {
-        text: s.launchesPaused ? "Resume launches" : "Pause launches",
-        run: () =>
-          send(
-            s.launchesPaused ? "Resume launches" : "Pause launches",
-            s.launchesPaused ? "Let people launch new coins again?" : "Stop new launches? Existing coins keep trading.",
-            () => writeContractAsync({ address: launchpad, abi: launchpadAbi, functionName: "setLaunchesPaused", args: [!s.launchesPaused], chainId: activeChain.id })
-          ),
-      },
-    },
-    {
-      label: "Claims",
-      state: s.claimsPaused ? "Paused" : "Open",
-      ok: !s.claimsPaused,
-      action: {
-        text: s.claimsPaused ? "Resume claims" : "Pause claims",
-        run: () =>
-          send(
-            s.claimsPaused ? "Resume claims" : "Pause claims",
-            s.claimsPaused ? "Let X accounts claim their fees again?" : "Stop all claims? Balances stay in the vault until you resume.",
-            () => writeContractAsync({ address: vault, abi: feeVaultAbi, functionName: "setClaimsPaused", args: [!s.claimsPaused], chainId: activeChain.id })
-          ),
-      },
-    },
-    {
-      label: "Signing key",
-      state: s.signerMatches === false ? "Doesn't match this site" : "Matches this site",
-      ok: s.signerMatches !== false,
-      action:
-        s.signerMatches === false && s.admin
-          ? {
-              text: "Use this site's key",
-              run: () =>
-                send(
-                  "Use this site's key",
-                  `Make FeeVault accept signatures from ${s.admin}? Signatures from ${s.signer} stop working.`,
-                  () => writeContractAsync({ address: vault, abi: feeVaultAbi, functionName: "setSigner", args: [s.admin!], chainId: activeChain.id })
-                ),
-            }
-          : undefined,
-    },
-    {
-      label: "Protocol fees",
-      state: fees.data === undefined ? "…" : `${formatEther(fees.data)} ETH`,
-      ok: true,
-      action:
-        fees.data && address
-          ? {
-              text: "Withdraw to this wallet",
-              run: () =>
-                send("Withdraw to this wallet", `Send ${formatEther(fees.data!)} ETH of protocol fees to ${address}?`, () =>
-                  writeContractAsync({ address: launchpad, abi: launchpadAbi, functionName: "withdrawProtocolFees", args: [address], chainId: activeChain.id })
-                ),
-            }
-          : undefined,
-    },
-  ];
-
-  return (
-    <section className="card p-5 sm:p-6">
-      <div className="eyebrow">Owner controls</div>
-      <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
-        {isOwner
-          ? "You're connected with the owner wallet. Each switch is one transaction."
-          : `Only the owner wallet (${shortAddress(s.owner)}) can change these.`}
-      </p>
-      <ul className="mt-3 divide-y divide-line">
-        {rows.map((r) => (
-          <li key={r.label} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
-            <div className="min-w-0">
-              <div className="text-[14px] font-medium">{r.label}</div>
-              <div className={`num text-[12px] ${r.ok ? "text-ink-2" : "text-down-ink"}`}>{r.state}</div>
-            </div>
-            {r.action && isOwner ? (
-              <button className="btn-secondary min-h-[40px] px-4 py-2 text-[13px]" disabled={Boolean(busy)} onClick={r.action.run}>
-                {busy === r.action.text ? "Confirm in your wallet…" : r.action.text}
-              </button>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-      {!isConnected ? (
-        <button className="btn-secondary mt-2 min-h-[40px] px-4 py-2 text-[13px]" onClick={openConnectModal}>
-          Connect the owner wallet
-        </button>
-      ) : null}
-      {msg ? (
-        <p role="status" className={`mt-3 text-[13px] ${msg.ok ? "text-up-ink" : "text-down-ink"}`}>
-          {msg.text}
-        </p>
-      ) : null}
-    </section>
-  );
-}
-
-type Found = {
-  /**
-   * A FeeVault from this wallet that it owns and that trusts the server's signer: one already
-   * wired to one of the wallet's launchpads if there is one, otherwise the newest.
-   */
-  vault?: Address;
-  /** The launchpad that vault is wired to, otherwise the newest of the wallet's launchpads using it. */
-  launchpad?: Address;
-  wired: boolean;
-  /** A transaction from the wallet is still pending, so its next contract address isn't known yet. */
-  busy: boolean;
-  problem?: string;
-};
-
-/** How many of the wallet's most recent transactions to look through for earlier deployments. */
-const SCAN = 12;
-
-/**
- * Finds what this wallet already deployed, straight from the chain: contracts are created at
- * addresses derived from the wallet and its nonce, so the last few nonces tell. Nothing is stored
- * in the browser, so a reload, another device or a wallet app switching tabs mid-way can never
- * lead to a second deployment.
- */
-async function findDeployment(client: PublicClient, wallet: Address, signer: Address): Promise<Found> {
-  const [latest, pending] = await Promise.all([
-    client.getTransactionCount({ address: wallet }),
-    client.getTransactionCount({ address: wallet, blockTag: "pending" }),
-  ]);
-  const candidates: Address[] = [];
-  for (let n = latest - 1; n >= Math.max(0, latest - SCAN); n--) candidates.push(getContractAddress({ from: wallet, nonce: BigInt(n) }));
-  const codes = await Promise.all(candidates.map((address) => client.getCode({ address })));
-  const live = candidates.filter((_, i) => codes[i] && codes[i] !== "0x");
-  // A contract without the function reverts, which just means "not that kind of contract". Any
-  // other failure (rate limit, timeout) must stop the page: taken as "nothing deployed", it would
-  // offer to deploy everything again.
-  const orNone = (e: unknown) => {
-    if (e instanceof BaseError && e.walk((c) => c instanceof ContractFunctionRevertedError || c instanceof ContractFunctionZeroDataError || c instanceof RawContractError)) return undefined;
-    throw e;
-  };
-  const info = await Promise.all(
-    live.map(async (address) => {
-      const [owner, vaultSigner, itsVault] = await Promise.all([
-        client.readContract({ address, abi: feeVaultAbi, functionName: "owner" }).catch(orNone),
-        client.readContract({ address, abi: feeVaultAbi, functionName: "signer" }).catch(orNone),
-        client.readContract({ address, abi: launchpadAbi, functionName: "vault" }).catch(orNone),
-      ]);
-      return { address, owner, vaultSigner, itsVault };
-    })
-  );
-  const mine = info.filter((c) => same(c.owner, wallet));
-  // Newest first. If an earlier attempt left extra contracts behind, a vault that is already wired
-  // to one of this wallet's launchpads is a complete deployment and wins over a newer, unwired one.
-  const vaults = mine.filter((c) => same(c.vaultSigner, signer)).map((c) => c.address);
-  const wiredTo = await Promise.all(vaults.map((address) => client.readContract({ address, abi: feeVaultAbi, functionName: "launchpad" })));
-  const isMyLaunchpadFor = (lp: string, v: string) => mine.some((c) => same(c.address, lp) && same(c.itsVault, v));
-  const pick = Math.max(0, vaults.findIndex((v, i) => isMyLaunchpadFor(wiredTo[i], v)));
-  const vault = vaults[pick] as Address | undefined;
-  let launchpad: Address | undefined;
-  let wired = false;
-  let problem: string | undefined;
-  if (vault) {
-    const w = wiredTo[pick];
-    if (isMyLaunchpadFor(w, vault)) {
-      launchpad = w;
-      wired = true;
-    } else {
-      launchpad = mine.find((c) => same(c.itsVault, vault))?.address;
-      if (w !== zeroAddress) problem = `FeeVault ${vault} is already connected to another launchpad (${w}).`;
-    }
-  }
-  return { vault, launchpad, wired, busy: pending > latest, problem };
-}
-
-const same = (a?: string, b?: string) => Boolean(a && b && a.toLowerCase() === b.toLowerCase());
-
-/** Setup where the owner deploys from their own wallet (the mainnet default). */
-function WalletSetup({ s, onKey }: { s: Status; onKey: (key: string | null) => void }) {
-  const { address } = useAccount();
-  const publicClient = usePublicClient({ chainId: activeChain.id });
-  const signer = s.admin;
-  const found = useQuery({
-    queryKey: ["wallet-deployment", address, signer],
-    enabled: Boolean(address && signer && publicClient && !s.pinned),
-    refetchInterval: 15_000,
-    queryFn: () => findDeployment(publicClient!, address!, signer!),
-  });
-  const d = found.data;
-  const deployed = Boolean(d?.vault && d.launchpad && d.wired);
-  const step = !signer ? 1 : s.pinned ? 4 : deployed ? 3 : 2;
-
-  return (
-    <>
-      <StepCard n={1} title="Create the signing key" state={step > 1 ? "done" : "active"}>
-        {signer ? (
-          <p className="text-[14px] text-ink-2">
-            The server signs launches and claims as <span className="num break-all text-ink">{signer}</span>. It holds no funds and owns nothing.
+      <StepCard n={1} title="The site's signing key" state={signer ? "done" : "active"}>
+        {!server ? (
+          <p className="text-[14px] text-ink-2">Checking the server…</p>
+        ) : signer ? (
+          <p className="text-[14px] leading-relaxed text-ink-2">
+            The server signs launches and claims as <span className="num break-all text-ink">{signer}</span>. It holds no funds and owns nothing; one key serves
+            both networks.
           </p>
         ) : (
-          <KeyGenerator problem={s.keyProblem} onChange={onKey} walletMode />
+          <KeyGenerator problem={server.keyProblem ?? undefined} onChange={setStored} />
         )}
       </StepCard>
 
-      <StepCard n={2} title="Deploy from your wallet" state={step > 2 ? "done" : step === 2 ? "active" : "todo"}>
-        {s.pinned ? (
-          <ContractList vault={s.vault} launchpad={s.launchpad} owner={s.owner} />
+      <StepCard n={2} title="Deploy from your wallet" state={live ? "done" : signer ? "active" : "todo"}>
+        {live ? (
+          <ContractList n={n} />
         ) : signer ? (
-          <WalletDeploy signer={signer} found={d} checking={found.isLoading} unreadable={found.isError && !d} onChange={() => found.refetch()} />
+          <WalletDeploy n={n} signer={signer} />
         ) : (
           <p className="text-[14px] text-ink-2">Finish step 1 first.</p>
         )}
       </StepCard>
 
-      <StepCard n={3} title="Point the site at the contracts" state={step > 3 ? "done" : step === 3 ? "active" : "todo"}>
-        {s.pinned ? (
-          <p className="text-[14px] text-ink-2">This version of the site uses them.</p>
-        ) : deployed ? (
-          <PinAddresses vault={d!.vault!} launchpad={d!.launchpad!} important note="The site starts using the contracts once it is rebuilt with them." />
-        ) : (
-          <p className="text-[14px] text-ink-2">After the contracts are deployed.</p>
-        )}
-      </StepCard>
-
-      <AfterDeploy s={s} />
-    </>
+      {live ? <Live n={n} server={server} /> : null}
+    </div>
   );
 }
 
-function ContractList({ vault, launchpad, owner }: { vault?: Address; launchpad?: Address; owner?: Address }) {
+function ContractList({ n }: { n: Network }) {
   const row = (label: string, value?: Address) =>
     value ? (
-      <li>
-        {label}{" "}
-        <a className="num break-all underline" href={explorerUrl("address", value)} target="_blank" rel="noreferrer">
+      <li className="flex flex-wrap items-baseline gap-x-2">
+        <span className="text-ink-2">{label}</span>
+        <a className="num break-all text-[12.5px] underline" href={explorerLink(n, "address", value)} target="_blank" rel="noreferrer">
           {value}
         </a>
       </li>
     ) : null;
   return (
-    <ul className="space-y-1 text-[14px]">
-      {row("FeeVault", vault)}
-      {row("Launchpad", launchpad)}
-      {row("Owner", owner)}
+    <ul className="space-y-1.5 text-[14px]">
+      {row("Launcher", n.launcher)}
+      {row("FeeVault", n.feeVault)}
+      {row(n.ponsIsCopy ? "pons factory (PonsEarn's copy)" : "pons factory", n.ponsFactory)}
     </ul>
   );
 }
 
-/** Deploys FeeVault and SplitLaunchpad from the connected wallet and wires them: three transactions. */
-function WalletDeploy({
-  signer,
-  found,
-  checking,
-  unreadable,
-  onChange,
-}: {
-  signer: Address;
-  found?: Found;
-  checking: boolean;
-  /** The chain couldn't be read yet; Deploy re-reads it and stops rather than guess. */
-  unreadable?: boolean;
-  onChange: () => void;
-}) {
+type Plan = Awaited<ReturnType<typeof import("@/lib/deploy-plan").readPlan>>;
+
+/**
+ * Runs the deployment from the connected wallet, one transaction per step, re-reading the chain
+ * before each so nothing is ever sent twice. A reload or another device resumes where it stopped.
+ */
+function WalletDeploy({ n, signer }: { n: Network; signer: Address }) {
   const { address, isConnected, chainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
-  const publicClient = usePublicClient({ chainId: activeChain.id });
-  const { deployContractAsync } = useDeployContract();
-  const { writeContractAsync } = useWriteContract();
-  const balance = useBalance({ address, chainId: activeChain.id, query: { enabled: Boolean(address) } });
+  const { sendTransactionAsync } = useSendTransaction();
+  const client = clientFor(n);
+  const balance = useBalance({ address, chainId: n.chain.id, query: { enabled: Boolean(address), refetchInterval: 15_000 } });
   const [running, setRunning] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [txs, setTxs] = useState<Hex[]>([]);
   // Set synchronously on the first tap, so a second tap during the first await can't start a
-  // second, identical set of deployments.
+  // second run.
   const busy = useRef(false);
-  // Contracts this page has seen confirmed or found; a later read that misses one of them comes
-  // from a node that is behind, and must not lead to deploying it again.
-  const seen = useRef<{ scope?: string; vault?: Address; launchpad?: Address }>({});
-  // Only what was seen for this wallet and this signing key counts.
-  const scope = `${address}:${signer}`;
-  if (seen.current.scope !== scope) seen.current = { scope };
-  if (found?.vault) seen.current.vault ??= found.vault;
-  if (found?.launchpad) seen.current.launchpad ??= found.launchpad;
+  // Steps this page saw confirmed; a later read that misses one comes from a node that is behind.
+  const confirmed = useRef(new Set<string>());
 
-  // Load the contract code while the owner reads the page, not after the tap.
-  useEffect(() => {
-    void import("@/lib/bytecode");
-  }, []);
+  const plan = useQuery({
+    queryKey: ["deploy-plan", n.id, address, signer],
+    enabled: Boolean(address),
+    refetchInterval: running ? false : 15_000,
+    queryFn: async () => (await import("@/lib/deploy-plan")).readPlan(client, n, address!, signer),
+  });
+  // On testnet the owner's wallet receives every pons launch fee (it is the copy's protocol fee
+  // recipient); a wallet that refuses plain ETH transfers would make launches revert.
+  const takesEth = useQuery({
+    queryKey: ["accepts-eth", n.id, address],
+    enabled: Boolean(address && n.ponsIsCopy),
+    staleTime: 60_000,
+    queryFn: async () => (await import("@/lib/deploy-plan")).acceptsEth(client, address!, BigInt(copyTerms.launchFeeWei)),
+  });
 
   if (!isConnected || !address) {
     return (
       <div className="space-y-3">
-        <p className="text-[14px] text-ink-2">
-          Connect the wallet that should own PonsEarn. It deploys both contracts and pays the gas; its key never leaves the wallet. On a phone, open this page in your wallet app&apos;s browser.
+        <p className="text-[14px] leading-relaxed text-ink-2">
+          Connect the wallet that should own PonsEarn{n.ponsIsCopy ? " and its pons copy" : ""}. It deploys every contract and pays the gas; its key never
+          leaves the wallet. On a phone, open this page in your wallet app&apos;s browser.
         </p>
         <button className="btn-primary" onClick={openConnectModal}>
           Connect wallet
@@ -643,89 +191,130 @@ function WalletDeploy({
     );
   }
 
-  const left = found ? Number(!found.vault) + Number(!found.launchpad) + Number(!found.wired) : 3;
+  const p = plan.data;
+  const left = p ? p.steps.filter((s) => !s.done).length : undefined;
   const empty = balance.data?.value === 0n;
 
   async function run() {
-    if (busy.current || !publicClient || !address) return;
+    if (busy.current || !address) return;
     busy.current = true;
-    // What this run confirms belongs to the wallet and key it started with, even if they change mid-run.
-    const mark = seen.current;
-    setRunning("Checking…");
     setErr(null);
+    setRunning("Checking…");
+    const { readPlan } = await import("@/lib/deploy-plan");
     try {
-      if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
-      // Re-read the chain right before sending anything, so nothing is ever deployed twice.
-      let f = await findDeployment(publicClient, address, signer);
-      if (f.problem) throw new Error(f.problem);
-      if (f.busy) throw new Error("A transaction from this wallet is still pending. Wait a few seconds and try again.");
-      if ((seen.current.vault && !f.vault) || (seen.current.launchpad && !f.launchpad)) {
-        throw new Error("The network hasn't caught up with your last transaction yet. Wait a few seconds and try again.");
+      if (chainId !== n.chain.id) {
+        setRunning("Switching network…");
+        await switchChainAsync({ chainId: n.chain.id });
       }
-      const { feeVaultBytecode, launchpadBytecode } = await import("@/lib/bytecode");
-      const confirm = async (hash: Hex) => {
+      for (let round = 0; round < 40; round++) {
+        let current: Plan = await readPlan(client, n, address, signer);
+        // A step confirmed a moment ago but not visible yet: the node is behind, so wait for it
+        // rather than send it again.
+        for (let wait = 0; wait < 10 && current.steps.some((s) => !s.done && confirmed.current.has(s.key)); wait++) {
+          await new Promise((r) => setTimeout(r, 1500));
+          current = await readPlan(client, n, address, signer);
+        }
+        if (current.steps.some((s) => !s.done && confirmed.current.has(s.key))) {
+          throw new Error("The network hasn't caught up with your last transaction yet. Wait a few seconds and tap Continue.");
+        }
+        if (current.problem) throw new Error(current.problem);
+        if (current.busy) throw new Error("A transaction from this wallet is still pending. Wait a few seconds and tap Continue.");
+        const index = current.steps.findIndex((s) => !s.done);
+        if (index < 0) break;
+        const step = current.steps[index];
+        setRunning(`${step.label} (${index + 1} of ${current.steps.length})…`);
+        const hash = await sendTransactionAsync({ to: step.tx.to, data: step.tx.data, chainId: n.chain.id });
         setTxs((t) => [...t, hash]);
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
-        if (receipt.status !== "success") throw new Error(`Transaction ${hash} reverted.`);
-        onChange();
-        return receipt;
-      };
-      if (!f.vault) {
-        setRunning("Deploying FeeVault (1 of 3)…");
-        const r = await confirm(await deployContractAsync({ abi: feeVaultAbi, bytecode: feeVaultBytecode, args: [address, signer], chainId: activeChain.id }));
-        if (!r.contractAddress) throw new Error("FeeVault deployment returned no address.");
-        mark.vault = r.contractAddress;
-        f = { ...f, vault: r.contractAddress };
-      }
-      if (!f.launchpad) {
-        setRunning("Deploying the launchpad (2 of 3)…");
-        const r = await confirm(await deployContractAsync({ abi: launchpadAbi, bytecode: launchpadBytecode, args: [address, f.vault!, CURVE], chainId: activeChain.id }));
-        if (!r.contractAddress) throw new Error("Launchpad deployment returned no address.");
-        mark.launchpad = r.contractAddress;
-        f = { ...f, launchpad: r.contractAddress };
-      }
-      if (!f.wired) {
-        setRunning("Connecting them (3 of 3)…");
-        await confirm(await writeContractAsync({ address: f.vault!, abi: feeVaultAbi, functionName: "setLaunchpad", args: [f.launchpad!], chainId: activeChain.id }));
+        const receipt = await client.waitForTransactionReceipt({ hash });
+        if (receipt.status !== "success") throw new Error(`"${step.label}" reverted (transaction ${hash}).`);
+        confirmed.current.add(step.key);
       }
     } catch (e) {
       setErr(errorMessage(e));
     } finally {
       busy.current = false;
       setRunning(null);
-      onChange();
+      void plan.refetch();
     }
   }
 
+  const groups = p ? (["pons", "ponsearn"] as const).filter((g) => p.steps.some((s) => s.group === g)) : [];
+
   return (
-    <div className="space-y-3 text-[14px]">
+    <div className="space-y-4 text-[14px]">
       <p className="text-ink-2">
         Owner: <span className="num break-all text-ink">{address}</span>
         {balance.data ? <span className="ml-1">· {formatEther(balance.data.value).slice(0, 8)} ETH</span> : null}
       </p>
-      <p className="text-ink-2">
-        This wallet will own both contracts: it can pause launches and claims, change fees within the hard limits and replace the signing key. Use the wallet you want to keep in charge.
+      <p className="leading-relaxed text-ink-2">
+        This wallet will own everything it deploys: it can pause launches and claims, withdraw PonsEarn&apos;s share of the fees and replace the signing key. Use the
+        wallet you want to keep in charge.
       </p>
-      <ul className="space-y-1">
-        <Progress done={Boolean(found?.vault)} label="FeeVault" value={found?.vault} />
-        <Progress done={Boolean(found?.launchpad)} label="Launchpad" value={found?.launchpad} />
-        <Progress done={Boolean(found?.wired)} label="Connected to each other" />
-      </ul>
-      {left > 0 ? (
+      {n.ponsIsCopy && takesEth.data === false ? (
+        <p className="rounded-2xl bg-down-soft px-4 py-3 font-medium leading-relaxed text-down-ink">
+          This wallet refuses plain ETH transfers (it has delegated code). On testnet it receives every pons launch fee, so launches would fail. Use another
+          wallet.
+        </p>
+      ) : null}
+
+      {!p ? (
+        <p className="text-ink-2">{plan.isError ? `Couldn't read the chain yet (${errorMessage(plan.error)}). Retrying…` : "Reading the chain…"}</p>
+      ) : (
+        <div className="space-y-4">
+          {groups.map((g) => (
+            <div key={g}>
+              <div className="eyebrow mb-2">{g === "pons" ? "pons, PonsEarn's copy (testnet only)" : "PonsEarn"}</div>
+              <ol className="space-y-1.5">
+                {p.steps
+                  .filter((s) => s.group === g)
+                  .map((s) => (
+                    <li key={s.key} className="flex items-start gap-2">
+                      <span className={`mt-px shrink-0 ${s.done ? "text-up-ink" : "text-ink-3"}`} aria-hidden>
+                        {s.done ? "✓" : "○"}
+                      </span>
+                      <span className={s.done ? "" : "text-ink-2"}>{s.label}</span>
+                    </li>
+                  ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {p && left === 0 ? (
+        <Pin n={n} plan={p} />
+      ) : p ? (
         <>
-          {empty ? <p className="font-medium text-down-ink">This wallet has no ETH on {activeChain.name}. Add a little for gas first.</p> : null}
-          <button className="btn-sticker" disabled={Boolean(running) || checking || empty} onClick={run}>
-            {running ?? (checking ? "Checking…" : left === 3 ? "Deploy (3 transactions)" : `Continue (${left} left)`)}
+          {empty ? (
+            <p className="font-medium text-down-ink">
+              This wallet has no ETH on {n.chain.name}. Add a little for gas first
+              {n.faucet ? (
+                <>
+                  {" "}
+                  (
+                  <a className="underline" href={n.faucet} target="_blank" rel="noreferrer">
+                    faucet
+                  </a>
+                  )
+                </>
+              ) : null}
+              .
+            </p>
+          ) : null}
+          <button className="btn-sticker" disabled={Boolean(running) || empty || takesEth.data === false} onClick={run}>
+            {running ?? (left === p.steps.length ? `Deploy (${left} transactions)` : `Continue (${left} left)`)}
           </button>
+          <p className="text-[12px] leading-relaxed text-ink-3">
+            Your wallet asks you to confirm each transaction. You can stop at any point and come back later: this page picks up where you left off.
+          </p>
         </>
       ) : null}
-      {unreadable && !err ? <p className="text-[13px] text-ink-2">Couldn&apos;t read this wallet&apos;s earlier transactions from the chain yet. Retrying…</p> : null}
       {err ? <p className="text-[13px] text-down-ink">{err}</p> : null}
       {txs.length ? (
         <ul className="space-y-1 text-[12px] text-ink-2">
           {txs.map((t) => (
             <li key={t}>
-              <a className="num underline" href={explorerUrl("tx", t)} target="_blank" rel="noreferrer">
+              <a className="num underline" href={explorerLink(n, "tx", t)} target="_blank" rel="noreferrer">
                 {t.slice(0, 18)}…
               </a>
             </li>
@@ -736,128 +325,251 @@ function WalletDeploy({
   );
 }
 
-function Progress({ done, label, value }: { done: boolean; label: string; value?: Address }) {
-  return (
-    <li className="flex flex-wrap items-center gap-2">
-      <span className={done ? "text-up-ink" : "text-ink-3"}>{done ? "✓" : "○"}</span>
-      <span className={done ? "" : "text-ink-2"}>{label}</span>
-      {value ? (
-        <a className="num break-all text-[12px] underline" href={explorerUrl("address", value)} target="_blank" rel="noreferrer">
-          {value}
-        </a>
-      ) : null}
-    </li>
+/** Everything is deployed: what to pin so the site uses it. */
+function Pin({ n, plan }: { n: Network; plan: Plan }) {
+  const a = plan.addresses;
+  const net = n.id.toUpperCase();
+  const json = JSON.stringify(
+    {
+      [n.id]: {
+        launcher: a.launcher,
+        feeVault: a.feeVault,
+        ...(n.ponsIsCopy ? { ponsFactory: a.ponsFactory } : {}),
+        deployedAt: new Date().toISOString().slice(0, 10),
+        hidden: [],
+      },
+    },
+    null,
+    2
   );
-}
-
-/**
- * Pinning the addresses tells the site which contracts to use. In server mode it otherwise derives
- * them from the admin key, so pinning lets that key be rotated (MAINNET.md) without moving the site.
- */
-function PinAddresses({ vault, launchpad, important, note }: { vault: Address; launchpad: Address; important: boolean; note: string }) {
-  const lines = `NEXT_PUBLIC_FEE_VAULT_ADDRESS=${vault}\nNEXT_PUBLIC_LAUNCHPAD_ADDRESS=${launchpad}`;
+  const env = [`NEXT_PUBLIC_${net}_LAUNCHER_ADDRESS=${a.launcher}`, `NEXT_PUBLIC_${net}_FEE_VAULT_ADDRESS=${a.feeVault}`]
+    .concat(n.ponsIsCopy ? [`NEXT_PUBLIC_TESTNET_PONS_FACTORY=${a.ponsFactory}`] : [])
+    .join("\n");
   return (
-    <div className="space-y-3 text-[14px]">
-      <h3 className="text-[16px] font-semibold">{important ? "Important: pin the contract addresses" : "Recommended: pin the contract addresses"}</h3>
-      <p className="text-ink-2">
-        Add these two environment variables on your host (Vercel: Settings → Environment Variables) and redeploy, or commit them to{" "}
-        <code className="num">src/deployment.json</code>. {note}
+    <div className="space-y-3 rounded-2xl border border-line bg-card-2 p-4">
+      <h3 className="text-[16px] font-semibold">Deployed. Last step: point the site at it</h3>
+      <p className="leading-relaxed text-ink-2">
+        The site starts using these contracts once it&apos;s rebuilt with them. Either commit them to <code className="num">src/deployment.json</code> (the
+        maintainer can do it from the addresses below), or add the variables on your host (Vercel: Settings → Environment Variables) and redeploy.
       </p>
-      <pre className="num overflow-x-auto whitespace-pre rounded-2xl bg-card-2 p-4 text-[12px]">{lines}</pre>
-      <button className="btn-secondary px-3 py-2 text-[13px]" onClick={() => navigator.clipboard.writeText(lines)}>
-        Copy
-      </button>
+      <Copyable label="src/deployment.json" text={json} />
+      <Copyable label="or environment variables" text={env} />
     </div>
   );
 }
 
-/** Two-step transfer: the server proposes OWNER_ADDRESS, that wallet accepts here. */
-function Ownership({ s, onDone, onStart, busy }: { s?: Status; onDone: () => void; onStart: () => void; busy: boolean }) {
+function Copyable({ label, text }: { label: string; text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <span className="eyebrow">{label}</span>
+        <button
+          className="btn-secondary min-h-[32px] px-3 py-1 text-[12px]"
+          onClick={() =>
+            navigator.clipboard.writeText(text).then(
+              () => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              },
+              () => {}
+            )
+          }
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre className="num overflow-x-auto whitespace-pre rounded-xl bg-card p-3 text-[11.5px] leading-relaxed">{text}</pre>
+    </div>
+  );
+}
+
+/** The live network: the "you're live" card and the owner's switches. */
+function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
   const { address, isConnected, chainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
-  const publicClient = usePublicClient({ chainId: activeChain.id });
   const { writeContractAsync } = useWriteContract();
-  const [accepting, setAccepting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const client = clientFor(n);
+  const launcher = { address: n.launcher!, abi: launcherAbi, chainId: n.chain.id } as const;
+  const vault = { address: n.feeVault!, abi: feeVaultAbi, chainId: n.chain.id } as const;
+  const { data, refetch } = useReadContracts({
+    contracts: [
+      { ...launcher, functionName: "owner" },
+      { ...launcher, functionName: "launchesPaused" },
+      { ...launcher, functionName: "platformFees" },
+      { ...launcher, functionName: "platformShareBps" },
+      { ...vault, functionName: "owner" },
+      { ...vault, functionName: "claimsPaused" },
+      { ...vault, functionName: "signer" },
+      { ...vault, functionName: "isLauncher", args: [n.launcher!] },
+    ],
+    query: { refetchInterval: 20_000 },
+  });
+  const v = <T,>(i: number) => (data?.[i]?.status === "success" ? (data[i].result as T) : undefined);
+  const owner = v<Address>(0);
+  const launchesPaused = v<boolean>(1);
+  const fees = v<bigint>(2);
+  const share = v<number>(3);
+  const vaultOwner = v<Address>(4);
+  const claimsPaused = v<boolean>(5);
+  const vaultSigner = v<Address>(6);
+  const wired = v<boolean>(7);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const lock = useRef(false);
+  const isOwner = same(address, owner) && same(address, vaultOwner);
+  const signerMatches = server?.signer ? same(vaultSigner, server.signer) : undefined;
 
-  if (!s?.done) return <p className="text-[14px] text-ink-2">After the contracts are deployed.</p>;
-  if (!s.ownerTarget) {
-    return (
-      <p className={`text-[14px] ${s.testnet ? "text-ink-2" : "font-medium text-down-ink"}`}>
-        {s.testnet ? "Optional on testnet. " : "Strongly recommended on mainnet. "}
-        The admin key on the server owns the contracts right now
-        {s.owner ? ` (${shortAddress(s.owner)})` : ""}. Set <code className="num rounded bg-card-2 px-1">OWNER_ADDRESS</code> on your host to a wallet you
-        control, ideally a multisig, redeploy, and come back here.
-      </p>
-    );
-  }
-  if (s.ownershipDone) {
-    return (
-      <p className="text-[14px] text-ink-2">
-        Owned by <span className="num break-all text-ink">{s.owner}</span>. The server key only signs launches and claims.
-      </p>
-    );
-  }
-  if (!s.ownershipProposed) {
-    return (
-      <div className="space-y-3">
-        <p className="text-[14px] text-ink-2">
-          Propose <span className="num break-all text-ink">{s.ownerTarget}</span> as the owner of both contracts.
-        </p>
-        <button className="btn-primary" disabled={busy} onClick={onStart}>
-          {busy ? "Proposing…" : "Propose new owner"}
-        </button>
-      </div>
-    );
-  }
-
-  const isTarget = address?.toLowerCase() === s.ownerTarget.toLowerCase();
-  // Only contracts still waiting on this wallet, so a half-finished accept can simply be retried.
-  const waiting = [
-    { addr: s.vault, abi: feeVaultAbi, pending: s.vaultPendingOwner, owner: s.vaultOwner },
-    { addr: s.launchpad, abi: launchpadAbi, pending: s.pendingOwner, owner: s.owner },
-  ].filter((c) => c.addr && c.pending === s.ownerTarget && c.owner !== s.ownerTarget);
-  async function accept() {
-    setErr(null);
-    if (!isConnected) return openConnectModal?.();
-    if (!publicClient || !s?.vault || !s.launchpad) return;
-    setAccepting(true);
+  async function send(label: string, question: string, write: () => Promise<Hex>) {
+    if (lock.current) return;
+    if (!window.confirm(question)) return;
+    lock.current = true;
+    setBusy(label);
+    setMsg(null);
     try {
-      if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
-      for (const c of waiting) {
-        const hash = await writeContractAsync({ address: c.addr!, abi: c.abi, chainId: activeChain.id, functionName: "acceptOwnership" });
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
-        if (receipt.status !== "success") throw new Error("Transaction reverted");
-      }
-      onDone();
+      if (chainId !== n.chain.id) await switchChainAsync({ chainId: n.chain.id });
+      const hash = await write();
+      const receipt = await client.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The transaction reverted.");
+      setMsg({ ok: true, text: `${label}: done.` });
     } catch (e) {
-      setErr(errorMessage(e));
+      setMsg({ ok: false, text: errorMessage(e) });
     } finally {
-      setAccepting(false);
+      lock.current = false;
+      setBusy(null);
+      void refetch();
     }
   }
+
+  const rows: { label: string; state: string; ok: boolean; action?: { text: string; run: () => void } }[] = [
+    {
+      label: "New launches",
+      state: launchesPaused === undefined ? "…" : launchesPaused ? "Paused" : "Open",
+      ok: !launchesPaused,
+      action:
+        launchesPaused === undefined
+          ? undefined
+          : {
+              text: launchesPaused ? "Resume launches" : "Pause launches",
+              run: () =>
+                send(
+                  launchesPaused ? "Resume launches" : "Pause launches",
+                  launchesPaused ? "Let people launch new coins again?" : "Stop new launches? Existing coins keep trading on pons.",
+                  () => writeContractAsync({ ...launcher, functionName: "setLaunchesPaused", args: [!launchesPaused] })
+                ),
+            },
+    },
+    {
+      label: "Claims",
+      state: claimsPaused === undefined ? "…" : claimsPaused ? "Paused" : "Open",
+      ok: !claimsPaused,
+      action:
+        claimsPaused === undefined
+          ? undefined
+          : {
+              text: claimsPaused ? "Resume claims" : "Pause claims",
+              run: () =>
+                send(
+                  claimsPaused ? "Resume claims" : "Pause claims",
+                  claimsPaused ? "Let X accounts claim their fees again?" : "Stop all claims? Balances stay in the vault until you resume.",
+                  () => writeContractAsync({ ...vault, functionName: "setClaimsPaused", args: [!claimsPaused] })
+                ),
+            },
+    },
+    {
+      label: "Signing key",
+      state: signerMatches === undefined ? "…" : signerMatches ? "Matches this site" : `FeeVault trusts ${shortAddress(vaultSigner ?? "")}, not this site's key`,
+      ok: signerMatches !== false,
+      action:
+        signerMatches === false && server?.signer
+          ? {
+              text: "Use this site's key",
+              run: () =>
+                send("Use this site's key", `Make FeeVault accept signatures from ${server.signer}? Signatures from ${vaultSigner} stop working.`, () =>
+                  writeContractAsync({ ...vault, functionName: "setSigner", args: [server.signer!] })
+                ),
+            }
+          : undefined,
+    },
+    {
+      label: `PonsEarn's share${share !== undefined ? ` (${share / 100}% of the creator fee)` : ""}`,
+      state: fees === undefined ? "…" : `${formatEther(fees)} ETH to withdraw`,
+      ok: true,
+      action:
+        fees && address
+          ? {
+              text: "Withdraw to this wallet",
+              run: () =>
+                send("Withdraw to this wallet", `Send ${formatEther(fees)} ETH to ${address}?`, () =>
+                  writeContractAsync({ ...launcher, functionName: "withdrawPlatformFees", args: [address] })
+                ),
+            }
+          : undefined,
+    },
+  ];
+
   return (
-    <div className="space-y-3">
-      <p className="text-[14px] text-ink-2">
-        Connect <span className="num break-all text-ink">{s.ownerTarget}</span> and accept.{" "}
-        {waiting.length === 2 ? "Two transactions, one per contract." : "One transaction left."}
-      </p>
-      <button className="btn-sticker" disabled={accepting || (isConnected && !isTarget)} onClick={accept}>
-        {!isConnected ? "Connect owner wallet" : !isTarget ? "Switch to the owner wallet" : accepting ? "Accepting…" : "Accept ownership"}
-      </button>
-      {err ? <p className="text-[13px] text-down-ink">{err}</p> : null}
-    </div>
+    <>
+      <div className="card flex flex-col items-center gap-3 p-8 text-center">
+        <GraduatedArt className="h-20 w-20" />
+        <h2 className="display text-[26px]">PonsEarn is live on {n.label.toLowerCase()}</h2>
+        {wired === false ? (
+          <p className="text-[14px] font-medium text-down-ink">The FeeVault doesn&apos;t accept this launcher yet, so launches revert. Finish the deployment above.</p>
+        ) : (
+          <p className="text-[15px] text-ink-2">Launch the first coin.</p>
+        )}
+        <Link href="/create" className="btn-sticker">
+          Launch a coin
+        </Link>
+      </div>
+
+      <section className="card p-5 sm:p-6">
+        <div className="eyebrow">Owner controls · {n.label}</div>
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
+          {isOwner
+            ? "You're connected with the owner wallet. Each switch is one transaction."
+            : owner
+              ? `Only the owner wallet (${shortAddress(owner)}) can change these.`
+              : "Reading the contracts…"}
+        </p>
+        <ul className="mt-3 divide-y divide-line">
+          {rows.map((r) => (
+            <li key={r.label} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+              <div className="min-w-0">
+                <div className="text-[14px] font-medium">{r.label}</div>
+                <div className={`num text-[12px] ${r.ok ? "text-ink-2" : "text-down-ink"}`}>{r.state}</div>
+              </div>
+              {r.action && isOwner ? (
+                <button className="btn-secondary min-h-[40px] px-4 py-2 text-[13px]" disabled={Boolean(busy)} onClick={r.action.run}>
+                  {busy === r.action.text ? "Confirm in your wallet…" : r.action.text}
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        {!isConnected ? (
+          <button className="btn-secondary mt-2 min-h-[40px] px-4 py-2 text-[13px]" onClick={openConnectModal}>
+            Connect the owner wallet
+          </button>
+        ) : null}
+        {msg ? (
+          <p role="status" className={`mt-3 text-[13px] ${msg.ok ? "text-up-ink" : "text-down-ink"}`}>
+            {msg.text}
+          </p>
+        ) : null}
+      </section>
+    </>
   );
 }
 
-function KeyGenerator({ problem, onChange, walletMode = false }: { problem?: string; onChange: (key: string | null) => void; walletMode?: boolean }) {
+function KeyGenerator({ problem, onChange }: { problem?: string; onChange: (key: string | null) => void }) {
   const [key, setKey] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
   useEffect(() => setKey(load()), []);
   let address: string | undefined;
   try {
-    address = key ? privateKeyToAccount(key as `0x${string}`).address : undefined;
+    address = key ? privateKeyToAccount(key as Hex).address : undefined;
   } catch {
     address = undefined;
   }
@@ -866,10 +578,9 @@ function KeyGenerator({ problem, onChange, walletMode = false }: { problem?: str
     return (
       <div className="space-y-3">
         {problem ? <p className="text-[14px] font-medium text-down-ink">{problem} Paste the 64 hex characters of the key (with or without 0x).</p> : null}
-        <p className="text-[14px] text-ink-2">
-          {walletMode
-            ? "The server needs its own signing key. It only signs launches and claims: it never holds funds or owns the contracts, and it is not your wallet. Create it here in your browser; it is never sent anywhere."
-            : "PonsEarn needs one key that deploys the contracts and signs launches and claims. A Render Blueprint deploy creates it automatically (SIGNER_SEED). Otherwise create it here in your browser; it is never sent anywhere."}
+        <p className="text-[14px] leading-relaxed text-ink-2">
+          The server needs its own signing key. It only signs launches (X username → account) and claims: it never holds funds or owns the contracts, and it is not
+          your wallet. Create it here in your browser; it is never sent anywhere.
         </p>
         <button
           className="btn-primary"
@@ -880,7 +591,7 @@ function KeyGenerator({ problem, onChange, walletMode = false }: { problem?: str
             onChange(k);
           }}
         >
-          {walletMode ? "Generate signing key" : "Generate admin key"}
+          Generate signing key
         </button>
       </div>
     );
@@ -894,7 +605,7 @@ function KeyGenerator({ problem, onChange, walletMode = false }: { problem?: str
       <div>
         <div className="label">Private key: keep it secret. Paste it only into your host, never into a chat.</div>
         <div className="flex gap-2">
-          <input readOnly className="input num text-[12px]" type={shown ? "text" : "password"} value={key} aria-label="Admin private key" />
+          <input readOnly className="input num text-[12px]" type={shown ? "text" : "password"} value={key} aria-label="Signing private key" />
           <button className="btn-secondary shrink-0 px-3" onClick={() => setShown((v) => !v)}>
             {shown ? "Hide" : "Show"}
           </button>
@@ -908,16 +619,16 @@ function KeyGenerator({ problem, onChange, walletMode = false }: { problem?: str
       </p>
       <ul className="list-disc space-y-1 pl-5 text-ink-2">
         <li>
-          <a className="font-medium text-ink underline" href="https://dashboard.render.com" target="_blank" rel="noreferrer">
-            Render
-          </a>
-          : your service → <b>Environment</b> → <b>Add</b> → paste → <b>Save, rebuild, and deploy</b>.
-        </li>
-        <li>
           <a className="font-medium text-ink underline" href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">
             Vercel
           </a>
           : project → <b>Settings</b> → <b>Environment Variables</b> → add and save → <b>Deployments</b> → ⋯ → <b>Redeploy</b>.
+        </li>
+        <li>
+          <a className="font-medium text-ink underline" href="https://dashboard.render.com" target="_blank" rel="noreferrer">
+            Render
+          </a>
+          : your service → <b>Environment</b> → <b>Add</b> → paste → <b>Save, rebuild, and deploy</b>.
         </li>
       </ul>
       <button
@@ -949,24 +660,5 @@ function StepCard({ n, title, state, children }: { n: number; title: string; sta
       </div>
       {children}
     </section>
-  );
-}
-
-function CopyField({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex gap-2">
-      <input readOnly className="input num text-[13px]" value={value} aria-label="Admin address" />
-      <button
-        className="btn-secondary shrink-0 px-3"
-        onClick={() => {
-          navigator.clipboard.writeText(value);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-      >
-        {copied ? "Copied" : "Copy"}
-      </button>
-    </div>
   );
 }

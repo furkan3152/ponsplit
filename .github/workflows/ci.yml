@@ -27,6 +27,11 @@ jobs:
         run: |
           node vendor/build.js
           git diff --exit-code -- vendor/out
+      # The web app's ABIs and creation code (src/lib/abi.ts, bytecode.ts) must be the compiled ones.
+      - name: The app's ABIs and bytecode match the contracts
+        run: |
+          node scripts/export-abi.js
+          git diff --exit-code -- ../src/lib/abi.ts ../src/lib/bytecode.ts
 
   security:
     runs-on: ubuntu-latest
@@ -92,86 +97,35 @@ jobs:
       - run: npx tsc --noEmit
       - run: npx next lint
       - run: npm test
+      # What the production host builds: both networks, whatever is pinned in src/deployment.json.
       - run: npx next build
         env:
           NEXT_TELEMETRY_DISABLED: 1
-      # What the production host builds: mainnet, wallet-mode setup, nothing deployed yet.
-      - name: Mainnet build
-        run: npx next build
-        env:
-          NEXT_TELEMETRY_DISABLED: 1
-          NEXT_PUBLIC_CHAIN: mainnet
 
-  # The real web app (production build) in a real browser with several wallets, against a fork of
-  # Robinhood Chain testnet: setup, ownership, launch, trading, graduation, pool, claim, all pages.
-  # A second instance uses the real X resolver to check username → id and on-chain attestation.
-  e2e-fork:
+  # The real web app (production build) in a real browser with several wallets, on a fork of each
+  # Robinhood network. The owner's wallet deploys everything through /setup (testnet: PonsEarn's
+  # copy of pons, then PonsEarn; mainnet: PonsEarn on the real pons), the site is rebuilt with the
+  # addresses pinned, and a coin is launched with real X accounts, traded on the curve, graduated
+  # into its Uniswap v4 pool, traded there, and its fees split. Nothing reaches the real networks.
+  e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - network: testnet
+            chain: 46630
+            rpc: https://rpc.testnet.chain.robinhood.com
+          - network: mainnet
+            chain: 4663
+            rpc: https://rpc.mainnet.chain.robinhood.com
     env:
       NEXT_TELEMETRY_DISABLED: 1
-      NEXT_PUBLIC_CHAIN: local
-      OWNER_ADDRESS: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
+      NETWORK: ${{ matrix.network }}
+      NEXT_PUBLIC_DEFAULT_NETWORK: ${{ matrix.network }}
     steps:
-      # A fresh admin key per run: a fixed public seed would let anyone use its address on the
-      # live testnet (which the fork inherits) and break setup for every later run.
-      - name: Random admin seed
-        run: echo "SIGNER_SEED=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            contracts/package-lock.json
-            e2e/package-lock.json
-      - run: npm ci
-      - run: npm ci
-        working-directory: contracts
-      - run: npm ci
-        working-directory: e2e
-      - run: npx playwright install --with-deps chromium
-        working-directory: e2e
-      - name: Fork Robinhood Chain testnet
-        working-directory: contracts
-        run: |
-          npx hardhat node --fork https://rpc.testnet.chain.robinhood.com > ../fork.log 2>&1 &
-          for i in $(seq 1 60); do curl -sf -X POST -H 'content-type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' http://127.0.0.1:8545 && break; sleep 2; done
-          echo; head -20 ../fork.log
-      - run: npx next build
-      - name: Start app (mock X) and app (real X)
-        run: |
-          X_RESOLVER=mock npx next start -p 3000 > app.log 2>&1 &
-          X_RESOLVER=fxtwitter npx next start -p 3001 > app-real.log 2>&1 &
-      - name: End-to-end
-        working-directory: e2e
-        run: node full.mjs
-        env:
-          BASE: http://localhost:3000
-          REAL_BASE: http://localhost:3001
-          OUT: shots
-      - name: Logs
-        if: always()
-        run: tail -n 50 app.log app-real.log fork.log || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: e2e-screenshots
-          path: e2e/shots
-
-  # Wallet-mode setup (the mainnet default) on a local chain: the owner deploys both contracts from
-  # their own wallet through /setup, a reload must not deploy again, then the site is rebuilt with
-  # the addresses pinned and a launch is simulated through it.
-  e2e-wallet-setup:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    env:
-      NEXT_TELEMETRY_DISABLED: 1
-      NEXT_PUBLIC_CHAIN: local
-      NEXT_PUBLIC_SETUP_MODE: wallet
-      X_RESOLVER: mock
-    steps:
+      # A fresh signing key per run, made and used inside the job only.
       - name: Random signing seed
         run: echo "SIGNER_SEED=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
@@ -190,19 +144,25 @@ jobs:
         working-directory: e2e
       - run: npx playwright install --with-deps chromium
         working-directory: e2e
-      - name: Local chain
+      - name: Fork Robinhood Chain ${{ matrix.network }}
         working-directory: contracts
+        env:
+          HARDHAT_CHAIN_ID: ${{ matrix.chain }}
         run: |
-          npx hardhat node > ../node.log 2>&1 &
+          npx hardhat node --fork ${{ matrix.rpc }} > ../fork.log 2>&1 &
           for i in $(seq 1 60); do curl -sf -X POST -H 'content-type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' http://127.0.0.1:8545 && break; sleep 2; done
+          echo
+          (cd ../e2e && node prepare-fork.mjs)
+      - name: Point the site's ${{ matrix.network }} at the fork
+        run: echo "NEXT_PUBLIC_$(echo "$NETWORK" | tr a-z A-Z)_RPC_URL=http://127.0.0.1:8545" >> "$GITHUB_ENV"
       - run: npx next build
-      - name: Deploy from the owner's wallet through /setup
+      - name: Deploy everything from the owner's wallet through /setup
         run: |
           # node directly (not npx), so the PID is the server itself and kill really stops it.
           node node_modules/.bin/next start -p 3000 > app.log 2>&1 &
           echo "APP_PID=$!" >> "$GITHUB_ENV"
-          cd e2e && node wallet-setup.mjs deploy
-          cat wallet-deploy.env >> "$GITHUB_ENV"
+          cd e2e && node setup.mjs
+          cat deploy.env >> "$GITHUB_ENV"
         env:
           OUT: shots
       - name: Rebuild with the addresses pinned
@@ -210,20 +170,16 @@ jobs:
           kill "$APP_PID"
           npx next build
           node node_modules/.bin/next start -p 3000 > app-pinned.log 2>&1 &
-      - name: The pinned site works with the wallet-owned contracts
-        run: |
-          (cd e2e && node wallet-setup.mjs pinned)
-          node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/smoke-live.mjs
+      - name: End-to-end on the pinned site
+        working-directory: e2e
+        run: node full.mjs
         env:
-          SITE: http://localhost:3000
-          RPC_URL: http://127.0.0.1:8545
-          LAUNCHPAD: ${{ env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS }}
-          HANDLES: alpha,beta
+          OUT: shots
       - name: Logs
         if: always()
-        run: tail -n 50 app.log app-pinned.log node.log || true
+        run: tail -n 60 app.log app-pinned.log fork.log || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: wallet-setup-screenshots
+          name: e2e-screenshots-${{ matrix.network }}
           path: e2e/shots

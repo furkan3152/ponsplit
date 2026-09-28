@@ -1,83 +1,47 @@
 import { readFileSync } from "fs";
-import { getContractAddress, isAddress, keccak256, toBytes } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { isAddress } from "viem";
 
 /**
- * Zero-config addresses: a fresh admin key deploys FeeVault with nonce 0 and SplitLaunchpad with
- * nonce 1 (see /setup), so both addresses are known at build time from the key alone. Explicit
- * NEXT_PUBLIC_* variables or addresses committed to src/deployment.json for this network take
- * precedence ("pinned"), and should be set once contracts are live so the signing key can be
- * rotated without moving the site.
+ * Checks what pins the site to its contracts on each network before building: the addresses in
+ * src/deployment.json and the NEXT_PUBLIC_<NETWORK>_* variables that override them. A malformed or
+ * half-set pin fails the build instead of quietly pointing the site at nothing.
  */
-// Must match normalizeKey() / adminKey() in src/lib/adminKey.ts.
-function normalizeKey(raw) {
-  const v = raw.trim();
-  const k = /^0x/i.test(v) ? `0x${v.slice(2)}` : `0x${v}`;
-  return /^0x[0-9a-fA-F]{64}$/.test(k) ? k : null;
-}
-
-function adminKeyFromEnv() {
-  const raw = process.env.SIGNER_PRIVATE_KEY;
-  if (raw && raw.trim()) {
-    const key = normalizeKey(raw);
-    // Fail the build loudly: a typo here would otherwise silently point the site at nothing.
-    if (!key) throw new Error("SIGNER_PRIVATE_KEY is set but isn't a 32-byte hex private key (64 hex characters, optionally 0x-prefixed).");
-    return key;
-  }
-  if (process.env.SIGNER_SEED) return keccak256(toBytes(`ponsplit-admin:${process.env.SIGNER_SEED}`));
-  return undefined;
-}
-
-/** A pinned address must be exactly 0x + 40 hex characters; anything else fails the build. */
 function checkAddress(value, name) {
   if (!isAddress(value, { strict: false })) {
     throw new Error(`${name} is set but isn't an address: use 0x followed by 40 hex characters, with no quotes, spaces or "NAME=" prefix.`);
   }
 }
 
-function predictedAddresses() {
-  // Pinning is all or nothing: with only one address set, the app would find its launchpad but not
-  // its vault, and signing would quietly switch off.
-  const pinnedVault = Boolean(process.env.NEXT_PUBLIC_FEE_VAULT_ADDRESS);
-  const pinnedLaunchpad = Boolean(process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS);
-  if (pinnedVault !== pinnedLaunchpad) {
-    throw new Error("Set both NEXT_PUBLIC_FEE_VAULT_ADDRESS and NEXT_PUBLIC_LAUNCHPAD_ADDRESS, or neither.");
-  }
-  if (pinnedVault) {
-    checkAddress(process.env.NEXT_PUBLIC_FEE_VAULT_ADDRESS, "NEXT_PUBLIC_FEE_VAULT_ADDRESS");
-    checkAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS, "NEXT_PUBLIC_LAUNCHPAD_ADDRESS");
-  }
+function checkPins() {
   const deployment = JSON.parse(readFileSync(new URL("./src/deployment.json", import.meta.url), "utf8"));
-  const key = adminKeyFromEnv();
-  const chain = process.env.NEXT_PUBLIC_CHAIN || "testnet";
-  const entry = deployment[chain] ?? {};
-  if (Boolean(entry.launchpad) !== Boolean(entry.feeVault)) throw new Error(`src/deployment.json: set both launchpad and feeVault for "${chain}", or neither.`);
-  if (entry.launchpad) {
-    checkAddress(entry.feeVault, `src/deployment.json ${chain}.feeVault`);
-    checkAddress(entry.launchpad, `src/deployment.json ${chain}.launchpad`);
+  for (const network of ["mainnet", "testnet"]) {
+    const NET = network.toUpperCase();
+    const entry = deployment[network] ?? {};
+    const launcher = process.env[`NEXT_PUBLIC_${NET}_LAUNCHER_ADDRESS`] || entry.launcher;
+    const feeVault = process.env[`NEXT_PUBLIC_${NET}_FEE_VAULT_ADDRESS`] || entry.feeVault;
+    // All or nothing: with only one of them the site would find its launcher but not its vault.
+    if (Boolean(launcher) !== Boolean(feeVault)) {
+      throw new Error(`${network}: pin both the launcher and the FeeVault address (src/deployment.json or NEXT_PUBLIC_${NET}_* variables), or neither.`);
+    }
+    if (launcher) {
+      checkAddress(launcher, `${network} launcher`);
+      checkAddress(feeVault, `${network} FeeVault`);
+    }
+    const factory = network === "testnet" ? process.env.NEXT_PUBLIC_TESTNET_PONS_FACTORY || entry.ponsFactory : undefined;
+    if (factory) checkAddress(factory, "testnet ponsFactory");
+    if (entry.hidden !== undefined && !Array.isArray(entry.hidden)) throw new Error(`src/deployment.json: ${network}.hidden must be a list of coin addresses.`);
+    (entry.hidden ?? []).forEach((a, i) => checkAddress(a, `src/deployment.json ${network}.hidden[${i}]`));
+    (process.env[`NEXT_PUBLIC_${NET}_HIDDEN_COINS`] || "")
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean)
+      .forEach((a, i) => checkAddress(a, `NEXT_PUBLIC_${NET}_HIDDEN_COINS entry ${i + 1}`));
   }
-  (process.env.NEXT_PUBLIC_HIDDEN_COINS || "")
-    .split(",")
-    .map((a) => a.trim())
-    .filter(Boolean)
-    .forEach((a, i) => checkAddress(a, `NEXT_PUBLIC_HIDDEN_COINS entry ${i + 1}`));
-  if (entry.hidden !== undefined) {
-    if (!Array.isArray(entry.hidden)) throw new Error(`src/deployment.json: ${chain}.hidden must be a list of coin addresses.`);
-    entry.hidden.forEach((a, i) => checkAddress(a, `src/deployment.json ${chain}.hidden[${i}]`));
-  }
-  const committed = Boolean(entry.launchpad);
-  // Must match SETUP_MODE in src/lib/config.ts. Contracts deployed from the owner's wallet can't
-  // be predicted from the server key; they are pinned once deployed.
-  const setupMode = process.env.NEXT_PUBLIC_SETUP_MODE || (chain === "mainnet" ? "wallet" : "server");
-  if (setupMode !== "wallet" && setupMode !== "server") throw new Error('NEXT_PUBLIC_SETUP_MODE must be "wallet" or "server".');
-  if (setupMode === "wallet" || committed || process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS || !key) return {};
-  const admin = privateKeyToAccount(key).address;
-  return {
-    NEXT_PUBLIC_FEE_VAULT_ADDRESS: getContractAddress({ from: admin, nonce: 0n }),
-    NEXT_PUBLIC_LAUNCHPAD_ADDRESS: getContractAddress({ from: admin, nonce: 1n }),
-    NEXT_PUBLIC_ADDRESSES_PREDICTED: "1",
-  };
+  const fallback = process.env.NEXT_PUBLIC_DEFAULT_NETWORK;
+  if (fallback && fallback !== "mainnet" && fallback !== "testnet") throw new Error('NEXT_PUBLIC_DEFAULT_NETWORK must be "mainnet" or "testnet".');
 }
+
+checkPins();
 
 const X402_MODULES = [
   "@x402/core/client",
@@ -106,7 +70,6 @@ const X402_MODULES = [
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  env: predictedAddresses(),
   async headers() {
     return [
       {

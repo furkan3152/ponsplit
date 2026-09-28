@@ -5,18 +5,19 @@ import Link from "next/link";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { formatEther, parseEventLogs, type Hex } from "viem";
-import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
 import { ClaimArt, EmptyArt } from "@/components/art";
 import { CountUp, Flash, Reveal, celebrate } from "@/components/motion";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { XAvatar } from "@/components/XAvatar";
-import { feeVaultAbi } from "@/lib/abi";
-import { activeChain, explorerUrl } from "@/lib/chains";
-import { FEE_VAULT_ADDRESS } from "@/lib/config";
+import { feeVaultAbi, launcherAbi } from "@/lib/abi";
+import { coinImage } from "@/lib/coin-ui";
 import { errorMessage, formatEth, pct, shortAddress } from "@/lib/format";
 import { isValidHandle, normalizeHandle } from "@/lib/handles";
-import { useAllTokens, useClaimsPaused, useDebounced, useXProfiles, type XProfileLite } from "@/lib/hooks";
-import { describe } from "@/lib/market";
+import { useClaimsPaused, useCoins, useDebounced, useEarnings, useXProfiles, type Earnings, type XProfileLite } from "@/lib/hooks";
+import { useNetwork } from "@/lib/network-context";
+import { explorerLink, isLive } from "@/lib/networks";
+import { BPS } from "@/lib/pons";
 import { useServerConfig } from "@/lib/useServerConfig";
 
 type Msg = { kind: "ok" | "err"; text: string; tx?: string } | null;
@@ -36,23 +37,20 @@ const colorOf = (i: number) => ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
 const FLOW_GRID = "grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-x-8";
 const TICKET_CELL = "lg:sticky lg:top-24 lg:col-start-2 lg:row-start-1";
 
-function useEarnings(xId: bigint | undefined) {
-  return useReadContract({
-    address: FEE_VAULT_ADDRESS,
-    abi: feeVaultAbi,
-    chainId: activeChain.id,
-    functionName: "earningsOf",
-    args: xId ? [[xId]] : undefined,
-    query: { enabled: Boolean(xId && FEE_VAULT_ADDRESS), refetchInterval: 10_000 },
-  });
-}
+/** Everything an account can take right now: its vault balance plus fees its coins hold for it (collected in the same transaction). */
+const total = (e: Earnings | undefined) => (e ? e.claimable + e.pending : undefined);
 
-/** Asks the server for a claim signature, then sends the claim transaction. */
-function useClaim(onDone: () => void) {
+/**
+ * Asks the server for a claim signature, then sends the claim: through the launcher's
+ * collectAndClaim when the account's coins hold fees not collected yet (so they are included),
+ * straight to FeeVault otherwise.
+ */
+function useClaim(earnings: Earnings | undefined, onDone: () => void) {
+  const n = useNetwork();
   const { address, isConnected, chainId } = useAccount();
   const { openConnectModal } = useConnectModal();
   const { switchChainAsync } = useSwitchChain();
-  const publicClient = usePublicClient({ chainId: activeChain.id });
+  const publicClient = usePublicClient({ chainId: n.chain.id });
   const { writeContractAsync } = useWriteContract();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<Msg>(null);
@@ -61,37 +59,39 @@ function useClaim(onDone: () => void) {
   async function claim(extra: { proofUrl?: string } = {}) {
     setMsg(null);
     if (!isConnected || !address) return openConnectModal?.();
-    if (!FEE_VAULT_ADDRESS || !publicClient || inFlight.current) return;
+    if (!isLive(n) || !publicClient || inFlight.current) return;
     inFlight.current = true;
     try {
-      if (chainId !== activeChain.id) {
+      if (chainId !== n.chain.id) {
         setBusy("Switching network…");
-        await switchChainAsync({ chainId: activeChain.id });
+        await switchChainAsync({ chainId: n.chain.id });
       }
       setBusy(extra.proofUrl ? "Checking your post…" : "Getting signature…");
       const res = await fetch("/api/claim-signature", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ to: address, ...extra }),
+        body: JSON.stringify({ network: n.id, to: address, ...extra }),
       });
       const data = (await res.json()) as SigResponse;
       if (!res.ok) throw new Error(data.error || "Could not get a claim signature");
+      const xId = BigInt(data.xId);
+      const args = [xId, address, BigInt(data.deadline), data.signature] as const;
+      // The signature may be for another account than the one typed in (the post decides): only
+      // collect the typed account's coins when it's the same one.
+      const collect = earnings && earnings.xId === xId ? earnings.collect : [];
+      if (collect.length === 0 && BigInt(data.claimable) === 0n) throw new Error(`Nothing to claim for @${data.username} yet.`);
 
       setBusy("Confirm in your wallet…");
-      const hash = await writeContractAsync({
-        address: FEE_VAULT_ADDRESS,
-        abi: feeVaultAbi,
-        chainId: activeChain.id,
-        functionName: "claim",
-        args: [BigInt(data.xId), address, BigInt(data.deadline), data.signature],
-      });
+      const hash = collect.length
+        ? await writeContractAsync({ address: n.launcher!, abi: launcherAbi, chainId: n.chain.id, functionName: "collectAndClaim", args: [collect, ...args] })
+        : await writeContractAsync({ address: n.feeVault!, abi: feeVaultAbi, chainId: n.chain.id, functionName: "claim", args });
       setBusy("Claiming…");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("Transaction reverted");
-      // The vault pays whatever has accrued by the time the claim lands, which can be more than
-      // the balance when the signature was issued, so report what the Claimed event says.
+      // The vault pays whatever has accrued by the time the claim lands, so report what its
+      // Claimed event says.
       const paid = parseEventLogs({ abi: feeVaultAbi, eventName: "Claimed", logs: receipt.logs }).find(
-        (l) => l.address.toLowerCase() === FEE_VAULT_ADDRESS!.toLowerCase()
+        (l) => l.address.toLowerCase() === n.feeVault!.toLowerCase()
       )?.args.amount;
       setMsg({ kind: "ok", text: `Sent ${formatEth(paid ?? BigInt(data.claimable), 6)} ETH to your wallet.`, tx: hash });
       celebrate().catch(() => {});
@@ -133,6 +133,7 @@ function ethTicker(wei: bigint | undefined) {
 }
 
 export default function ClaimPage() {
+  const n = useNetwork();
   const { data: session, status } = useSession();
   const x = session?.x;
   const paused = useClaimsPaused();
@@ -142,6 +143,7 @@ export default function ClaimPage() {
       <Hero paused={paused === true} />
       <div className="mt-8 space-y-5 sm:mt-12">
         {paused ? <PausedNotice /> : null}
+        {!isLive(n) ? <NotLiveNotice /> : null}
         {status === "loading" ? <FlowSkeleton /> : x ? <SessionClaim x={x} /> : <ProofClaim />}
       </div>
       <Lookup />
@@ -150,6 +152,7 @@ export default function ClaimPage() {
 }
 
 function Hero({ paused }: { paused: boolean }) {
+  const n = useNetwork();
   return (
     <div className="relative">
       <div aria-hidden className="bg-grid pointer-events-none absolute -inset-x-4 -top-8 -z-10 h-[340px] sm:-inset-x-6 sm:h-[400px]" />
@@ -160,7 +163,7 @@ function Hero({ paused }: { paused: boolean }) {
             <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-2">
               <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${paused ? "bg-down" : "animate-pulse-dot bg-lime"}`} />
               <span className="truncate">
-                {paused ? "Claims paused" : "Fee vault"} · {activeChain.name}
+                {paused ? "Claims paused" : "Fee vault"} · {n.chain.name}
               </span>
             </span>
           </Reveal>
@@ -169,7 +172,7 @@ function Hero({ paused }: { paused: boolean }) {
           </Reveal>
           <Reveal delay={120} className="col-span-2">
             <p className="mt-4 max-w-md text-[16px] leading-relaxed text-ink-2 sm:text-[17px]">
-              Coins that list your X account send you part of every trade. Prove the account is yours and collect.
+              Coins that list your X account send you part of every trade. Prove the account is yours and collect, on {n.label.toLowerCase()}.
             </p>
           </Reveal>
         </div>
@@ -212,6 +215,17 @@ function PausedNotice() {
         <p className="text-[14px] font-medium leading-relaxed text-down-ink">
           Claims are paused by the owner for maintenance. Your balance is safe in the vault and can be claimed once they resume.
         </p>
+      </div>
+    </Reveal>
+  );
+}
+
+function NotLiveNotice() {
+  const n = useNetwork();
+  return (
+    <Reveal>
+      <div className="rounded-[22px] border border-line bg-card-2 p-4 text-[14px] leading-relaxed text-ink-2 sm:p-5">
+        PonsEarn isn&apos;t live on {n.label.toLowerCase()} yet, so there is nothing to claim here. Switch networks at the top of the page.
       </div>
     </Reveal>
   );
@@ -278,11 +292,10 @@ function ProofClaim() {
   const prof = valid && lookupHandle === handle ? profiles.data?.[handle] : undefined;
   const xId = prof ? BigInt(prof.id) : undefined;
   const earnings = useEarnings(xId);
-  const { claim, busy, msg, address, isConnected } = useClaim(() => earnings.refetch());
+  const { claim, busy, msg, address, isConnected } = useClaim(earnings.data, () => earnings.refetch());
   const { openConnectModal } = useConnectModal();
   const proofKey = `${handle}|${address}`;
   const currentProof = proof?.for === proofKey ? proof : null;
-  const mock = server?.resolver === "mock";
 
   async function getProof() {
     setErr(null);
@@ -302,12 +315,12 @@ function ProofClaim() {
 
   // Everything below only draws the flow: which steps are done and which one is next.
   const lookup = lookupState(input, valid, prof, profiles.data, profiles.error);
-  const claimable = earnings.data?.[0][0];
+  const claimable = total(earnings.data);
   const linkIn = Boolean(postUrl.trim());
   const done = [lookup === "found" || (lookup === "error" && lookupHandle === handle), isConnected, Boolean(currentProof) || linkIn, linkIn];
   const next = done.findIndex((d) => !d);
   const stateOf = (i: number): StepState => (done[i] ? "done" : i === next ? "active" : "todo");
-  const alt = Boolean(server?.xLogin || server?.devLogin);
+  const alt = Boolean(server?.xLogin);
 
   return (
     <div className={FLOW_GRID}>
@@ -395,7 +408,7 @@ function ProofClaim() {
       <StepCard n={4} title="Paste the link to your post" state={stateOf(3)} delay={240}>
         <input
           className="input text-[16px]"
-          placeholder={mock ? "mock:username (local mode)" : "https://x.com/you/status/…"}
+          placeholder="https://x.com/you/status/…"
           value={postUrl}
           onChange={(e) => setPostUrl(e.target.value)}
           aria-label="Link to your post"
@@ -405,14 +418,15 @@ function ProofClaim() {
           autoCorrect="off"
           spellCheck={false}
         />
-        {!mock ? <p className="mt-2 font-mono text-[11.5px] text-ink-3">On X: Share → Copy link, then paste it here.</p> : null}
+        <p className="mt-2 font-mono text-[11.5px] text-ink-3">On X: Share → Copy link, then paste it here.</p>
       </StepCard>
 
       <Reveal delay={120} className={`${TICKET_CELL} ${alt ? "lg:row-span-5" : "lg:row-span-4"}`}>
         <ClaimTicket
           known={Boolean(prof)}
           claimable={prof ? claimable : undefined}
-          earned={prof ? earnings.data?.[1][0] : undefined}
+          pending={prof ? earnings.data?.pending : undefined}
+          earned={prof ? earnings.data?.earned : undefined}
           account={prof ? `@${handle}` : undefined}
           wallet={isConnected ? address : undefined}
           msg={msg}
@@ -420,19 +434,19 @@ function ProofClaim() {
         >
           <button
             className={`btn-sticker w-full py-3.5 text-[16px] ${busy ? "disabled:opacity-100" : ""}`}
-            disabled={Boolean(busy) || (isConnected && !postUrl.trim()) || (earnings.data !== undefined && earnings.data[0][0] === 0n)}
+            disabled={Boolean(busy) || (isConnected && !postUrl.trim()) || claimable === 0n}
             aria-busy={Boolean(busy)}
             onClick={() => claim({ proofUrl: postUrl.trim() })}
           >
             {busy ? <Spinner /> : null}
-            {!isConnected ? "Connect wallet" : busy ?? (earnings.data && earnings.data[0][0] === 0n ? "Nothing to claim yet" : "Verify & claim")}
+            {!isConnected ? "Connect wallet" : busy ?? (claimable === 0n ? "Nothing to claim yet" : "Verify & claim")}
           </button>
         </ClaimTicket>
       </Reveal>
 
       {alt ? (
         <Reveal delay={300} className="lg:col-start-1">
-          <AltLogin xLogin={Boolean(server?.xLogin)} devLogin={Boolean(server?.devLogin)} />
+          <AltLogin />
         </Reveal>
       ) : null}
     </div>
@@ -481,50 +495,27 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function AltLogin({ xLogin, devLogin }: { xLogin: boolean; devLogin: boolean }) {
+function AltLogin() {
   return (
     <div className="flex flex-col gap-4 rounded-[22px] border border-dashed border-line-2 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
       <div className="min-w-0">
         <div className="eyebrow">Or</div>
-        <p className="mt-1 text-[14px] leading-relaxed text-ink-2">Skip the post and sign in instead.</p>
+        <p className="mt-1 text-[14px] leading-relaxed text-ink-2">Skip the post and sign in with X instead.</p>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {xLogin ? (
-          <button className="btn-secondary px-4 py-2.5 text-[14px]" onClick={() => signIn("twitter")}>
-            <XLogo className="h-3.5 w-3.5" />
-            Sign in with X
-          </button>
-        ) : null}
-        {devLogin ? <DevLogin /> : null}
-      </div>
+      <button className="btn-secondary px-4 py-2.5 text-[14px]" onClick={() => signIn("twitter")}>
+        <XLogo className="h-3.5 w-3.5" />
+        Sign in with X
+      </button>
     </div>
   );
 }
 
-function DevLogin() {
-  const [name, setName] = useState("");
-  return (
-    <form
-      className="flex gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        signIn("dev", { username: name, redirect: false }).then(() => location.reload());
-      }}
-    >
-      <input className="input !w-40 !py-2 text-[16px]" placeholder="dev username" value={name} onChange={(e) => setName(e.target.value)} aria-label="Dev username" />
-      <button className="btn-secondary px-4 py-2 text-[13px]" type="submit">
-        Dev login
-      </button>
-    </form>
-  );
-}
-
-/** Signed in through X OAuth (or dev login). */
+/** Signed in through X OAuth. */
 function SessionClaim({ x }: { x: { id: string; username: string; name?: string; image?: string } }) {
   const xId = BigInt(x.id);
   const earnings = useEarnings(xId);
-  const { claim, busy, msg, address, isConnected } = useClaim(() => earnings.refetch());
-  const claimable = earnings.data?.[0][0];
+  const { claim, busy, msg, address, isConnected } = useClaim(earnings.data, () => earnings.refetch());
+  const claimable = total(earnings.data);
 
   return (
     <div className={FLOW_GRID}>
@@ -553,7 +544,15 @@ function SessionClaim({ x }: { x: { id: string; username: string; name?: string;
       </Reveal>
 
       <Reveal delay={100} className={`${TICKET_CELL} lg:row-span-2`}>
-        <ClaimTicket known claimable={claimable} earned={earnings.data?.[1][0]} account={`@${x.username}`} wallet={isConnected ? address : undefined} msg={msg}>
+        <ClaimTicket
+          known
+          claimable={claimable}
+          pending={earnings.data?.pending}
+          earned={earnings.data?.earned}
+          account={`@${x.username}`}
+          wallet={isConnected ? address : undefined}
+          msg={msg}
+        >
           <button
             className={`btn-sticker w-full py-3.5 text-[16px] ${busy ? "disabled:opacity-100" : ""}`}
             disabled={Boolean(busy) || (isConnected && !claimable)}
@@ -582,6 +581,7 @@ function SessionClaim({ x }: { x: { id: string; username: string; name?: string;
 function ClaimTicket({
   known,
   claimable,
+  pending,
   earned,
   account,
   wallet,
@@ -591,7 +591,10 @@ function ClaimTicket({
 }: {
   /** An account is chosen, so there is a balance to show (else a placeholder and `empty`). */
   known: boolean;
+  /** What a claim would pay now: the vault balance plus fees still in the account's coins. */
   claimable?: bigint;
+  /** The part of `claimable` still held by the coins (collected by the claim itself). */
+  pending?: bigint;
   earned?: bigint;
   account?: string;
   wallet?: string;
@@ -644,6 +647,11 @@ function ClaimTicket({
               </>
             )}
           </p>
+          {pending ? (
+            <p className="mt-1.5 font-mono text-[12px] text-ink-3">
+              incl. <span className="text-ink-2">{formatEth(pending, 6)} ETH</span> still in its coins, collected when you claim
+            </p>
+          ) : null}
         </>
       ) : (
         <>
@@ -684,6 +692,7 @@ function ReceiptRow({ label, value }: { label: string; value: string }) {
 }
 
 function Result({ msg }: { msg: Msg }) {
+  const n = useNetwork();
   if (!msg) return null;
   const ok = msg.kind === "ok";
   return (
@@ -692,7 +701,7 @@ function Result({ msg }: { msg: Msg }) {
       <p role="status" className="min-w-0 break-words text-[14px] font-medium leading-snug">
         {msg.text}{" "}
         {msg.tx ? (
-          <a className="underline underline-offset-2" href={explorerUrl("tx", msg.tx)} target="_blank" rel="noreferrer">
+          <a className="underline underline-offset-2" href={explorerLink(n, "tx", msg.tx)} target="_blank" rel="noreferrer">
             View transaction
           </a>
         ) : null}
@@ -703,13 +712,16 @@ function Result({ msg }: { msg: Msg }) {
 
 /** Every coin that pays this account: its share of the coin's split and what that has paid so far. */
 function StreamsList({ xId, username, level = 3 }: { xId: bigint; username: string; level?: 2 | 3 }) {
-  const { data: tokens, error } = useAllTokens();
+  const { data: tokens, error } = useCoins();
   const streams = useMemo(
     () =>
       (tokens ?? [])
         .map((t) => ({ t, i: t.xIds.findIndex((id) => id === xId) }))
         .filter((s) => s.i >= 0)
-        .map(({ t, i }) => ({ t, i, bps: t.bps[i], fromToken: (t.creatorFees * BigInt(t.bps[i])) / 10_000n })),
+        .map(({ t, i }) => {
+          const bps = t.recipients[i]?.bps ?? 0;
+          return { t, i, bps, fromToken: (t.feesSplit * BigInt(bps)) / BPS };
+        }),
     [tokens, xId]
   );
   const Heading = level === 2 ? "h2" : "h3";
@@ -745,7 +757,7 @@ function StreamsList({ xId, username, level = 3 }: { xId: bigint; username: stri
           {streams.map(({ t, i, bps, fromToken }) => (
             <li key={t.token}>
               <Link href={`/token/${t.token}`} className="group -mx-2 flex min-h-[60px] items-center gap-3 rounded-2xl px-2 py-2.5 transition hover:bg-card-2">
-                <TokenAvatar src={describe(t).meta.image} seed={t.token} size={40} className="transition duration-500 group-hover:-rotate-3 group-hover:scale-105" />
+                <TokenAvatar src={coinImage(t)} seed={t.token} size={40} className="transition duration-500 group-hover:-rotate-3 group-hover:scale-105" />
                 <div className="min-w-0 flex-1 sm:max-w-[48%] sm:flex-none">
                   <div className="truncate text-[15px] font-semibold">{t.name}</div>
                   <div className="flex items-center gap-1.5 font-mono text-[11.5px] text-ink-2">
@@ -789,6 +801,7 @@ function Lookup() {
   const profiles = useXProfiles(lookupHandle ? [lookupHandle] : [], { recheckMisses: true });
   const prof = valid && lookupHandle === handle ? profiles.data?.[handle] : undefined;
   const { data } = useEarnings(prof ? BigInt(prof.id) : undefined);
+  const n = useNetwork();
   const state = lookupState(input, valid, prof, profiles.data, profiles.error);
   const line = {
     idle: "Type a username to read its vault.",
@@ -815,7 +828,7 @@ function Lookup() {
           <div className="flex items-center gap-2.5 border-b border-line bg-card-2 px-4 py-2.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-3 sm:px-6">
             <span aria-hidden className="h-1.5 w-1.5 shrink-0 animate-pulse-dot rounded-full bg-lime" />
             <span>Vault lookup</span>
-            <span className="ml-auto hidden truncate sm:block">Read live from {activeChain.name}</span>
+            <span className="ml-auto hidden truncate sm:block">Read live from {n.chain.name}</span>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
             <div className="p-4 sm:p-6">
@@ -847,8 +860,8 @@ function Lookup() {
                     </div>
                   </div>
                   <dl className="mt-4 grid grid-cols-2 divide-x divide-[var(--line)] overflow-hidden rounded-2xl border border-line bg-card-2">
-                    <Readout label="Unclaimed" value={data?.[0][0]} strong />
-                    <Readout label="Earned all-time" value={data?.[1][0]} />
+                    <Readout label="Claimable" value={total(data)} strong />
+                    <Readout label="Earned all-time" value={data?.earned} />
                   </dl>
                 </div>
               ) : null}
