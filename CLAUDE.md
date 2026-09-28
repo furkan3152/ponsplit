@@ -114,9 +114,11 @@ Gotchas:
   pons copy factory `0xF2531ee1d731653d3C4F3CE24B98dB5bDFa78c88`, router `0x4d35Bf6f7592c9EFDF179E2f079Aabd99c379333`,
   pinned in `src/deployment.json`; `inspect.yml` (with the site's launch simulation) passes. Site signer
   `0xc4d9873e95b8215eBC189c939DBFe06961E71193`.
-- **Mainnet is not deployed yet**: the owner deploys it from `/setup` (3 txs); then pin the addresses in
-  `src/deployment.json` and run `inspect.yml`. None of pons's contracts exist on testnet (checked
-  2026-09-28), so testnet keeps SplitEarn's copy.
+- **Mainnet is live** (2026-09-28): deployed by the owner from `/setup` (3 txs). Launcher
+  `0x71e139e09eF72A7F580f6704AAa4508D2b195ffb` on the real pons factory `0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e`,
+  FeeVault `0x5ad954cd8F5c681a2C3FC2a399868a37e3611aB7` (same CREATE2 address as testnet: same owner, signer
+  and salt), router `0xFDAB96824E8D5bA381a38346A4e3450d1c71CB1D`; `inspect.yml` passes. None of pons's
+  contracts exist on testnet (checked 2026-09-28), so testnet keeps SplitEarn's copy.
 - **Render.** Service `ponsplit-testnet` (id `srv-dasv10bbc2fs73agp3sg`, workspace
   `tea-d7ccecdckfvc73887jo0`) auto-deploys the branch and now serves the two-network site. Its
   `SIGNER_PRIVATE_KEY` was shared in chat once, so it's public and testnet-only; its old
