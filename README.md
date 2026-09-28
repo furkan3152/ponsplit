@@ -2,112 +2,75 @@
 
 # PonsEarn
 
-**Tek coin, birden fazla X hesabı, fee'ler otomatik bölünür.** Robinhood Chain üzerinde bir coin çıkar. Her al/sat işleminden kesilen fee, seçtiğin X (Twitter) hesapları arasında paylaştırılır. Bu hem bonding curve aşamasında hem de coin "mezun olduktan" sonra geçerli. Hesap sahipleri X ile giriş yapıp paylarını istedikleri cüzdana çeker.
+**Tek coin, birden fazla X hesabı, fee'ler otomatik bölünür.** Robinhood Chain üzerinde, **pons** (ponsfamily.com) altyapısında bir coin çıkar. Coin'in creator fee'leri, seçtiğin en fazla 10 X (Twitter) hesabı arasında paylaştırılır. Bu hem bonding curve aşamasında hem de coin Uniswap v4 havuzuna "mezun olduktan" sonra geçerli. Hesap sahipleri hesabın kendilerine ait olduğunu kanıtlayıp paylarını istedikleri cüzdana çeker.
+
+PonsEarn bağımsız bir uygulamadır; pons ile resmi bir bağı yoktur, pons tarafından onaylanmamış ya da işletilmemektedir.
 
 ```
-src/, public/   Next.js 14 web uygulaması (repo kökü: Vercel ek ayar istemez)
-contracts/      Solidity (Hardhat): SplitLaunchpad, FeeVault, SplitToken
-.github/        CI, tek tıkla kontrat deploy'u, ağ keşif workflow'u
+src/, public/        Next.js 14 web uygulaması (repo kökü: Vercel ek ayar istemez)
+contracts/           Solidity (Hardhat): PonsEarnLauncher, FeeSplitter, FeeVault, PonsEarnRouter
+contracts/vendor/    pons v2 ve Uniswap v4'ün Blockscout'ta doğrulanmış kaynakları (birebir derlenir)
+e2e/                 Playwright uçtan uca testleri (gerçek ağların fork'u üzerinde)
+.github/             CI, inceleme ve teşhis iş akışları
 ```
+
+## İki ağ: Mainnet ve Testnet
+
+Site iki ağı aynı anda sunar; her sayfanın üstündeki **Main / Test** seçicisiyle geçilir (seçim bir çerezde durur, `?network=testnet` bağlantıları da ağı seçer).
+
+- **Mainnet (4663):** coin'ler gerçek pons'ta çıkar.
+- **Testnet (46630):** pons testnet'te yok. Bu yüzden PonsEarn, pons'un açık kaynaklı v2 kontratlarının birebir kopyasını testnet'e kurar (pons'un mainnet ayarlarıyla), Robinhood testnet'teki gerçek Uniswap v4'ün üzerine. Kurulumu sahip kendi cüzdanıyla `/setup`'tan yapar.
 
 ## Nasıl çalışır?
 
-1. **Launch:** Coin'i oluşturan kişi isim, ticker, görsel, açıklama/linkler ve en fazla 10 X hesabıyla bu hesapların paylarını girer.
-   - Sunucu kullanıcı adlarını **kalıcı X kullanıcı ID'lerine** çevirir ve bu eşleşmeyi imzalar (attestation). Kontrat imzayı doğrulamadan coin'i oluşturmaz.
-   - Böylece bir hesap adını değiştirse de kazancı ID'ye bağlı kalır ve kimse başkasının hesabını sahte bir ID ile listeleyemez.
-2. **Bonding curve:** Coin, sanal rezervli x·y=k eğrisinde ETH ile alınıp satılır (pump.fun modeli). Her işlemde **%1 fee** kesilir: %80'i X hesaplarına, %20'si protokole gider.
-3. **PonSwap'a mezuniyet:** Eğrideki 793.1M token satılınca (yaklaşık 4.25 ETH) toplanan ETH ve ayrılmış 206.9M token, kontratın **dahili AMM havuzuna** geçer.
-   - Havuzun likiditesi sonsuza kadar kilitlidir.
-   - İşlemler aynı sayfada, aynı fee paylaşımıyla devam eder.
-   - Harici bir DEX'e bağımlılık yoktur.
-4. **Claim:** Hesap sahibi `/claim` sayfasında hesabın kendisine ait olduğunu kanıtlar. İki yol var:
-   - **Varsayılan, X geliştirici hesabı gerekmez:** Kullanıcı tek kullanımlık bir kod içeren bir post atıp linkini yapıştırır. Kod, kullanıcı adına, cüzdana ve güne bağlı bir HMAC'tir; başkası kopyalasa bile ödeme yalnızca post sahibinin cüzdanına gider.
+1. **Launch:** İsim, ticker, görsel, açıklama/linkler ve en fazla 10 X hesabıyla payları girilir.
+   - Sunucu kullanıcı adlarını **kalıcı X kullanıcı ID'lerine** çevirir ve bu eşleşmeyi imzalar (attestation). FeeVault imzayı doğrulamadan coin'i kaydetmez.
+   - Coin'i pons'un kendi fabrikası basar; normal bir pons coin'idir (1B arz). Tek fark, creator fee alıcısının coin'e özel bir **FeeSplitter** olması.
+   - İsteğe bağlı **creator vergisi** (%0–10, varsayılan 0) ve aynı işlemde **ilk alım** (pons'un açılış snipe vergisinden muaf).
+2. **Fee'ler:** Her al/sat işleminde pons'un **%1 fee'si** kesilir: %30'u pons'a, %70'i creator payına gider. Creator payının **%80'i X hesaplarına, %20'si PonsEarn'e** gider. Creator vergisinin **tamamı** X hesaplarınındır. Oranlar launch anında coin'e sabitlenir.
+3. **Mezuniyet (pons usulü):** Eğri 4,2 ETH toplayınca kapanır; ETH ve ayrılmış token'lar kilitli likiditeyle bir **Uniswap v4 havuzuna** konur. Havuzu pons genelde hemen açar; açmazsa coin sayfasındaki **Create the pool** düğmesiyle herkes açabilir. İşlemler aynı sayfada, PonsEarn'ün router'ı üzerinden devam eder; havuz fee'leri de aynı hesaplara gider.
+4. **Claim:** `/claim` sayfasında hesap sahipliği kanıtlanır:
+   - **Varsayılan:** tek kullanımlık kod içeren bir post atılıp linki yapıştırılır. Kod kullanıcı adına, cüzdana ve güne bağlı bir HMAC'tir. Post, hesabın kendi attığı yeni bir post olmalı ve metni tam olarak gösterilen metin olmalı; yanıtlar, alıntılar ve kodu sadece içeren postlar sayılmaz.
    - **Opsiyonel:** X anahtarları verilirse "Sign in with X" (OAuth).
 
-   - Post ile doğrulama katıdır. Post, hesabın kendi attığı yeni bir post olmalı ve metni tam olarak gösterilen metin olmalı: hedef cüzdanın tam adresi ile kod. Yanıtlar, alıntılar ve kodu sadece içeren postlar sayılmaz.
-
-   Ardından sunucu o hesabın ID'si için hedef cüzdana bağlı, 15 dakika geçerli bir imza üretir ve `FeeVault.claim` birikmiş ETH'yi bu cüzdana gönderir.
-5. **Grafik ve işlem geçmişi:** Her işlem zincir üstüne kaydedilir. Mum grafiği, işlem listesi ve canlı işlem şeridi indexer gerektirmeden doğrudan kontrattan okunur.
+   Sunucu o hesabın ID'si için hedef cüzdana bağlı, 15 dakika geçerli bir imza üretir. Claim işlemi coin'lerde bekleyen son fee'leri de aynı işlemde toplar (`collectAndClaim`) ve birikmiş ETH'yi cüzdana gönderir.
+5. **Grafik ve işlem geçmişi:** Eğri işlemleri ve havuz swap'ları zincir üstü event'lerden okunur (indexer gerekmez).
 
 ### Güvenlik notları
 
-- Kontratlar deploy edildikten sonra `/setup` sayfasının gösterdiği `NEXT_PUBLIC_FEE_VAULT_ADDRESS` ve `NEXT_PUBLIC_LAUNCHPAD_ADDRESS` değerlerini barındırma ayarlarına ekle. Böylece imza anahtarı değişse bile site aynı kontratlara bakar.
-- Launch attestation'ı ve claim imzaları aynı `SIGNER_PRIVATE_KEY` ile atılır. Bu anahtar yalnızca sunucuda durmalı ve deployer anahtarından ayrı olmalı. Sızarsa kontrat sahibi `FeeVault.setSigner` ile değiştirir.
-- Attestation, coin'i oluşturan adrese bağlıdır ve 30 dakikada geçerliliğini yitirir.
-- X ID çözümlemesi resmi X API ile (`X_BEARER_TOKEN`, ücretli Basic plan) ya da ücretsiz, gayriresmî `api.fxtwitter.com` üzerinden yapılır. İkincisi "best effort" çalışır; ciddi kullanımda resmi API önerilir.
-- Kontratlar denetimden (audit) geçmedi. Mainnet öncesinde audit ve hukuki kontrol şart.
+- Launch attestation'ı ve claim imzaları iki ağda da aynı `SIGNER_PRIVATE_KEY` ile atılır (imza alanı ağa ve FeeVault adresine bağlıdır). Bu anahtar yalnızca sunucuda durur, para tutmaz ve hiçbir kontratın sahibi değildir. Sızarsa sahip `FeeVault.setSigner` ile değiştirir.
+- Kontratların sahibi, onları `/setup`'tan deploy eden **kendi cüzdanındır**; özel anahtarı cüzdandan hiç çıkmaz.
+- Attestation coin'i oluşturan adrese bağlıdır ve 30 dakikada geçerliliğini yitirir.
+- X ID çözümlemesi resmi X API ile (`X_BEARER_TOKEN`) ya da ücretsiz, gayriresmî `api.fxtwitter.com` üzerinden yapılır. İkincisi "best effort" çalışır; ciddi kullanımda resmi API önerilir.
+- Coin'ler pons'un kurallarına tabidir (ör. pons'un topluluk devri akışı bir coin'in creator fee'lerini başka bir adrese taşıyabilir; coin sayfası bunu gösterir).
+- PonsEarn kontratları denetimden (audit) geçmedi. Mainnet öncesinde audit ve hukuki kontrol şart.
 
-## Mainnet
+## Kurulum
 
-Mainnet sitesi Vercel'de çalışır; kontratları sahibi kendi cüzdanıyla `/setup`'tan deploy eder. Kontrol listesi, deploy adımları ve acil durum planı için bkz. **[MAINNET.md](MAINNET.md)**. Her push'ta CI; testleri, Slither'ı ve gerçek testnet/mainnet üzerindeki yaşam döngüsü simülasyonunu çalıştırır.
+Adım adım rehber, kontrol listesi ve acil durum planı: **[MAINNET.md](MAINNET.md)**. Kısaca:
 
-## Testnet'e çıkış (en kolay yol: Render)
+1. Siteyi Vercel'de yayınla (repo kökü, ek ayar yok).
+2. `/setup` → **Generate signing key** → Vercel'e `SIGNER_PRIVATE_KEY` olarak ekle → Redeploy.
+3. Üstten ağı seç, `/setup`'ı cüzdan uygulamanın tarayıcısında aç → **Deploy**. Testnet'te 19 işlem (pons kopyası + PonsEarn), mainnet'te 3 işlem. Yarıda kalırsa sayfa kaldığı yerden devam eder.
+4. `/setup`'ın gösterdiği adresleri `src/deployment.json`'a yaz (ya da Vercel ortam değişkeni olarak ekle). Site yeniden build olunca o ağ canlıdır.
 
-1. https://render.com/deploy?repo=https://github.com/furkan3152/ponsplit bağlantısını aç → GitHub ile giriş → **Apply**.
-   - `render.yaml` servisi kendisi kurar.
-   - Yönetici anahtarı Render'ın ürettiği `SIGNER_SEED` değerinden türetilir. Kimse bir anahtar kopyalamaz.
-2. Site açılınca **/setup** sayfasına git → adresi kopyala → **Open faucet** → test ETH iste.
-3. **Deploy contracts** butonuna bas. Hepsi bu.
-
-Yönetici anahtarının kendisi `keccak256("ponsplit-admin:" + SIGNER_SEED)` değeridir. `SIGNER_SEED` Render panelinde saklanır; kontrat sahibi işlemleri için bu değerden türetilir.
-
-## Alternatif: Vercel
-
-Robinhood Chain testnet: chain id `46630`, explorer https://explorer.testnet.chain.robinhood.com
-
-1. **Siteyi yayınla.** https://vercel.com/new → GitHub ile giriş → `ponsplit` reposunu **Import** → **Deploy**. Hiçbir ayar gerekmiyor. Site açılır ve "Finish setup" uyarısı gösterir.
-2. **`/setup` sayfasını aç** → **Generate admin key**.
-   - Anahtar tarayıcıda üretilir ve kimseye gönderilmez.
-   - Kopyala → Vercel → Settings → Environment Variables → `SIGNER_PRIVATE_KEY` olarak ekle → Deployments → **Redeploy**.
-   - Anahtarı güvenli bir yere de kaydet. Kontratların sahibi ve imzalayıcısı bu anahtar.
-3. **Test ETH al.** `/setup` sayfasında adresi kopyala → **Open faucet** → yapıştır.
-4. **Deploy contracts** butonuna bas. Sunucu 3 işlem gönderir (FeeVault, SplitLaunchpad, bağlama).
-   - Kontrat adresleri anahtarın adresinden önceden hesaplandığı için yeniden build gerekmez.
-   - Site hemen çalışmaya başlar.
-
-Bundan sonra coin çıkarma, al/sat, grafik ve post ile claim çalışır. Tek anahtarın rolleri: deploy eden, kontrat sahibi ve launch/claim imzalayıcısı. Mainnet'te bu rolleri ayır.
-
-**Alternatif:** GitHub'da `ADMIN_PRIVATE_KEY` secret'ı tanımlanırsa Actions → **Deploy contracts** workflow'u aynı deploy'u yapar. Workflow ayrıca Blockscout doğrulaması ve smoke test çalıştırır, adresleri `src/deployment.json` dosyasına commit'ler.
-
-Opsiyonel ortam değişkenleri `.env.example` dosyasında:
-- `TWITTER_CLIENT_ID` / `TWITTER_CLIENT_SECRET`: "Sign in with X" için
-- `X_BEARER_TOKEN`: resmi X API ile ID çözümleme için
-- `PINATA_JWT`: görsel yükleme için
-- `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`: mobil cüzdanlar için
+Opsiyonel ortam değişkenleri `.env.example` dosyasında (`TWITTER_CLIENT_ID/SECRET`, `X_BEARER_TOKEN`, `PINATA_JWT`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, ağ başına RPC).
 
 ## Geliştirme
 
 ```bash
-# kontratlar
 cd contracts && npm install
-npm test                  # 27 test
-npm run export-abi        # ABI'leri src/lib/abi.ts dosyasına yazar
+npx hardhat test              # 27 test: gerçek pons v2 + Uniswap v4 + Permit2 kodu üzerinde
+node vendor/build.js          # vendor/out: doğrulanmış kaynaklardan birebir derleme (CI kontrol eder)
+node scripts/export-abi.js    # src/lib/abi.ts + bytecode.ts (CI kontrol eder)
+FORK_URL=https://rpc.mainnet.chain.robinhood.com npx hardhat test test/fork/PonsMainnet.fork.test.js
 
-# yerel uçtan uca deneme (gerçek zincir ve X hesabı gerekmez)
-npx hardhat node                                            # terminal 1
-npx hardhat run scripts/local-demo.js --network localhost   # terminal 2: 4 örnek coin + işlemler
-cd .. && cp .env.example .env.local                         # sonra düzenle:
-#   NEXT_PUBLIC_CHAIN=local, demo çıktısındaki adresler, X_RESOLVER=mock,
-#   ENABLE_DEV_LOGIN=true, SIGNER_PRIVATE_KEY=<Hardhat #1 anahtarı>
-npm install && npm run dev
+cd .. && npm install
+npx tsc --noEmit && npx next lint && npm test
 ```
 
-`X_RESOLVER=mock` modunda claim sayfasındaki post linki yerine `mock:<kullanıcı-adı>` yazılabilir. `ENABLE_DEV_LOGIN=true` ise sahte bir "Dev login" ekler. İkisi de production'da kapalı kalır.
-
-## Parametreler
-
-Kontrat sahibi bu değerleri `setFees` ve `setCurveConfig` ile değiştirebilir. Değişiklikler yeni coin'lere uygulanır.
-
-| Parametre | Varsayılan |
-|---|---|
-| İşlem fee'si | %1 (en fazla %5) |
-| Fee'nin protokol payı | %20 (kalan %80 X hesaplarına) |
-| Oluşturma ücreti / mezuniyet ücreti | 0 / %0 (en fazla %10) |
-| Sanal ETH / sanal token | 1.5 ETH / 1.073B |
-| Eğri arzı / havuz arzı | 793.1M / 206.9M (toplam 1B) |
+Uçtan uca testler gerçek ağların fork'u üzerinde çalışır (CI `e2e` işi): `hardhat node --fork <rpc>` (+ `HARDHAT_CHAIN_ID`), `e2e/prepare-fork.mjs`, site `NEXT_PUBLIC_<AĞ>_RPC_URL=http://127.0.0.1:8545` ile build edilir, `e2e/setup.mjs` `/setup`'tan cüzdanla deploy eder, adresler sabitlenip yeniden build edilir ve `e2e/full.mjs` gerçek X hesaplarıyla launch, eğri, mezuniyet, havuz, fee ve claim akışlarını dener. Sahte (mock) veri kullanılmaz.
 
 ## Tasarım
 
-Arayüz, Apple'ın sade düzenini (açık gri zemin, büyük tipografi, buzlu cam navigasyon, 24px kartlar) pump.fun'ın oyunbazlığıyla (canlı işlem şeridi, "King of the hill", yoğun coin ızgarası) birleştiriyor.
-
-İllüstrasyonlar "chunky sticker" tarzında: düz parlak renkler, kalın yuvarlak mürekkep konturlar ve sert ofset gölgeler. Logo çapraz ikiye bölünmüş bir coin. Görseli olmayan her coin, adresinden türetilen benzersiz bir sticker avatar alır. Tüm çizimler `src/components/art/` altında SVG React bileşenleri olarak durur. Açık ve karanlık mod desteklenir.
+"Split terminal": neredeyse siyah zemin, film grain, Robin-neon lime `#ccff00` ve X hesapları için pastel renkler. Açık "paper edition" temayla birlikte gelir. Görseli olmayan her coin, adresinden türetilen benzersiz bir sticker avatar alır. Tüm çizimler `src/components/art/` altında SVG React bileşenleridir.
