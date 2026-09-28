@@ -5,9 +5,9 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy": "hardhat run scripts/deploy.js --network",
-    "export-abi": "hardhat compile && node scripts/export-abi.js",
-    "smoke": "hardhat run scripts/smoke.js --network"
+    "test:fork": "hardhat test test/fork/PonsMainnet.fork.test.js",
+    "build:vendor": "node vendor/build.js",
+    "export-abi": "hardhat compile && node scripts/export-abi.js"
   },
   "author": "",
   "license": "ISC",
@@ -20,7 +20,10 @@
     "chai": "^4.5.0",
     "ethers": "^6.17.0",
     "hardhat": "^2.22.17",
-    "solc": "^0.8.24"
+    "solc": "^0.8.24",
+    "solc-0.8.17": "npm:solc@^0.8.17",
+    "solc-0.8.26": "npm:solc@^0.8.26",
+    "solc-0.8.35": "npm:solc@^0.8.35"
   },
   "private": true
 }

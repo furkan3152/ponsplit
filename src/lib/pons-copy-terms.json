@@ -1,0 +1,22 @@
+{
+  "_comment": "Terms of PonsEarn's own copy of Pons v2 (testnet and local test chains), mirroring Pons's live mainnet settings on 2026-09-28. Read by /setup (src/lib/deploy-plan.ts) and by contracts/scripts/lib/pons-stack.js.",
+  "saltPrefix": "ponsearn:v1",
+  "launchFeeWei": "500000000000000",
+  "snipeTaxSeconds": 3,
+  "launchConfig": {
+    "supply": "1000000000000000000000000000",
+    "curveFeeBps": 100,
+    "phantomQuote": "1680000000000000000",
+    "graduationThreshold": "4200000000000000000",
+    "poolFee": 0,
+    "tickSpacing": 200,
+    "enabled": true
+  },
+  "hookFlags": 8260,
+  "create2Proxy": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+  "uniswap": {
+    "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    "positionManager": "0x58daec3116aae6D93017bAAea7749052E8a04fA7",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+  }
+}

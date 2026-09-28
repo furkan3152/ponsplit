@@ -18,13 +18,15 @@ jobs:
           cache: npm
           cache-dependency-path: contracts/package-lock.json
       - run: npm ci
+      # Unit tests run on the real code: Uniswap v4, Permit2 and a copy of Pons v2 built from their
+      # verified sources in contracts/vendor.
       - run: npx hardhat test
-      # /setup deploys the committed creation code in src/lib/bytecode.ts, so it must be exactly
-      # what these sources compile to.
-      - name: Committed ABI and bytecode match the sources
+      # The committed Pons / Uniswap artifacts (deployed on testnet and local chains) must be exactly
+      # what the vendored verified sources compile to.
+      - name: Vendored artifacts match their sources
         run: |
-          node scripts/export-abi.js
-          git diff --exit-code -- ../src/lib/abi.ts ../src/lib/bytecode.ts
+          node vendor/build.js
+          git diff --exit-code -- vendor/out
 
   security:
     runs-on: ubuntu-latest
@@ -46,18 +48,20 @@ jobs:
       - name: Slither (fails on medium or higher)
         run: slither . --fail-medium
 
-  # Runs the full lifecycle (deploy, launch, curve, graduation, pool, claim) against the real
-  # Robinhood Chain networks in a single eth_call. Read-only: nothing is sent or spent.
-  chain-simulation:
+  # PonsEarn against real chain state: on a mainnet fork with the real Pons v2 and Uniswap v4 (and a
+  # byte-for-byte check of the vendored Pons code), and on a testnet fork with PonsEarn's own copy of
+  # Pons deployed the way /setup does. Read-only towards the real networks.
+  pons-fork:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
-          - network: testnet
-            rpc: https://rpc.testnet.chain.robinhood.com
           - network: mainnet
             rpc: https://rpc.mainnet.chain.robinhood.com
+          - network: testnet
+            rpc: https://rpc.testnet.chain.robinhood.com
     defaults:
       run:
         working-directory: contracts
@@ -69,17 +73,11 @@ jobs:
           cache: npm
           cache-dependency-path: contracts/package-lock.json
       - run: npm ci
-      - run: npx hardhat compile
-      - name: Simulate on Robinhood Chain ${{ matrix.network }}
-        run: node scripts/simulate.js
+      - name: Fork tests (${{ matrix.network }})
+        run: npx hardhat test test/fork/PonsMainnet.fork.test.js
         env:
-          RPC_URL: ${{ matrix.rpc }}
-      - name: Deep randomized simulation on Robinhood Chain ${{ matrix.network }}
-        run: node scripts/deep-simulate.js
-        env:
-          RPC_URL: ${{ matrix.rpc }}
-          STEPS: "120"
-          TRADERS: "16"
+          FORK_URL: ${{ matrix.rpc }}
+          FORK_NETWORK: ${{ matrix.network }}
 
   web:
     runs-on: ubuntu-latest
