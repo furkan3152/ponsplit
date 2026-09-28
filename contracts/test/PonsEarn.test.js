@@ -139,6 +139,7 @@ describe("PonsEarnLauncher", () => {
 
       const l = await fx.launcher.launchOf(token);
       expect(l.creator).to.equal(fx.alice.address);
+      expect(l.createdBlock).to.equal(c.receipt.blockNumber);
       expect(l.splitter).to.equal(await c.splitter.getAddress());
       expect(l.platformBps).to.equal(2000);
       expect(await c.splitter.token()).to.equal(token);
@@ -433,6 +434,23 @@ describe("PonsEarnLauncher", () => {
       expect(await received(fx.carol, () => fx.vault.connect(fx.alice).claim(IDS.bob, fx.carol.address, deadline, sig))).to.equal(owed);
       await expect(fx.vault.claim(IDS.bob, fx.carol.address, deadline, sig)).to.be.revertedWithCustomError(fx.vault, "BadSignature");
       expect((await fx.vault.earningsOf([IDS.bob]))[1][0]).to.equal(owed);
+    });
+
+    it("collects the latest fees and claims them in one transaction", async () => {
+      const fx = await loadFixture(deploy);
+      const c = await launch(fx, fx.alice);
+      await pastSnipeWindow();
+      await c.curve.connect(fx.trader).buy(E("1"), 0, fx.trader.address, { value: E("1") });
+      // Nothing is claimable yet: the fees still sit on the curve.
+      expect(await fx.vault.claimable(IDS.alice)).to.equal(0);
+      const deadline = BigInt((await time.latest()) + 600);
+      const sig = await signClaim(fx.vault, fx.signer, IDS.alice, fx.carol.address, deadline);
+      const token = await c.token.getAddress();
+      const got = await received(fx.carol, () =>
+        fx.launcher.connect(fx.alice).collectAndClaim([token], IDS.alice, fx.carol.address, deadline, sig)
+      );
+      expect(got).to.equal((E("0.0056") * 6000n) / BPS);
+      expect(await fx.vault.claimable(IDS.alice)).to.equal(0);
     });
 
     it("pauses claims and rotates the signer", async () => {
