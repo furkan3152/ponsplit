@@ -125,7 +125,16 @@ function sameCode(onchain, artifact) {
   let ponsFactory = PONS_FACTORY;
 
   before(async () => {
-    [owner, signer, alice, trader, whale] = await ethers.getSigners();
+    const accounts = await ethers.getSigners();
+    [owner, signer, alice, trader, whale] = accounts;
+    // Hardhat's well-known test accounts carry EIP-7702 delegations on Robinhood Chain (sweeper
+    // bots set them), so they reject plain ETH transfers. On the fork they are plain accounts again.
+    for (const a of accounts.slice(0, 5)) {
+      if ((await ethers.provider.getCode(a.address)) !== "0x") await network.provider.send("hardhat_setCode", [a.address, "0x"]);
+    }
+    // Arbitrum block headers have no blob-gas fields, and EDR cannot run calls against the fork
+    // block itself without them; every call runs on local blocks from here on.
+    await network.provider.send("evm_mine");
     if (FORK_NETWORK === "testnet") {
       // Pons has no testnet deployment: this is PonsEarn's copy, deployed the way /setup does.
       ponsFactory = (await deployPonsCopy(owner)).factory;

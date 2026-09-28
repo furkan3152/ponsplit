@@ -158,7 +158,21 @@ describe("PonsEarnLauncher", () => {
       expect(v.phase).to.equal(0);
       expect(v.quoteReserve).to.equal(E("1.68"));
       expect(v.threshold).to.equal(E("4.2"));
+      expect(v.phantomQuote).to.equal(E("1.68"));
+      expect(v.reservedTokens).to.equal((E("1000000000") * E("1.68")) / E("5.88"));
       expect(v.feeRecipient).to.equal(await c.splitter.getAddress());
+    });
+
+    it("records the launch block without burning gas where ArbSys is only Arbitrum's placeholder code", async () => {
+      // A local fork of Robinhood Chain has 0xfe (INVALID) at the ArbSys address; the launcher's
+      // stipend keeps that call from eating the launch's gas, and it falls back to block.number.
+      const fx = await loadFixture(deploy);
+      const plain = await launch(fx, fx.alice, { firstBuy: E("0.1") });
+      await ethers.provider.send("hardhat_setCode", ["0x0000000000000000000000000000000000000064", "0xfe"]);
+      const forked = await launch(fx, fx.alice, { firstBuy: E("0.1") });
+      const l = await fx.launcher.launchOf(await forked.token.getAddress());
+      expect(l.createdBlock).to.equal(forked.receipt.blockNumber);
+      expect(forked.receipt.gasUsed).to.be.lt(plain.receipt.gasUsed + 25_000n);
     });
 
     it("gives PonsEarn 20% of the standard creator fee, whatever the creator tax", async () => {
