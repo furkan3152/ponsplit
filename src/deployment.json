@@ -1,8 +1,8 @@
 {
   "mainnet": {
-    "launcher": "",
-    "feeVault": "",
-    "deployedAt": "",
+    "launcher": "0x71e139e09eF72A7F580f6704AAa4508D2b195ffb",
+    "feeVault": "0x5ad954cd8F5c681a2C3FC2a399868a37e3611aB7",
+    "deployedAt": "2026-09-28",
     "hidden": []
   },
   "testnet": {
