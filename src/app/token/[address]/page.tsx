@@ -20,7 +20,7 @@ import { describe } from "@/lib/market";
 
 export default function TokenPage({ params }: { params: { address: string } }) {
   const token = isAddress(params.address) ? getAddress(params.address) : undefined;
-  const { data: t, isLoading, refetch } = useToken(token);
+  const { data: t, isLoading, isError, refetch } = useToken(token);
   const trades = useTrades(token, t?.tradeCount);
   const { address } = useAccount();
   const launched = useSearchParams().get("launched") === "1";
@@ -28,6 +28,8 @@ export default function TokenPage({ params }: { params: { address: string } }) {
 
   if (!token) return <Missing text="That is not a valid coin address." />;
   if (isLoading) return <div className="card mt-4 h-[480px] animate-pulse" />;
+  // A failed read is a network problem, not proof the coin doesn't exist.
+  if (!t && isError) return <Missing text="Couldn't load this coin right now. Retrying…" />;
   if (!t || t.token === zeroAddress) return <Missing text="This coin wasn't launched on PonSplit." />;
 
   const { price, marketCap, progress, meta } = describe(t);
@@ -82,8 +84,8 @@ export default function TokenPage({ params }: { params: { address: string } }) {
 
       <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
         <div className="min-w-0 space-y-5">
-          <PriceChart trades={trades.data} loading={trades.isLoading} />
-          <TradesTable trades={trades.data} symbol={t.symbol} me={address} />
+          <PriceChart trades={trades.data} loading={trades.isLoading} total={t.tradeCount} />
+          <TradesTable trades={trades.data} total={t.tradeCount} symbol={t.symbol} me={address} />
           {meta.description ? (
             <div className="card p-5">
               <h2 className="text-[17px] font-semibold">About</h2>

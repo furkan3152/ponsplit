@@ -5,17 +5,19 @@ import { xAvatarUrl } from "@/lib/handles";
 import { TokenSticker } from "./art";
 
 export function XAvatar({ handle, image, size = 28, className = "" }: { handle: string; image?: string; size?: number; className?: string }) {
-  const [failed, setFailed] = useState(false);
-  if (failed) return <TokenSticker seed={`x:${handle}`} size={size} className={`shrink-0 rounded-full ${className}`} />;
+  const url = image || xAvatarUrl(handle);
+  // Keyed to the URL, so a new handle or a profile image that arrives later gets a fresh try.
+  const [failedUrl, setFailedUrl] = useState<string>();
+  if (failedUrl === url) return <TokenSticker seed={`x:${handle}`} size={size} className={`shrink-0 rounded-full ${className}`} />;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={image || xAvatarUrl(handle)}
+      src={url}
       alt={`@${handle}`}
       width={size}
       height={size}
       loading="lazy"
-      onError={() => setFailed(true)}
+      onError={() => setFailedUrl(url)}
       style={{ width: size, height: size }}
       className={`shrink-0 rounded-full bg-card-2 object-cover ring-2 ring-card ${className}`}
     />

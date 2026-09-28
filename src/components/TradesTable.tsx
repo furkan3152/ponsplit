@@ -5,14 +5,25 @@ import { formatEth, formatPrice, formatTokens, recordPrice, shortAddress, timeAg
 import { useNow } from "@/lib/hooks";
 import type { TradeRecord } from "@/lib/types";
 
-export function TradesTable({ trades, symbol, me }: { trades: readonly TradeRecord[] | undefined; symbol: string; me?: string }) {
+export function TradesTable({
+  trades,
+  symbol,
+  me,
+  total,
+}: {
+  trades: readonly TradeRecord[] | undefined;
+  symbol: string;
+  me?: string;
+  /** The token's real trade count; `trades` may hold only the most recent ones. */
+  total?: bigint;
+}) {
   useNow(10_000);
   const rows = (trades ?? []).slice(-60).reverse();
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center justify-between px-4 pb-2 pt-4">
         <h2 className="text-[17px] font-semibold">Trades</h2>
-        <span className="text-[12px] text-ink-2">{trades ? `${trades.length} total` : ""}</span>
+        <span className="text-[12px] text-ink-2">{trades ? `${(total ?? BigInt(trades.length)).toLocaleString("en-US")} total` : ""}</span>
       </div>
       {rows.length === 0 ? (
         <p className="px-4 pb-6 pt-2 text-[14px] text-ink-2">No trades yet. Be the first.</p>

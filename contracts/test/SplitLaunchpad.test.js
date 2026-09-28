@@ -164,6 +164,30 @@ describe("SplitLaunchpad", () => {
       await launchpad.connect(alice).createToken("A", "A", "", s, 0, { value: E("0.01") });
       expect(await launchpad.protocolFees()).to.equal(E("0.01"));
     });
+
+    it("never lets a fee raise silently eat the creator's first buy", async () => {
+      const { launchpad, vault, signer, owner, alice } = await loadFixture(deploy);
+      const s = await split(vault, signer, alice.address);
+      // What a 0.1 ETH first buy gets at a zero creation fee; the UI asks for that minus 1%.
+      await launchpad.connect(alice).createToken("A", "A", "", s, 0, { value: E("0.1") });
+      const first = await launchpad.allTokens(0);
+      const bought = (await launchpad.curveSupplyOf(first)) - (await launchpad.getToken(first)).market.realToken;
+      const min = (bought * 99n) / 100n;
+
+      // The owner raises the fee while the next launch is in flight: the launch reverts instead.
+      await launchpad.connect(owner).setFees(100, 2000, 0, E("0.05"));
+      await expect(launchpad.connect(alice).createToken("B", "B", "", s, min, { value: E("0.1") })).to.be.revertedWithCustomError(
+        launchpad,
+        "Slippage"
+      );
+      // Even when nothing is left for the buy at all.
+      await expect(launchpad.connect(alice).createToken("C", "C", "", s, 1, { value: E("0.05") })).to.be.revertedWithCustomError(
+        launchpad,
+        "Slippage"
+      );
+      // Without a minimum, paying exactly the fee is a plain launch with no buy.
+      await launchpad.connect(alice).createToken("D", "D", "", s, 0, { value: E("0.05") });
+    });
   });
 
   describe("bonding curve", () => {
@@ -184,6 +208,7 @@ describe("SplitLaunchpad", () => {
       expect(await vault.claimable(IDS.alice)).to.equal((creatorCut * 6000n) / 10000n);
       expect(await vault.claimable(IDS.bob)).to.equal(creatorCut - (creatorCut * 6000n) / 10000n);
       expect(await vault.tokenFees(addr)).to.equal(creatorCut);
+      expect(await vault.totalDeposited()).to.equal(creatorCut);
 
       const [claimable, earned] = await vault.earningsOf([IDS.alice, IDS.bob, IDS.carol]);
       expect(claimable[2]).to.equal(0);
@@ -517,6 +542,9 @@ describe("SplitLaunchpad", () => {
       await expect(launchpad.setFees(501, 0, 0, 0)).to.be.revertedWithCustomError(launchpad, "InvalidConfig");
       await expect(launchpad.setFees(100, 10001, 0, 0)).to.be.revertedWithCustomError(launchpad, "InvalidConfig");
       await expect(launchpad.setFees(100, 0, 1001, 0)).to.be.revertedWithCustomError(launchpad, "InvalidConfig");
+      await expect(launchpad.setFees(100, 0, 0, E("0.1") + 1n)).to.be.revertedWithCustomError(launchpad, "InvalidConfig");
+      await launchpad.setFees(100, 2000, 0, E("0.1"));
+      await launchpad.setFees(100, 2000, 0, 0);
 
       const token = await createToken(fx, alice);
       await launchpad.connect(bob).buy(await token.getAddress(), 0, { value: E("1") });

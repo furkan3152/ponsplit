@@ -19,6 +19,12 @@ jobs:
           cache-dependency-path: contracts/package-lock.json
       - run: npm ci
       - run: npx hardhat test
+      # /setup deploys the committed creation code in src/lib/bytecode.ts, so it must be exactly
+      # what these sources compile to.
+      - name: Committed ABI and bytecode match the sources
+        run: |
+          node scripts/export-abi.js
+          git diff --exit-code -- ../src/lib/abi.ts ../src/lib/bytecode.ts
 
   security:
     runs-on: ubuntu-latest
@@ -87,6 +93,7 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npx next lint
+      - run: npm test
       - run: npx next build
         env:
           NEXT_TELEMETRY_DISABLED: 1
@@ -100,9 +107,12 @@ jobs:
     env:
       NEXT_TELEMETRY_DISABLED: 1
       NEXT_PUBLIC_CHAIN: local
-      SIGNER_SEED: ci-e2e-seed-not-secret
       OWNER_ADDRESS: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
     steps:
+      # A fresh admin key per run: a fixed public seed would let anyone use its address on the
+      # live testnet (which the fork inherits) and break setup for every later run.
+      - name: Random admin seed
+        run: echo "SIGNER_SEED=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:

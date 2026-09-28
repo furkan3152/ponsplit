@@ -5,11 +5,25 @@ import { privateKeyToAccount } from "viem/accounts";
 /**
  * Zero-config addresses: a fresh admin key deploys FeeVault with nonce 0 and SplitLaunchpad with
  * nonce 1 (see /setup), so both addresses are known at build time from the key alone. Explicit
- * NEXT_PUBLIC_* variables or addresses committed to src/deployment.json take precedence.
+ * NEXT_PUBLIC_* variables or addresses committed to src/deployment.json for this network take
+ * precedence ("pinned"), and should be set once contracts are live so the signing key can be
+ * rotated without moving the site.
  */
-// Must match src/lib/adminKey.ts.
+// Must match normalizeKey() / adminKey() in src/lib/adminKey.ts.
+function normalizeKey(raw) {
+  const v = raw.trim();
+  const k = /^0x/i.test(v) ? `0x${v.slice(2)}` : `0x${v}`;
+  return /^0x[0-9a-fA-F]{64}$/.test(k) ? k : null;
+}
+
 function adminKeyFromEnv() {
-  if (process.env.SIGNER_PRIVATE_KEY) return process.env.SIGNER_PRIVATE_KEY;
+  const raw = process.env.SIGNER_PRIVATE_KEY;
+  if (raw && raw.trim()) {
+    const key = normalizeKey(raw);
+    // Fail the build loudly: a typo here would otherwise silently point the site at nothing.
+    if (!key) throw new Error("SIGNER_PRIVATE_KEY is set but isn't a 32-byte hex private key (64 hex characters, optionally 0x-prefixed).");
+    return key;
+  }
   if (process.env.SIGNER_SEED) return keccak256(toBytes(`ponsplit-admin:${process.env.SIGNER_SEED}`));
   return undefined;
 }
@@ -17,18 +31,15 @@ function adminKeyFromEnv() {
 function predictedAddresses() {
   const deployment = JSON.parse(readFileSync(new URL("./src/deployment.json", import.meta.url), "utf8"));
   const key = adminKeyFromEnv();
-  const chain = process.env.NEXT_PUBLIC_CHAIN || deployment.chain;
-  const committed = deployment.chain === chain && deployment.launchpad;
+  const chain = process.env.NEXT_PUBLIC_CHAIN || "testnet";
+  const committed = Boolean(deployment[chain]?.launchpad);
   if (committed || process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS || !key) return {};
-  try {
-    const admin = privateKeyToAccount(key).address;
-    return {
-      NEXT_PUBLIC_FEE_VAULT_ADDRESS: getContractAddress({ from: admin, nonce: 0n }),
-      NEXT_PUBLIC_LAUNCHPAD_ADDRESS: getContractAddress({ from: admin, nonce: 1n }),
-    };
-  } catch {
-    return {};
-  }
+  const admin = privateKeyToAccount(key).address;
+  return {
+    NEXT_PUBLIC_FEE_VAULT_ADDRESS: getContractAddress({ from: admin, nonce: 0n }),
+    NEXT_PUBLIC_LAUNCHPAD_ADDRESS: getContractAddress({ from: admin, nonce: 1n }),
+    NEXT_PUBLIC_ADDRESSES_PREDICTED: "1",
+  };
 }
 
 const X402_MODULES = [

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { isAddress } from "viem";
 import { EmptyState } from "@/components/EmptyState";
 import { HowItWorks } from "@/components/HowItWorks";
 import { KingCard } from "@/components/KingCard";
@@ -9,7 +10,7 @@ import { TokenCard } from "@/components/TokenCard";
 import { HeroArt } from "@/components/art";
 import { activeChain } from "@/lib/chains";
 import { compact, formatEth } from "@/lib/format";
-import { useNow, useTokens } from "@/lib/hooks";
+import { useAllTokens, useGlobalStats, useNow } from "@/lib/hooks";
 import { describe } from "@/lib/market";
 import type { TokenView } from "@/lib/types";
 
@@ -37,8 +38,8 @@ function sortTokens(list: readonly TokenView[], sort: Sort): TokenView[] {
 
 export default function Home() {
   const [limit, setLimit] = useState(60);
-  const { data: tokens, isLoading, error } = useTokens(limit);
-  const hasMore = (tokens?.length ?? 0) >= limit;
+  const { data: tokens, isLoading, error } = useAllTokens();
+  const stats = useGlobalStats();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("trending");
   useNow(15_000);
@@ -55,9 +56,9 @@ export default function Home() {
     );
     return sortTokens(filtered, sort);
   }, [tokens, query, sort]);
-
-  const totalFees = (tokens ?? []).reduce((a, t) => a + t.creatorFees, 0n);
-  const totalTrades = (tokens ?? []).reduce((a, t) => a + t.tradeCount, 0n);
+  const shown = list.slice(0, limit);
+  const hasMore = list.length > limit;
+  const addressQuery = isAddress(query.trim()) ? query.trim() : null;
 
   return (
     <div className="space-y-14">
@@ -88,9 +89,9 @@ export default function Home() {
             </Link>
           </div>
           <dl className="mt-8 flex gap-8">
-            <HeroStat label="Coins" value={tokens ? tokens.length.toString() : "–"} />
-            <HeroStat label="Trades" value={tokens ? compact(Number(totalTrades)) : "–"} />
-            <HeroStat label="Fees split" value={tokens ? `${formatEth(totalFees, 3)} Ξ` : "–"} />
+            <HeroStat label="Coins" value={stats.coins !== undefined ? compact(Number(stats.coins)) : "–"} />
+            <HeroStat label="Trades" value={stats.trades !== undefined ? compact(Number(stats.trades)) : "–"} />
+            <HeroStat label="Fees split" value={stats.feesSplit !== undefined ? `${formatEth(stats.feesSplit, 3)} Ξ` : "–"} />
           </dl>
         </div>
         <HeroArt className="mx-auto w-full max-w-[560px] animate-float motion-reduce:animate-none" />
@@ -98,7 +99,7 @@ export default function Home() {
 
       {king ? (
         <section>
-          <KingCard t={king} />
+          <KingCard key={king.token} t={king} />
         </section>
       ) : null}
 
@@ -130,15 +131,21 @@ export default function Home() {
             ))}
           </Grid>
         ) : list.length === 0 ? (
-          <EmptyState title={tokens?.length ? "Nothing matches that." : "No coins yet."}>
-            <Link href="/create" className="font-medium text-ink underline">
-              Launch the first one
-            </Link>
+          <EmptyState title={tokens?.length ? (sort === "graduated" && !query ? "No coin has graduated yet." : "Nothing matches that.") : "No coins yet."}>
+            {addressQuery ? (
+              <Link href={`/token/${addressQuery}`} className="font-medium text-ink underline">
+                Open {addressQuery.slice(0, 6)}…{addressQuery.slice(-4)}
+              </Link>
+            ) : (
+              <Link href="/create" className="font-medium text-ink underline">
+                {tokens?.length ? "Launch a coin" : "Launch the first one"}
+              </Link>
+            )}
           </EmptyState>
         ) : (
           <>
             <Grid>
-              {list.map((t) => (
+              {shown.map((t) => (
                 <TokenCard key={t.token} t={t} />
               ))}
             </Grid>

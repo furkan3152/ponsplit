@@ -25,7 +25,7 @@ function cssVar(name: string) {
  * Candles from on-chain trade records. Up candles are hollow and down candles filled, so direction
  * never relies on red/green alone (deuteranopia), and the crosshair tooltip spells out OHLC.
  */
-export function PriceChart({ trades, loading }: { trades: readonly TradeRecord[] | undefined; loading?: boolean }) {
+export function PriceChart({ trades, loading, total }: { trades: readonly TradeRecord[] | undefined; loading?: boolean; total?: bigint }) {
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi>();
   const series = useRef<ISeriesApi<"Candlestick">>();
@@ -112,6 +112,7 @@ export function PriceChart({ trades, loading }: { trades: readonly TradeRecord[]
             {first && !hover ? (
               <span className={change >= 0 ? "text-up-ink" : "text-down-ink"}>
                 {change >= 0 ? "▲" : "▼"} {Math.abs(change).toFixed(2)}%
+                {trades && total !== undefined && total > BigInt(trades.length) ? ` over the last ${trades.length.toLocaleString("en-US")} trades` : ""}
               </span>
             ) : null}
           </div>

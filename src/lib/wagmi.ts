@@ -14,7 +14,8 @@ export const wagmiConfig = getDefaultConfig({
   // A placeholder id still lets browser wallets (MetaMask, Rabby…) connect; WalletConnect needs a real one.
   projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "00000000000000000000000000000000",
   chains: [activeChain],
-  transports: { [activeChain.id]: http(rpcUrl) },
+  // Batch concurrent reads into one JSON-RPC request (covers chains without Multicall3, e.g. local).
+  transports: { [activeChain.id]: http(rpcUrl, { batch: { batchSize: 50 } }) },
   // Wallets that can add a custom EVM chain such as Robinhood Chain.
   wallets: [
     { groupName: "Popular", wallets: [metaMaskWallet, rabbyWallet, rainbowWallet, walletConnectWallet] },

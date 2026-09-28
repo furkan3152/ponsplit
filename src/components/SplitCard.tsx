@@ -59,7 +59,13 @@ export function SplitCard({ t }: { t: TokenView }) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-outline" style={{ background: BAR_COLORS[i % BAR_COLORS.length] }} aria-hidden />
-                  <a href={xProfileUrlById(t.xIds[i])} target="_blank" rel="noreferrer" className="truncate text-[14px] font-semibold hover:underline">
+                  <a
+                    href={xProfileUrlById(t.xIds[i])}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`Username at launch. Fees go to X account #${t.xIds[i].toString()}, even if it is renamed.`}
+                    className="truncate text-[14px] font-semibold hover:underline"
+                  >
                     @{h}
                   </a>
                 </div>
@@ -73,6 +79,7 @@ export function SplitCard({ t }: { t: TokenView }) {
           );
         })}
       </ul>
+      <p className="mt-4 text-[11px] text-ink-3">Usernames as of launch. Fees follow each account&apos;s permanent X id, so a rename never moves them.</p>
     </div>
   );
 }

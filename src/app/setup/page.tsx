@@ -36,6 +36,12 @@ type Status = {
   ownershipProposed: boolean;
   launchesPaused?: boolean;
   claimsPaused?: boolean;
+  pinned: boolean;
+  keyProblem?: string;
+  problem?: string;
+  busy: boolean;
+  signer?: `0x${string}`;
+  signerMatches?: boolean;
 };
 
 const STORAGE_KEY = "ponsplit:pending-admin-key";
@@ -57,14 +63,37 @@ function save(v: string | null) {
 }
 
 export default function SetupPage() {
-  const { data: s, refetch, isLoading } = useQuery({
+  const { data: s, refetch, isLoading, error } = useQuery({
     queryKey: ["setup"],
     refetchInterval: 6_000,
-    queryFn: async () => (await (await fetch("/api/setup")).json()) as Status,
+    retry: 1,
+    // Throwing on a failed check keeps the last good status on screen instead of replacing it
+    // with an error body (which would look like "no admin key yet").
+    queryFn: async () => {
+      const res = await fetch("/api/setup");
+      const body = (await res.json().catch(() => ({}))) as Status & { error?: string };
+      if (!res.ok) throw new Error(body.error || `Status check failed (${res.status})`);
+      return body;
+    },
   });
   const [deploying, setDeploying] = useState(false);
   const [deployErr, setDeployErr] = useState<string | null>(null);
   const [txs, setTxs] = useState<string[]>([]);
+  const [stored, setStored] = useState<string | null>(null);
+  useEffect(() => setStored(load()), []);
+
+  // Once the server runs on the key generated here, the browser copy is no longer needed.
+  useEffect(() => {
+    if (!s?.admin || !stored) return;
+    try {
+      if (privateKeyToAccount(stored as `0x${string}`).address === s.admin) {
+        save(null);
+        setStored(null);
+      }
+    } catch {
+      // not a key; leave it for the Forget button
+    }
+  }, [s?.admin, stored]);
 
   const funded = s?.balance !== undefined && s.balance !== "0";
   const step = !s?.admin ? 1 : !funded && !s.done ? 2 : !s.done ? 3 : !s.ownershipDone ? 4 : 5;
@@ -94,104 +123,165 @@ export default function SetupPage() {
       </div>
 
       {isLoading ? <div className="card h-40 animate-pulse" /> : null}
-      {s?.error ? <p className="card p-5 text-[14px] text-down-ink">Status check failed: {s.error}</p> : null}
-
-      <StepCard n={1} title="Create the admin key" state={step > 1 ? "done" : "active"}>
-        {step > 1 ? (
-          <p className="text-[14px] text-ink-2">
-            The server is using admin <span className="num break-all text-ink">{s?.admin}</span>.
+      {error ? (
+        <div className="card space-y-3 p-5 text-[14px]">
+          <p className="font-medium text-down-ink">
+            {s ? "Couldn't refresh the status; showing the last known state. " : "Couldn't check the setup status. "}
+            {errorMessage(error)}
           </p>
-        ) : (
-          <KeyGenerator />
-        )}
-      </StepCard>
-
-      <StepCard n={2} title={testnet ? "Get free test ETH" : "Fund the admin address"} state={step > 2 ? "done" : step === 2 ? "active" : "todo"}>
-        {s?.admin ? (
-          <div className="space-y-3">
-            <p className="text-[14px] text-ink-2">
-              {testnet
-                ? "Open the faucet, paste this address and request ETH."
-                : "Send about 0.01 ETH on Robinhood Chain to this address; it pays the gas for deployment and signs nothing else on-chain."}{" "}
-              This page updates by itself.
-              {funded ? <span className="ml-1 font-semibold text-up-ink">Balance: {formatEther(BigInt(s.balance!))} ETH ✓</span> : null}
-            </p>
-            <CopyField value={s.admin} />
-            {!funded && testnet ? (
-              <a className="btn-primary" href={FAUCET_URL} target="_blank" rel="noreferrer">
-                Open faucet ↗
-              </a>
-            ) : null}
-          </div>
-        ) : (
-          <p className="text-[14px] text-ink-2">Finish step 1 first.</p>
-        )}
-      </StepCard>
-
-      <StepCard n={3} title="Deploy the contracts" state={step > 3 ? "done" : step === 3 ? "active" : "todo"}>
-        {s?.done ? (
-          <ul className="space-y-1 text-[14px]">
-            <li>
-              FeeVault{" "}
-              <a className="num break-all underline" href={explorerUrl("address", s.vault!)} target="_blank" rel="noreferrer">
-                {s.vault}
-              </a>
-            </li>
-            <li>
-              Launchpad{" "}
-              <a className="num break-all underline" href={explorerUrl("address", s.launchpad!)} target="_blank" rel="noreferrer">
-                {s.launchpad}
-              </a>
-            </li>
-          </ul>
-        ) : (
-          <div className="space-y-3">
-            <p className="text-[14px] text-ink-2">One tap. The server sends three transactions with the admin key (about 20 seconds).</p>
-            <button className="btn-sticker" disabled={step !== 3 || deploying} onClick={deploy}>
-              {deploying ? "Deploying…" : "Deploy contracts"}
-            </button>
-            {deployErr ? <p className="text-[13px] text-down-ink">{deployErr}</p> : null}
-          </div>
-        )}
-        {txs.length ? (
-          <ul className="mt-3 space-y-1 text-[12px] text-ink-2">
-            {txs.map((t) => (
-              <li key={t}>
-                <a className="num underline" href={explorerUrl("tx", t)} target="_blank" rel="noreferrer">
-                  {t.slice(0, 18)}…
-                </a>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </StepCard>
-
-      <StepCard n={4} title="Hand ownership to your wallet" state={step > 4 ? "done" : step === 4 ? "active" : "todo"}>
-        <Ownership s={s} onDone={() => refetch()} onStart={deploy} busy={deploying} />
-      </StepCard>
-
-      {s?.launchesPaused || s?.claimsPaused ? (
-        <p className="card p-4 text-[14px] font-medium text-down-ink">
-          Paused by the owner: {[s.launchesPaused && "new launches", s.claimsPaused && "claims"].filter(Boolean).join(" and ")}.
-        </p>
-      ) : null}
-
-      {s?.done ? (
-        <div className="card flex flex-col items-center gap-3 p-8 text-center">
-          <GraduatedArt className="h-20 w-20" />
-          <h2 className="font-display text-[26px] font-bold tracking-tight">You&apos;re live 🎉</h2>
-          {s.addressesMatch ? (
-            <p className="text-[15px] text-ink-2">Everything is set. Launch the first coin.</p>
-          ) : (
-            <p className="text-[15px] text-down-ink">
-              The contracts are deployed, but this build points at different addresses (from src/deployment.json or NEXT_PUBLIC_* variables). Clear those and redeploy.
-            </p>
-          )}
-          <Link href="/create" className="btn-sticker">
-            Launch a coin
-          </Link>
+          <p className="text-ink-2">This is usually the network RPC being slow or rate-limited. Nothing needs to change on your side.</p>
+          <button className="btn-secondary" onClick={() => refetch()}>
+            Retry
+          </button>
         </div>
       ) : null}
+      {s?.problem ? <p className="card p-5 text-[14px] font-medium text-down-ink">{s.problem}</p> : null}
+      {stored && !(s && step === 1) ? (
+        <div className="card flex flex-wrap items-center justify-between gap-3 p-4 text-[14px]">
+          <span className="text-ink-2">An admin private key generated on this device is still saved in this browser.</span>
+          <button
+            className="btn-secondary px-3 py-2 text-[13px]"
+            onClick={() => {
+              save(null);
+              setStored(null);
+            }}
+          >
+            Forget it
+          </button>
+        </div>
+      ) : null}
+
+      {s ? (
+        <>
+          <StepCard n={1} title="Create the admin key" state={step > 1 ? "done" : "active"}>
+            {step > 1 ? (
+              <p className="text-[14px] text-ink-2">
+                The server is using admin <span className="num break-all text-ink">{s?.admin}</span>.
+              </p>
+            ) : (
+              <KeyGenerator problem={s.keyProblem} onChange={setStored} />
+            )}
+          </StepCard>
+
+          <StepCard n={2} title={testnet ? "Get free test ETH" : "Fund the admin address"} state={step > 2 ? "done" : step === 2 ? "active" : "todo"}>
+            {s?.admin ? (
+              <div className="space-y-3">
+                <p className="text-[14px] text-ink-2">
+                  {testnet
+                    ? "Open the faucet, paste this address and request ETH."
+                    : "Send about 0.01 ETH on Robinhood Chain to this address; it pays the gas for deployment and signs nothing else on-chain."}{" "}
+                  This page updates by itself.
+                  {funded ? <span className="ml-1 font-semibold text-up-ink">Balance: {formatEther(BigInt(s.balance!))} ETH ✓</span> : null}
+                </p>
+                <CopyField value={s.admin} />
+                {!funded && testnet ? (
+                  <a className="btn-primary" href={FAUCET_URL} target="_blank" rel="noreferrer">
+                    Open faucet ↗
+                  </a>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-[14px] text-ink-2">Finish step 1 first.</p>
+            )}
+          </StepCard>
+
+          <StepCard n={3} title="Deploy the contracts" state={step > 3 ? "done" : step === 3 ? "active" : "todo"}>
+            {s?.done ? (
+              <ul className="space-y-1 text-[14px]">
+                <li>
+                  FeeVault{" "}
+                  <a className="num break-all underline" href={explorerUrl("address", s.vault!)} target="_blank" rel="noreferrer">
+                    {s.vault}
+                  </a>
+                </li>
+                <li>
+                  Launchpad{" "}
+                  <a className="num break-all underline" href={explorerUrl("address", s.launchpad!)} target="_blank" rel="noreferrer">
+                    {s.launchpad}
+                  </a>
+                </li>
+              </ul>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-[14px] text-ink-2">One tap. The server sends three transactions with the admin key (about 20 seconds).</p>
+                <button className="btn-sticker" disabled={step !== 3 || deploying || s.busy || Boolean(s.problem)} onClick={deploy}>
+                  {deploying ? "Deploying…" : "Deploy contracts"}
+                </button>
+                {deployErr ? <p className="text-[13px] text-down-ink">{deployErr}</p> : null}
+              </div>
+            )}
+            {txs.length ? (
+              <ul className="mt-3 space-y-1 text-[12px] text-ink-2">
+                {txs.map((t) => (
+                  <li key={t}>
+                    <a className="num underline" href={explorerUrl("tx", t)} target="_blank" rel="noreferrer">
+                      {t.slice(0, 18)}…
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </StepCard>
+
+          <StepCard n={4} title="Hand ownership to your wallet" state={step > 4 ? "done" : step === 4 ? "active" : "todo"}>
+            <Ownership s={s} onDone={() => refetch()} onStart={deploy} busy={deploying} />
+          </StepCard>
+
+          {s?.launchesPaused || s?.claimsPaused ? (
+            <p className="card p-4 text-[14px] font-medium text-down-ink">
+              Paused by the owner: {[s.launchesPaused && "new launches", s.claimsPaused && "claims"].filter(Boolean).join(" and ")}.
+            </p>
+          ) : null}
+
+          {s.done && s.signerMatches === false ? (
+            <p className="card p-5 text-[14px] font-medium text-down-ink">
+              FeeVault accepts signatures from <span className="num break-all">{s.signer}</span>, but this server signs as{" "}
+              <span className="num break-all">{s.admin}</span>. Launches and claims fail until the owner calls{" "}
+              <code className="num break-all">FeeVault.setSigner({s.admin})</code>, or the previous key is restored.
+            </p>
+          ) : null}
+
+          {s.done && !s.pinned ? <PinAddresses s={s} /> : null}
+
+          {s.done ? (
+            <div className="card flex flex-col items-center gap-3 p-8 text-center">
+              <GraduatedArt className="h-20 w-20" />
+              <h2 className="font-display text-[26px] font-bold tracking-tight">You&apos;re live 🎉</h2>
+              {s.addressesMatch ? (
+                <p className="text-[15px] text-ink-2">Everything is set. Launch the first coin.</p>
+              ) : (
+                <p className="text-[15px] text-down-ink">
+                  The contracts are deployed, but this build of the site doesn&apos;t point at them yet. Rebuild the site (on Render: Manual Deploy → Deploy latest commit).
+                </p>
+              )}
+              <Link href="/create" className="btn-sticker">
+                Launch a coin
+              </Link>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Right now the site finds its contracts from the admin key. Pinning the addresses makes that
+ * permanent, so the signing key can later be rotated (MAINNET.md) without moving the site.
+ */
+function PinAddresses({ s }: { s: Status }) {
+  const lines = `NEXT_PUBLIC_FEE_VAULT_ADDRESS=${s.vault}\nNEXT_PUBLIC_LAUNCHPAD_ADDRESS=${s.launchpad}`;
+  return (
+    <div className="card space-y-3 p-5 text-[14px]">
+      <h3 className="text-[16px] font-semibold">{s.testnet ? "Recommended: pin the contract addresses" : "Important: pin the contract addresses"}</h3>
+      <p className="text-ink-2">
+        Add these two environment variables on your host and redeploy. Until then the site finds its contracts from the admin key, so changing{" "}
+        <code className="num">SIGNER_SEED</code> / <code className="num">SIGNER_PRIVATE_KEY</code> would point it at empty addresses.
+      </p>
+      <pre className="num overflow-x-auto whitespace-pre rounded-2xl bg-card-2 p-4 text-[12px]">{lines}</pre>
+      <button className="btn-secondary px-3 py-2 text-[13px]" onClick={() => navigator.clipboard.writeText(lines)}>
+        Copy
+      </button>
     </div>
   );
 }
@@ -276,15 +366,21 @@ function Ownership({ s, onDone, onStart, busy }: { s?: Status; onDone: () => voi
   );
 }
 
-function KeyGenerator() {
+function KeyGenerator({ problem, onChange }: { problem?: string; onChange: (key: string | null) => void }) {
   const [key, setKey] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
   useEffect(() => setKey(load()), []);
-  const address = key ? privateKeyToAccount(key as `0x${string}`).address : undefined;
+  let address: string | undefined;
+  try {
+    address = key ? privateKeyToAccount(key as `0x${string}`).address : undefined;
+  } catch {
+    address = undefined;
+  }
 
   if (!key) {
     return (
       <div className="space-y-3">
+        {problem ? <p className="text-[14px] font-medium text-down-ink">{problem} Paste the 64 hex characters of the key (with or without 0x).</p> : null}
         <p className="text-[14px] text-ink-2">
           PonSplit needs one key that deploys the contracts and signs launches and claims. A Render Blueprint deploy creates it automatically (SIGNER_SEED). Otherwise create it here in your browser; it is never sent anywhere.
         </p>
@@ -294,6 +390,7 @@ function KeyGenerator() {
             const k = generatePrivateKey();
             save(k);
             setKey(k);
+            onChange(k);
           }}
         >
           Generate admin key
@@ -341,6 +438,7 @@ function KeyGenerator() {
         onClick={() => {
           save(null);
           setKey(null);
+          onChange(null);
         }}
       >
         Forget this key on this device

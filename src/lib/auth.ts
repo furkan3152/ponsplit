@@ -20,7 +20,10 @@ const secret =
   process.env.NEXTAUTH_SECRET ||
   (adminKey() ? createHash("sha256").update(`ponsplit-nextauth:${adminKey()}`).digest("hex") : undefined);
 
-// OAuth callbacks need the public URL; Render exposes it without extra configuration.
+// OAuth callbacks need the site's public URL. On Render the onrender.com URL is the fallback;
+// with a custom domain set NEXTAUTH_URL=https://<your-domain> (and register
+// https://<your-domain>/api/auth/callback/twitter in the X app), otherwise X redirects users to
+// the onrender.com host where their sign-in cookies don't exist.
 if (!process.env.NEXTAUTH_URL && process.env.RENDER_EXTERNAL_URL) process.env.NEXTAUTH_URL = process.env.RENDER_EXTERNAL_URL;
 
 export const authOptions: NextAuthOptions = {

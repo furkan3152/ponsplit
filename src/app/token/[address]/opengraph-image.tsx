@@ -3,6 +3,7 @@ import { join } from "path";
 import { ImageResponse } from "next/og";
 import { compact, curveProgress, formatEth, pct, spotPrice } from "@/lib/format";
 import { parseMetadata } from "@/lib/metadata";
+import { fetchImageDataUrl } from "@/lib/safe-image";
 import { fetchToken } from "@/lib/server-token";
 
 export const runtime = "nodejs";
@@ -11,6 +12,11 @@ export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 const COLORS = ["#d7ff3c", "#7cc7ff", "#ff9bc2", "#ffd84d", "#b69cff", "#ff9f45"];
+
+/** The card shows live numbers, so it must not be cached as immutable (Next's default for OG images). */
+const LIVE = { "Cache-Control": "public, max-age=300, stale-while-revalidate=600" };
+/** "Not found" is often a transient RPC failure. */
+const MISS = { "Cache-Control": "no-store" };
 
 export default async function TokenOgImage({ params }: { params: { address: string } }) {
   const t = await fetchToken(params.address);
@@ -25,11 +31,12 @@ export default async function TokenOgImage({ params }: { params: { address: stri
           PonSplit
         </div>
       ),
-      size
+      { ...size, headers: MISS }
     );
   }
 
   const meta = parseMetadata(t.metadata);
+  const image = meta.image ? await fetchImageDataUrl(meta.image) : null;
   const price = spotPrice(t.market.virtualEth, t.market.virtualToken);
   const mcap = price * (Number(t.totalSupply) / 1e18);
   const progress = curveProgress(t.market.realToken, t.curveSupply, t.market.graduated);
@@ -44,9 +51,9 @@ export default async function TokenOgImage({ params }: { params: { address: stri
           PonSplit
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 36, marginTop: 44 }}>
-          {meta.image ? (
+          {image ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={meta.image} width={180} height={180} alt="" style={{ borderRadius: 48, border: "5px solid #1d1d1f", objectFit: "cover" }} />
+            <img src={image} width={180} height={180} alt="" style={{ borderRadius: 48, border: "5px solid #1d1d1f", objectFit: "cover" }} />
           ) : (
             <div style={{ width: 180, height: 180, borderRadius: 48, border: "5px solid #1d1d1f", background: "#d7ff3c", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 64, fontWeight: 800, boxShadow: "8px 8px 0 #1d1d1f" }}>
               {initials}
@@ -78,6 +85,6 @@ export default async function TokenOgImage({ params }: { params: { address: stri
         </div>
       </div>
     ),
-    size
+    { ...size, headers: LIVE }
   );
 }

@@ -2,7 +2,7 @@
 
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { decodeEventLog, formatEther, parseEther, type Hex } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
 import { TokenAvatar } from "@/components/TokenAvatar";
@@ -12,7 +12,7 @@ import { activeChain } from "@/lib/chains";
 import { BPS, LAUNCHPAD_ADDRESS, MAX_RECIPIENTS } from "@/lib/config";
 import { errorMessage, pct } from "@/lib/format";
 import { isValidHandle, normalizeHandle } from "@/lib/handles";
-import { useLaunchesPaused, useLaunchpadNumber, useXProfiles } from "@/lib/hooks";
+import { useDebounced, useLaunchesPaused, useLaunchpadNumber, useXProfiles } from "@/lib/hooks";
 import { useRiskGate } from "@/components/RiskNotice";
 import { encodeMetadata, safeUrl } from "@/lib/metadata";
 import { useServerConfig } from "@/lib/useServerConfig";
@@ -40,13 +40,15 @@ function evenSplit(n: number): string[] {
   return Array.from({ length: n }, (_, i) => ((i === 0 ? base + (BPS - base * n) : base) / 100).toString());
 }
 
-function useDebounced<T>(value: T, ms = 450) {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setV(value), ms);
-    return () => clearTimeout(id);
-  }, [value, ms]);
-  return v;
+/** Slippage allowed on the creator's first buy. Nobody can trade a coin before it exists, so this only absorbs rounding. */
+const FIRST_BUY_SLIPPAGE_BPS = 100n;
+
+/** Tokens a first buy of `ethIn` gets on a fresh curve; mirrors SplitLaunchpad.quoteBuy. */
+function firstBuyTokens(ethIn: bigint, feeBps: bigint, curve: readonly [bigint, bigint, bigint, bigint]): bigint {
+  const [virtualEth, virtualToken, curveSupply] = curve;
+  const net = ethIn - (ethIn * feeBps) / BigInt(BPS);
+  const out = (virtualToken * net) / (virtualEth + net);
+  return out >= curveSupply ? curveSupply : out;
 }
 
 export default function CreatePage() {
@@ -81,12 +83,15 @@ export default function CreatePage() {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handles = rows.map((r) => normalizeHandle(r.handle));
-  const bps = rows.map((r) => toBps(r.percent));
+  const handles = useMemo(() => rows.map((r) => normalizeHandle(r.handle)), [rows]);
+  const bps = useMemo(() => rows.map((r) => toBps(r.percent)), [rows]);
   const totalBps = bps.reduce((a, b) => a + (Number.isNaN(b) ? 0 : b), 0);
 
-  const debounced = useDebounced(handles.filter(isValidHandle));
-  const profiles = useXProfiles(debounced);
+  // Debounce a string, not an array: a fresh array every render would re-arm the timer forever.
+  const lookupKey = useDebounced(handles.filter(isValidHandle).join(","));
+  const lookup = useMemo(() => (lookupKey ? lookupKey.split(",") : []), [lookupKey]);
+  const profiles = useXProfiles(lookup);
+  const inFlight = useRef(false);
 
   const imageUrl = image.trim() ? safeUrl(image.trim()) : undefined;
 
@@ -116,7 +121,6 @@ export default function CreatePage() {
     return p;
   }, [name, symbol, metadata, image, imageUrl, website, telegram, twitter, handles, bps, totalBps, devBuy, profiles.data]);
 
-  const value = (creationFee ?? 0n) + (safeParseEther(devBuy) ?? 0n);
   const touched = Boolean(name || symbol || handles.some(Boolean));
 
   async function upload(file: File) {
@@ -139,9 +143,13 @@ export default function CreatePage() {
   async function submit() {
     setError(null);
     if (!isConnected || !address) return openConnectModal?.();
-    if (!LAUNCHPAD_ADDRESS || !publicClient || problems.length) return;
+    if (!LAUNCHPAD_ADDRESS || !publicClient || problems.length || inFlight.current) return;
+    inFlight.current = true;
     try {
-      if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
+      if (chainId !== activeChain.id) {
+        setStatus("Switching network…");
+        await switchChainAsync({ chainId: activeChain.id });
+      }
       setStatus("Verifying X accounts…");
       const res = await fetch("/api/attest", {
         method: "POST",
@@ -150,6 +158,21 @@ export default function CreatePage() {
       });
       const att = (await res.json()) as { error?: string; xIds: string[]; handles: string[]; deadline: string; attestation: Hex };
       if (!res.ok) throw new Error(att.error || "Could not verify X accounts");
+
+      // Price the launch from the contract's current terms, not values read when the page loaded:
+      // the launch fee is paid on top, and the first buy must get at least what we show.
+      const launchpad = { address: LAUNCHPAD_ADDRESS, abi: launchpadAbi } as const;
+      const [fee, tradeFeeBps, curve] = await Promise.all([
+        publicClient.readContract({ ...launchpad, functionName: "creationFee" }),
+        publicClient.readContract({ ...launchpad, functionName: "feeBps" }),
+        publicClient.readContract({ ...launchpad, functionName: "curveConfig" }),
+      ]);
+      if (creationFee !== undefined && fee > creationFee) {
+        throw new Error(`The launch fee just changed to ${formatEther(fee)} ETH. Review it and launch again.`);
+      }
+      const firstBuy = safeParseEther(devBuy) ?? 0n;
+      const minTokensOut =
+        firstBuy > 0n ? (firstBuyTokens(firstBuy, tradeFeeBps, curve) * (10_000n - FIRST_BUY_SLIPPAGE_BPS)) / 10_000n : 0n;
 
       setStatus("Confirm in your wallet…");
       const hash = await writeContractAsync({
@@ -162,9 +185,9 @@ export default function CreatePage() {
           symbol.trim().toUpperCase(),
           metadata,
           { xIds: att.xIds.map(BigInt), handles: att.handles, bps, deadline: BigInt(att.deadline), attestation: att.attestation },
-          0n,
+          minTokensOut,
         ],
-        value,
+        value: fee + firstBuy,
       });
       setStatus("Launching…");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -181,6 +204,8 @@ export default function CreatePage() {
     } catch (e) {
       setError(errorMessage(e));
       setStatus(null);
+    } finally {
+      inFlight.current = false;
     }
   }
 
@@ -317,7 +342,7 @@ export default function CreatePage() {
             <input id="devbuy" className="input num pr-14 text-[17px]" inputMode="decimal" placeholder="0" value={devBuy} onChange={(e) => setDevBuy(e.target.value.replace(",", "."))} />
             <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 font-semibold text-ink-2">ETH</span>
           </div>
-          <p className="mt-2 text-[12px] text-ink-2">Bought in the same transaction as the launch, so nobody gets in before you.{creationFee ? ` Launch fee ${formatEther(creationFee)} ETH.` : " Launching is free."}</p>
+          <p className="mt-2 text-[12px] text-ink-2">Bought in the same transaction as the launch, so nobody gets in before you.{creationFee === undefined ? "" : creationFee > 0n ? ` Launch fee ${formatEther(creationFee)} ETH, paid on top.` : " Launching is free."}</p>
         </section>
 
         {problems.length > 0 && touched ? (
@@ -337,7 +362,7 @@ export default function CreatePage() {
           </p>
         ) : null}
         {paused ? <p className="text-center text-[14px] font-medium text-down-ink">New launches are paused by the owner for now.</p> : null}
-        <button className="btn-sticker w-full py-4 text-[17px]" disabled={Boolean(status) || paused === true || (isConnected && problems.length > 0)} onClick={() => guard(submit)}>
+        <button className="btn-sticker w-full py-4 text-[17px]" disabled={Boolean(status) || paused === true || (isConnected && (problems.length > 0 || creationFee === undefined))} onClick={() => guard(submit)}>
           {!isConnected ? "Connect wallet to launch" : status ?? "Launch coin"}
         </button>
         {dialog}
