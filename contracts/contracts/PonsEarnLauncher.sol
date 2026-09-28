@@ -83,6 +83,8 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
         uint256 raised; // real ETH on the curve
         uint256 threshold; // ETH the curve raises before it graduates
         uint256 sellable; // tokens the curve still sells
+        uint256 phantomQuote; // the curve's virtual ETH (sets the opening price)
+        uint256 reservedTokens; // held back for the pool; the curve closes when only these are left
         uint160 sqrtPriceX96; // pool price once on Uniswap v4
         uint128 liquidity;
         uint256 feesSplit; // ETH already credited to the X accounts
@@ -212,9 +214,12 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
 
     /// @dev Robinhood Chain is an Arbitrum chain, where `block.number` is the parent chain's block
     ///      number; the chain's own (the one its logs are indexed by) comes from ArbSys. Chains without
-    ///      ArbSys (local test chains) use `block.number`, which is their own.
+    ///      ArbSys (local test chains) use `block.number`, which is their own. The call gets a fixed
+    ///      stipend: on a local fork of Robinhood Chain, 0x64 holds Arbitrum's placeholder `0xfe` code,
+    ///      which would otherwise burn 63/64 of the launch's gas.
     function _blockNumber() private view returns (uint256) {
-        (bool ok, bytes memory ret) = address(0x64).staticcall(abi.encodeWithSignature("arbBlockNumber()"));
+        (bool ok, bytes memory ret) =
+            address(0x64).staticcall{gas: 20_000}(abi.encodeWithSignature("arbBlockNumber()"));
         return ok && ret.length == 32 ? abi.decode(ret, (uint256)) : block.number;
     }
 
@@ -391,6 +396,8 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
         v.phase = rec.phase;
         v.feeRecipient = rec.creatorFeeRecipient;
         v.threshold = rec.graduationThreshold;
+        v.phantomQuote = IPonsCurve(l.curve).phantomQuote();
+        v.reservedTokens = IPonsCurve(l.curve).reservedTokens();
         // slither-disable-next-line incorrect-equality
         if (rec.phase == 0) {
             IPonsCurve curve = IPonsCurve(l.curve);

@@ -95,6 +95,8 @@ interface IPonsCurve {
     function quoteFeeBalance() external view returns (uint256);
     function creatorTaxBalance() external view returns (uint256);
     function protocolFeeShareBps() external view returns (uint16);
+    function phantomQuote() external view returns (uint256);
+    function reservedTokens() external view returns (uint256);
 }
 
 interface IPonsHook {
