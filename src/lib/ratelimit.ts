@@ -1,21 +1,24 @@
 import "server-only";
-import { isIP } from "net";
+import { ipKey as key, isPrivateIp as isPrivate } from "./ip";
 
 const buckets = new Map<string, { count: number; reset: number }>();
 const MAX_KEYS = 10_000;
 
+function prune(now: number) {
+  if (buckets.size <= MAX_KEYS) return;
+  // Drop expired windows so spoofed or one-off keys can't grow memory without bound; if that is
+  // not enough, evict the oldest windows rather than resetting everyone's.
+  for (const [k, b] of buckets) if (now > b.reset) buckets.delete(k);
+  for (const k of buckets.keys()) {
+    if (buckets.size <= MAX_KEYS) break;
+    buckets.delete(k);
+  }
+}
+
 /** Fixed-window limiter per key (client IP). Good enough for one server instance. */
 export function rateLimit(key: string, limit: number, windowMs: number): boolean {
   const now = Date.now();
-  if (buckets.size > MAX_KEYS) {
-    // Drop expired windows so spoofed or one-off keys can't grow memory without bound; if that is
-    // not enough, evict the oldest windows rather than resetting everyone's.
-    for (const [k, b] of buckets) if (now > b.reset) buckets.delete(k);
-    for (const k of buckets.keys()) {
-      if (buckets.size <= MAX_KEYS) break;
-      buckets.delete(k);
-    }
-  }
+  prune(now);
   const b = buckets.get(key);
   if (!b || now > b.reset) {
     buckets.set(key, { count: 1, reset: now + windowMs });
@@ -23,6 +26,21 @@ export function rateLimit(key: string, limit: number, windowMs: number): boolean
   }
   b.count++;
   return b.count <= limit;
+}
+
+/** Like rateLimit, but charges `n` units at once (e.g. one per upstream lookup a request needs). */
+export function rateLimitN(key: string, n: number, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  prune(now);
+  const b = buckets.get(key);
+  if (!b || now > b.reset) {
+    if (n > limit) return false;
+    buckets.set(key, { count: n, reset: now + windowMs });
+    return true;
+  }
+  if (b.count + n > limit) return false;
+  b.count += n;
+  return true;
 }
 
 /**
@@ -55,35 +73,4 @@ export function clientIp(req: Request): string {
 
 function first(v: string | null): string | undefined {
   return v?.split(",")[0]?.trim() || undefined;
-}
-
-function key(ip: string | undefined): string {
-  if (!ip) return "unknown";
-  if (isIP(ip) === 6) {
-    const groups = expand6(ip);
-    if (groups) return `${groups.slice(0, 4).join(":")}::/64`;
-  }
-  return ip;
-}
-
-function expand6(ip: string): string[] | null {
-  const [head, tail] = ip.split("::");
-  const a = head ? head.split(":") : [];
-  const b = tail !== undefined ? (tail ? tail.split(":") : []) : [];
-  if (tail === undefined && a.length !== 8) return null;
-  const fill = Array(8 - a.length - b.length).fill("0");
-  return [...a, ...fill, ...b].map((g) => g.toLowerCase());
-}
-
-function isPrivate(ip: string): boolean {
-  const v = isIP(ip);
-  if (v === 4) {
-    const [a, b] = ip.split(".").map(Number);
-    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
-  }
-  if (v === 6) {
-    const l = ip.toLowerCase();
-    return l === "::1" || l.startsWith("fc") || l.startsWith("fd") || l.startsWith("fe80") || l.startsWith("::ffff:10.") || l.startsWith("::ffff:127.");
-  }
-  return true; // not an IP at all: never trust it as a client address
 }

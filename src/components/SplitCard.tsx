@@ -7,6 +7,7 @@ import { activeChain } from "@/lib/chains";
 import { FEE_VAULT_ADDRESS } from "@/lib/config";
 import { formatEth, pct } from "@/lib/format";
 import { xProfileUrlById } from "@/lib/handles";
+import { useHandleChecks } from "@/lib/hooks";
 import type { TokenView } from "@/lib/types";
 import { XAvatar } from "./XAvatar";
 
@@ -22,6 +23,7 @@ export function SplitCard({ t }: { t: TokenView }) {
     args: [t.xIds],
     query: { enabled: Boolean(FEE_VAULT_ADDRESS && t.xIds.length), refetchInterval: 10_000 },
   });
+  const checks = useHandleChecks(t.handles, t.xIds);
   // Terms were locked in when this coin launched.
   const creatorPct = (t.market.feeBps * (10_000 - t.market.protocolShareBps)) / 1e6;
 
@@ -53,9 +55,11 @@ export function SplitCard({ t }: { t: TokenView }) {
       <ul className="mt-4 space-y-3">
         {t.handles.map((h, i) => {
           const fromToken = (t.creatorFees * BigInt(t.bps[i])) / 10_000n;
+          const check = checks[i];
           return (
             <li key={h} className="flex items-center gap-3">
-              <XAvatar handle={h} size={36} />
+              {/* Only show a photo once the username is confirmed to still be this account's. */}
+              <XAvatar handle={h} image={check.image} photo={check.status === "current"} size={36} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-outline" style={{ background: BAR_COLORS[i % BAR_COLORS.length] }} aria-hidden />
@@ -68,6 +72,7 @@ export function SplitCard({ t }: { t: TokenView }) {
                   >
                     @{h}
                   </a>
+                  {check.status === "moved" ? <span className="chip shrink-0 !text-[11px]">renamed since launch</span> : null}
                 </div>
                 <div className="num text-[12px] text-ink-2">
                   {formatEth(fromToken, 5)} ETH from this coin

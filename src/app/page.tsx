@@ -122,7 +122,7 @@ export default function Home() {
           />
         </div>
 
-        {error ? (
+        {error && !tokens ? (
           <div className="card p-6 text-[14px] text-down-ink">Could not load coins: {error.message.split("\n")[0]}</div>
         ) : isLoading ? (
           <Grid>

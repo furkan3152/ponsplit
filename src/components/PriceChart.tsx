@@ -5,8 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { buildCandles } from "@/lib/candles";
 import { formatPrice } from "@/lib/format";
 
-// The axis needs one more digit than the headline so adjacent ticks never read the same.
-const axisPrice = (n: number) => formatPrice(n, 4);
+// The axis needs one more digit than the headline so adjacent ticks never read the same. The axis
+// padding can put a tick a hair below zero (float noise, e.g. -6e-24); that is zero.
+const axisPrice = (n: number) => (n < 1e-18 ? "0" : formatPrice(n, 4));
 import type { TradeRecord } from "@/lib/types";
 
 const FRAMES = [
@@ -61,6 +62,12 @@ export function PriceChart({ trades, loading, total }: { trades: readonly TradeR
         wickUpColor: up,
         wickDownColor: down,
         priceFormat: { type: "custom", formatter: axisPrice, minMove: 1e-15 },
+        // Prices are never negative; keep the axis from padding below zero.
+        autoscaleInfoProvider: (original: () => { priceRange: { minValue: number; maxValue: number } | null } | null) => {
+          const r = original();
+          if (r?.priceRange && r.priceRange.minValue < 0) r.priceRange.minValue = 0;
+          return r;
+        },
       });
       c.subscribeCrosshairMove((p) => {
         const d = p.seriesData.get(s) as { open: number; high: number; low: number; close: number } | undefined;

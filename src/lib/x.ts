@@ -1,6 +1,7 @@
 import "server-only";
 import { keccak256, toBytes } from "viem";
 import { isValidHandle, normalizeHandle } from "./handles";
+import { rateLimitN } from "./ratelimit";
 
 export type XProfile = { id: string; username: string; name: string; image?: string };
 
@@ -40,19 +41,26 @@ function remember(h: string, profile: XProfile | null) {
 }
 
 /**
- * Upstream lookups for display (avatars and names while typing) share one global budget per
- * minute, so nobody can spend the server's quota and block launches. Launch attestations don't
- * count against it; they are limited per client IP instead.
+ * Every upstream lookup (a handle not in the cache) is charged twice: to the client that asked,
+ * and to a global per-minute budget, separately for previews and for launch attestations. So one
+ * client can't spend the server's X API / fxtwitter allowance and block everyone else, and preview
+ * traffic can never eat into what launches need. Previews that run out just stay unresolved.
  */
-const DISPLAY_BUDGET_PER_MIN = 120;
-let budget = { reset: 0, left: DISPLAY_BUDGET_PER_MIN };
-function takeDisplayBudget(n: number): boolean {
+const PER_CLIENT_PER_MIN = { display: 20, attest: 30 } as const;
+const GLOBAL_PER_MIN = { display: 120, attest: 600 } as const;
+const budgets = { display: { reset: 0, left: 0 }, attest: { reset: 0, left: 0 } };
+
+/** Takes up to `n` units from the global budget and returns how many it got. */
+function takeGlobal(purpose: Purpose, n: number): number {
+  const b = budgets[purpose];
   const now = Date.now();
-  if (now > budget.reset) budget = { reset: now + 60_000, left: DISPLAY_BUDGET_PER_MIN };
-  if (budget.left < n) return false;
-  budget.left -= n;
-  return true;
+  if (now > b.reset) Object.assign(b, { reset: now + 60_000, left: GLOBAL_PER_MIN[purpose] });
+  const got = Math.min(n, b.left);
+  b.left -= got;
+  return got;
 }
+
+type Purpose = "display" | "attest";
 
 export class ResolverBusyError extends Error {
   constructor() {
@@ -64,9 +72,10 @@ export class ResolverBusyError extends Error {
  * Resolves usernames to X accounts. Returns a map from normalized handle to profile, or null for
  * accounts that do not exist. Throws when the upstream lookup itself fails.
  *
- * `purpose: "display"` is for previews: it draws from the shared budget (throws ResolverBusyError
- * when spent) and, in x-api mode, uses the free fxtwitter mirror so the X API quota is kept for
- * `purpose: "attest"`, the lookup a launch actually depends on.
+ * `client` identifies the caller (its IP) for the per-client lookup budget; see above. Throws
+ * ResolverBusyError when a budget is spent. `purpose: "display"` is for previews: in x-api mode it
+ * uses the free fxtwitter mirror so the X API quota is kept for `purpose: "attest"`, the lookup a
+ * launch actually depends on.
  *
  * Modes:
  *  - x-api:     official X API v2 users lookup (needs X_BEARER_TOKEN; most reliable). Falls back
@@ -76,7 +85,8 @@ export class ResolverBusyError extends Error {
  */
 export async function resolveHandles(
   input: string[],
-  purpose: "display" | "attest" = "attest"
+  purpose: Purpose,
+  client: string
 ): Promise<Record<string, XProfile | null>> {
   const handles = Array.from(new Set(input.map(normalizeHandle))).filter(isValidHandle);
   const mode = resolverMode();
@@ -94,18 +104,27 @@ export async function resolveHandles(
 
   let fresh: Record<string, XProfile>;
   let source: Source;
-  if (mode === "mock") [fresh, source] = [resolveMock(missing), "mock"];
-  else if (purpose === "display") {
-    if (!takeDisplayBudget(missing.length)) throw new ResolverBusyError();
-    [fresh, source] = [await resolveFx(missing), "fx"];
-  } else if (mode === "x-api") {
-    try {
-      [fresh, source] = [await resolveXApi(missing), "x"];
-    } catch (e) {
-      if (!(e instanceof XApiRateLimited)) throw e;
+  if (mode === "mock") {
+    [fresh, source] = [resolveMock(missing), "mock"];
+  } else {
+    if (!rateLimitN(`x-lookups:${purpose}:${client}`, missing.length, PER_CLIENT_PER_MIN[purpose], 60_000)) throw new ResolverBusyError();
+    const allowed = takeGlobal(purpose, missing.length);
+    // A launch needs every account resolved; a preview shows what fits and leaves the rest unknown.
+    if (allowed < missing.length && (purpose === "attest" || allowed === 0)) throw new ResolverBusyError();
+    missing.splice(allowed);
+    if (purpose === "display") {
+      [fresh, source] = [await resolveFx(missing), "fx"];
+    } else if (mode === "x-api") {
+      try {
+        [fresh, source] = [await resolveXApi(missing), "x"];
+      } catch (e) {
+        if (!(e instanceof XApiRateLimited)) throw e;
+        [fresh, source] = [await resolveFx(missing), "fx"];
+      }
+    } else {
       [fresh, source] = [await resolveFx(missing), "fx"];
     }
-  } else [fresh, source] = [await resolveFx(missing), "fx"];
+  }
 
   for (const h of missing) {
     out[h] = fresh[h] ?? null;
@@ -115,6 +134,9 @@ export async function resolveHandles(
 }
 
 type Source = "x" | "fx" | "mock";
+
+/** The FxTwitter API asks every client to identify itself with a descriptive User-Agent. */
+export const FX_HEADERS = { "user-agent": "PonSplit/1.0 (+https://github.com/furkan3152/ponsplit)" };
 
 function resolveMock(handles: string[]) {
   return Object.fromEntries(handles.map((h) => [h, { id: mockXId(h).toString(), username: h, name: h }]));
@@ -147,7 +169,7 @@ async function resolveXApi(handles: string[]) {
 async function resolveFx(handles: string[]) {
   const results = await Promise.all(
     handles.map(async (h) => {
-      const res = await fetch(`https://api.fxtwitter.com/${h}`, { cache: "no-store", signal: AbortSignal.timeout(8_000) });
+      const res = await fetch(`https://api.fxtwitter.com/${h}`, { cache: "no-store", headers: FX_HEADERS, signal: AbortSignal.timeout(8_000) });
       if (res.status === 404) return [h, null] as const;
       if (!res.ok) throw new Error(`Profile lookup failed for @${h} (${res.status})`);
       const body = (await res.json()) as { user?: { id: string; screen_name: string; name: string; avatar_url?: string } };

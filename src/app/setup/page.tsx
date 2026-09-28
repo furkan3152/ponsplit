@@ -151,7 +151,8 @@ export default function SetupPage() {
         </div>
       ) : null}
 
-      {s ? (
+      {/* A configuration problem with no admin in sight: don't offer to generate a key over it. */}
+      {s && !(s.problem && !s.admin) ? (
         <>
           <StepCard n={1} title="Create the admin key" state={step > 1 ? "done" : "active"}>
             {step > 1 ? (

@@ -1,25 +1,55 @@
 import "server-only";
 import { lookup } from "dns/promises";
 import { isIP } from "net";
+import { imageWithinLimits, sniffImage } from "./image-bytes";
 
 /**
  * Downloads a user-supplied image (coin metadata) for server-side rendering without letting the
  * URL reach our private network or exhaust memory: https only, public addresses only (checked
- * after DNS and on every redirect), 3 s timeout, 2 MB cap, and the bytes must really be a PNG,
- * JPEG or GIF. Returns a data: URL, or null on any problem.
+ * after DNS and on every redirect), 3 s timeout, 2 MB cap, the bytes must really be a PNG or JPEG,
+ * and its real dimensions must be modest (a tiny file can declare a canvas that would decode to
+ * gigabytes). Returns a data: URL, or null on any problem.
  */
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_REDIRECTS = 2;
 const TTL_MS = 10 * 60 * 1000;
+/** Cached data URLs are capped by total size, not count. */
+const MAX_CACHE_CHARS = 24 * 1024 * 1024;
 const cache = new Map<string, { at: number; value: string | null }>();
+let cacheChars = 0;
+const inflight = new Map<string, Promise<string | null>>();
 
 export async function fetchImageDataUrl(url: string): Promise<string | null> {
   const hit = cache.get(url);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
-  const value = await download(url).catch(() => null);
+  // Concurrent requests for the same image share one download.
+  let pending = inflight.get(url);
+  if (!pending) {
+    pending = download(url)
+      .catch(() => null)
+      .then((value) => {
+        remember(url, value);
+        return value;
+      })
+      .finally(() => inflight.delete(url));
+    inflight.set(url, pending);
+  }
+  return pending;
+}
+
+function remember(url: string, value: string | null) {
+  const old = cache.get(url);
+  if (old) {
+    cacheChars -= old.value?.length ?? 0;
+    cache.delete(url);
+  }
   cache.set(url, { at: Date.now(), value });
-  while (cache.size > 100) cache.delete(cache.keys().next().value as string);
-  return value;
+  cacheChars += value?.length ?? 0;
+  for (const [k, v] of cache) {
+    if (cacheChars <= MAX_CACHE_CHARS && cache.size <= 500) break;
+    cache.delete(k);
+    cacheChars -= v.value?.length ?? 0;
+  }
 }
 
 async function download(start: string): Promise<string | null> {
@@ -45,8 +75,10 @@ async function download(start: string): Promise<string | null> {
     }
     const bytes = await readCapped(res.body);
     if (!bytes) return null;
-    const type = sniff(bytes);
-    return type ? `data:${type};base64,${Buffer.from(bytes).toString("base64")}` : null;
+    // The OG renderer draws PNG and JPEG; anything else falls back to the initials card.
+    const type = sniffImage(bytes);
+    if ((type !== "image/png" && type !== "image/jpeg") || !imageWithinLimits(bytes)) return null;
+    return `data:${type};base64,${Buffer.from(bytes).toString("base64")}`;
   }
   return null;
 }
@@ -66,14 +98,6 @@ async function readCapped(body: ReadableStream<Uint8Array>): Promise<Uint8Array 
     chunks.push(value);
   }
   return Buffer.concat(chunks);
-}
-
-/** Formats the OG renderer can draw. */
-function sniff(b: Uint8Array): string | null {
-  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";
-  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
-  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return "image/gif";
-  return null;
 }
 
 async function isPublicHost(hostname: string): Promise<boolean> {

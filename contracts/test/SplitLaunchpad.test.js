@@ -63,7 +63,7 @@ async function createToken(fx, from, opts = {}) {
   const s = await split(vault, signer, from.address, opts);
   const tx = await launchpad
     .connect(from)
-    .createToken("Pon Coin", "PON", '{"description":"gm"}', s, 0, { value: opts.value ?? 0n });
+    .createToken("Pon Coin", "PON", '{"description":"gm"}', s, 0, 0, { value: opts.value ?? 0n });
   const receipt = await tx.wait();
   const log = receipt.logs.map((l) => launchpad.interface.parseLog(l)).find((l) => l?.name === "TokenCreated");
   return ethers.getContractAt("SplitToken", log.args.token);
@@ -119,13 +119,13 @@ describe("SplitLaunchpad", () => {
       const renamed = { ...good, handles: ["mallory", "bob"] };
       const forged = { ...good, attestation: await attest(vault, alice, alice.address, good.xIds, good.handles, good.deadline) };
       for (const s of [swapIds, renamed, forged]) {
-        await expect(launchpad.connect(alice).createToken("A", "A", "", s, 0)).to.be.revertedWithCustomError(vault, "BadSignature");
+        await expect(launchpad.connect(alice).createToken("A", "A", "", s, 0, 0)).to.be.revertedWithCustomError(vault, "BadSignature");
       }
       // Attestations are bound to the creator.
-      await expect(launchpad.connect(bob).createToken("A", "A", "", good, 0)).to.be.revertedWithCustomError(vault, "BadSignature");
+      await expect(launchpad.connect(bob).createToken("A", "A", "", good, 0, 0)).to.be.revertedWithCustomError(vault, "BadSignature");
 
       const expired = await split(vault, signer, alice.address, { deadline: BigInt((await time.latest()) - 1) });
-      await expect(launchpad.connect(alice).createToken("A", "A", "", expired, 0)).to.be.revertedWithCustomError(vault, "Expired");
+      await expect(launchpad.connect(alice).createToken("A", "A", "", expired, 0, 0)).to.be.revertedWithCustomError(vault, "Expired");
     });
 
     it("rejects malformed splits", async () => {
@@ -140,11 +140,11 @@ describe("SplitLaunchpad", () => {
       ];
       for (const opts of bad) {
         const s = await split(vault, signer, alice.address, opts);
-        await expect(launchpad.connect(alice).createToken("A", "A", "", s, 0)).to.be.revertedWithCustomError(vault, "InvalidSplit");
+        await expect(launchpad.connect(alice).createToken("A", "A", "", s, 0, 0)).to.be.revertedWithCustomError(vault, "InvalidSplit");
       }
       const s = await split(vault, signer, alice.address);
       await expect(
-        launchpad.connect(alice).createToken("A", "A", "", { ...s, handles: ["alice"] }, 0)
+        launchpad.connect(alice).createToken("A", "A", "", { ...s, handles: ["alice"] }, 0, 0)
       ).to.be.revertedWithCustomError(vault, "InvalidSplit");
     });
 
@@ -152,41 +152,61 @@ describe("SplitLaunchpad", () => {
       const fx = await loadFixture(deploy);
       const { launchpad, vault, signer, owner, alice } = fx;
       const s = await split(vault, signer, alice.address);
-      await expect(launchpad.connect(alice).createToken("", "A", "", s, 0)).to.be.revertedWithCustomError(launchpad, "InvalidMetadata");
-      await expect(launchpad.connect(alice).createToken("A", "TOOLONGSYMBOL", "", s, 0)).to.be.revertedWithCustomError(launchpad, "InvalidMetadata");
-      await expect(launchpad.connect(alice).createToken("A", "A", "x".repeat(2001), s, 0)).to.be.revertedWithCustomError(launchpad, "InvalidMetadata");
+      await expect(launchpad.connect(alice).createToken("", "A", "", s, 0, 0)).to.be.revertedWithCustomError(launchpad, "InvalidMetadata");
+      await expect(launchpad.connect(alice).createToken("A", "TOOLONGSYMBOL", "", s, 0, 0)).to.be.revertedWithCustomError(launchpad, "InvalidMetadata");
+      await expect(launchpad.connect(alice).createToken("A", "A", "x".repeat(2001), s, 0, 0)).to.be.revertedWithCustomError(launchpad, "InvalidMetadata");
 
       await launchpad.connect(owner).setFees(100, 2000, 0, E("0.01"));
-      await expect(launchpad.connect(alice).createToken("A", "A", "", s, 0, { value: E("0.005") })).to.be.revertedWithCustomError(
+      await expect(launchpad.connect(alice).createToken("A", "A", "", s, 0, 0, { value: E("0.005") })).to.be.revertedWithCustomError(
         launchpad,
         "InsufficientPayment"
       );
-      await launchpad.connect(alice).createToken("A", "A", "", s, 0, { value: E("0.01") });
+      await launchpad.connect(alice).createToken("A", "A", "", s, 0, 0, { value: E("0.01") });
       expect(await launchpad.protocolFees()).to.equal(E("0.01"));
+    });
+
+    it("reverts a launch whose terms changed after the creator saw them", async () => {
+      const { launchpad, vault, signer, owner, alice } = await loadFixture(deploy);
+      const s = await split(vault, signer, alice.address);
+      const shown = await launchpad.termsVersion();
+      expect(shown).to.be.greaterThan(0n);
+      // Any fee or curve change bumps the version...
+      await launchpad.connect(owner).setFees(100, 2000, 0, 0);
+      expect(await launchpad.termsVersion()).to.equal(shown + 1n);
+      await expect(launchpad.connect(alice).createToken("A", "A", "", s, 0, shown, { value: E("0.1") })).to.be.revertedWithCustomError(
+        launchpad,
+        "TermsChanged"
+      );
+      const [virtualEth, virtualToken, curveSupply, lpSupply] = await launchpad.curveConfig();
+      await launchpad.connect(owner).setCurveConfig({ virtualEth, virtualToken, curveSupply, lpSupply });
+      expect(await launchpad.termsVersion()).to.equal(shown + 2n);
+      // ...and a launch pinned to the current version (or not pinned at all) goes through.
+      await launchpad.connect(alice).createToken("B", "B", "", s, 0, shown + 2n, { value: E("0.1") });
+      await launchpad.connect(alice).createToken("C", "C", "", s, 0, 0, { value: E("0.1") });
     });
 
     it("never lets a fee raise silently eat the creator's first buy", async () => {
       const { launchpad, vault, signer, owner, alice } = await loadFixture(deploy);
       const s = await split(vault, signer, alice.address);
       // What a 0.1 ETH first buy gets at a zero creation fee; the UI asks for that minus 1%.
-      await launchpad.connect(alice).createToken("A", "A", "", s, 0, { value: E("0.1") });
+      await launchpad.connect(alice).createToken("A", "A", "", s, 0, 0, { value: E("0.1") });
       const first = await launchpad.allTokens(0);
       const bought = (await launchpad.curveSupplyOf(first)) - (await launchpad.getToken(first)).market.realToken;
       const min = (bought * 99n) / 100n;
 
       // The owner raises the fee while the next launch is in flight: the launch reverts instead.
       await launchpad.connect(owner).setFees(100, 2000, 0, E("0.05"));
-      await expect(launchpad.connect(alice).createToken("B", "B", "", s, min, { value: E("0.1") })).to.be.revertedWithCustomError(
+      await expect(launchpad.connect(alice).createToken("B", "B", "", s, min, 0, { value: E("0.1") })).to.be.revertedWithCustomError(
         launchpad,
         "Slippage"
       );
       // Even when nothing is left for the buy at all.
-      await expect(launchpad.connect(alice).createToken("C", "C", "", s, 1, { value: E("0.05") })).to.be.revertedWithCustomError(
+      await expect(launchpad.connect(alice).createToken("C", "C", "", s, 1, 0, { value: E("0.05") })).to.be.revertedWithCustomError(
         launchpad,
         "Slippage"
       );
       // Without a minimum, paying exactly the fee is a plain launch with no buy.
-      await launchpad.connect(alice).createToken("D", "D", "", s, 0, { value: E("0.05") });
+      await launchpad.connect(alice).createToken("D", "D", "", s, 0, 0, { value: E("0.05") });
     });
   });
 
@@ -475,13 +495,13 @@ describe("SplitLaunchpad", () => {
       await expect(launchpad.connect(owner).setLaunchesPaused(true)).to.emit(launchpad, "LaunchesPausedSet").withArgs(true);
 
       const s = await split(vault, signer, alice.address);
-      await expect(launchpad.connect(alice).createToken("A", "A", "", s, 0)).to.be.revertedWithCustomError(launchpad, "LaunchesPaused");
+      await expect(launchpad.connect(alice).createToken("A", "A", "", s, 0, 0)).to.be.revertedWithCustomError(launchpad, "LaunchesPaused");
       // Existing tokens keep trading.
       await launchpad.connect(bob).buy(await token.getAddress(), 0, { value: E("0.1") });
       await launchpad.connect(bob).sell(await token.getAddress(), await token.balanceOf(bob.address), 0);
 
       await launchpad.connect(owner).setLaunchesPaused(false);
-      await launchpad.connect(alice).createToken("A", "A", "", s, 0);
+      await launchpad.connect(alice).createToken("A", "A", "", s, 0, 0);
     });
 
     it("lets the owner freeze claims and rotate a leaked signer", async () => {
@@ -559,7 +579,7 @@ describe("SplitLaunchpad", () => {
       const fx = await loadFixture(deploy);
       const { launchpad, vault, signer, alice } = fx;
       for (const sym of ["A", "B", "C"]) {
-        await launchpad.connect(alice).createToken(sym, sym, "", await split(vault, signer, alice.address), 0);
+        await launchpad.connect(alice).createToken(sym, sym, "", await split(vault, signer, alice.address), 0, 0);
       }
       expect((await launchpad.getTokens(0, 2)).map((t) => t.symbol)).to.deep.equal(["C", "B"]);
       expect((await launchpad.getTokens(2, 10)).map((t) => t.symbol)).to.deep.equal(["A"]);
