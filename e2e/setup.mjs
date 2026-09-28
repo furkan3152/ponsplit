@@ -37,7 +37,16 @@ try {
   if (count !== expected) fail(`expected ${expected} steps on ${NETWORK}, the page shows ${count}`);
   // A double tap (easy on a phone) must still send each transaction exactly once.
   await deploy.dblclick();
-  await page.getByText("Deployed. Last step: point the site at it").waitFor({ timeout: 300_000 });
+  // Stop at the first error the page shows rather than wait out the whole deploy.
+  const done = page.getByText("Deployed. Last step: point the site at it");
+  const shown = page.locator("p.text-down-ink");
+  // Where it is, every 20 s, so a stall shows which step it stopped at.
+  const progress = setInterval(async () => {
+    const label = await page.locator("button.btn-sticker").first().textContent({ timeout: 2000 }).catch(() => "?");
+    console.log(`  /setup: ${label}`);
+  }, 20_000);
+  await done.or(shown).first().waitFor({ timeout: 300_000 }).finally(() => clearInterval(progress));
+  if (!(await done.count())) fail(`/setup stopped: ${await shown.first().textContent()}`);
   const json = JSON.parse(await page.locator("pre").first().textContent());
   const pinned = json[NETWORK];
   const launcher = ethers.getAddress(pinned.launcher);
@@ -87,6 +96,8 @@ try {
   );
 } catch (e) {
   // What the owner would have seen when it stopped.
+  const text = await page?.locator("main").innerText({ timeout: 5000 }).catch(() => "");
+  if (text) console.error(`/setup showed:\n${text}`);
   await page?.screenshot({ path: `${OUT}/setup-failed-${NETWORK}.png`, fullPage: true }).catch(() => {});
   if (errors.length) console.error("page errors:", errors);
   throw e;
