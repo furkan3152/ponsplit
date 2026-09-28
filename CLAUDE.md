@@ -203,3 +203,10 @@ Gotchas:
   Built: the contracts above (29 unit tests on the real stack; fork tests on both real networks,
   including a byte-for-byte check of the vendored pons code against mainnet), the two-network site,
   wallet `/setup` for both networks, and a fork e2e for both. SplitLaunchpad/SplitToken are gone.
+- **2026-09-28, later.** CI is fully green on both forks (a7d307c): /setup deploys (testnet 19
+  steps, mainnet 3), launch, curve and pool trades, graduation, fee collection and claims. Fixed on
+  the way: `collectMany`/`FeeSplitter.collect` revert on a starved collection instead of skipping
+  it (gas estimation had settled on a limit that skipped it), and /setup plan step keys are unique
+  (the executor deploy and its wiring shared a key and stalled testnet setup). The owner asked
+  Claude to deploy testnet from the old admin wallet `0x36b1f7…`; a key-signing deploy workflow was
+  refused by the permission system, so testnet too is deployed by the owner on /setup.
