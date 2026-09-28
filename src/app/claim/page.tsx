@@ -716,7 +716,7 @@ function StreamsList({ xId, username, level = 3 }: { xId: bigint; username: stri
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3">
-        <Heading className="min-w-0 truncate text-[17px] font-semibold">Fee streams for @{username}</Heading>
+        <Heading className="min-w-0 break-words text-[17px] font-semibold">Fee streams for @{username}</Heading>
         {tokens && streams.length ? <span className="eyebrow shrink-0">Paid so far</span> : null}
       </div>
       {!tokens ? (
@@ -750,9 +750,9 @@ function StreamsList({ xId, username, level = 3 }: { xId: bigint; username: stri
                   <div className="truncate text-[15px] font-semibold">{t.name}</div>
                   <div className="flex items-center gap-1.5 font-mono text-[11.5px] text-ink-2">
                     <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: colorOf(i) }} />
-                    <span className="truncate">
-                      ${t.symbol} · share {pct(bps)}
-                    </span>
+                    {/* The share is what this list is for: only the ticker gives way on narrow phones. */}
+                    <span className="min-w-0 truncate">${t.symbol}</span>
+                    <span className="shrink-0">· share {pct(bps)}</span>
                   </div>
                 </div>
                 <FlowLine color={colorOf(i)} />
