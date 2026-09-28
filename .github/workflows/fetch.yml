@@ -8,6 +8,9 @@ on:
       urls:
         description: Space-separated URLs
         required: true
+      max:
+        description: Characters of text to print per page
+        default: "40000"
 
 jobs:
   fetch:
@@ -16,12 +19,13 @@ jobs:
       - name: Fetch
         env:
           URLS: ${{ inputs.urls }}
+          MAX: ${{ inputs.max }}
         run: |
           pip install -q html2text >/dev/null 2>&1
           for u in $URLS; do
             echo "=================== $u"
             curl -sSL -m 30 -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15" "$u" -o page.html -w "HTTP %{http_code} %{content_type}\n" || true
-            python3 -c "import html2text,sys;h=html2text.HTML2Text();h.ignore_images=True;h.body_width=0;print(h.handle(open('page.html',errors='ignore').read())[:40000])" || head -c 20000 page.html
+            python3 -c "import html2text,sys;h=html2text.HTML2Text();h.ignore_images=True;h.body_width=0;import os;print(h.handle(open('page.html',errors='ignore').read())[:int(os.environ.get('MAX') or 40000)])" || head -c 20000 page.html
             echo "--- script/link urls"
             grep -oE '(src|href)="[^"]+"' page.html | sort -u | head -60 || true
           done
