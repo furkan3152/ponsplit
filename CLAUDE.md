@@ -66,17 +66,21 @@ Gotchas:
 - **Render.** Testnet service `ponsplit-testnet`, id `srv-dasv10bbc2fs73agp3sg`, workspace
   `tea-d7ccecdckfvc73887jo0`, Frankfurt, free plan, auto-deploys the branch. It is live at
   https://ponsplit-testnet.onrender.com. It was created through the Render API, not the blueprint,
-  so it has **no SIGNER_SEED**.
-- **Waiting on the owner.** The admin key is not configured yet (`/api/config` shows `signer:false`).
-  The owner must:
-  1. `/setup` → Generate admin key → Copy.
-  2. Render → Environment → `SIGNER_PRIVATE_KEY` → Save, rebuild, and deploy.
-  3. `/setup` → Open faucet → Deploy contracts.
-  4. Pin the two `NEXT_PUBLIC_*_ADDRESS` values that `/setup` shows once it's live.
-- **Contracts are not deployed on any network yet.** Contract changes are therefore still free:
-  just re-export the ABI and bytecode afterwards.
-- **Mainnet.** Use `render.mainnet.yaml` and follow MAINNET.md (audit, legal, multisig owner,
-  OAuth, `NEXTAUTH_URL`, `X_BEARER_TOKEN`, pinned addresses).
+  so it has no SIGNER_SEED: the owner set `SIGNER_PRIVATE_KEY` there themselves. That key was
+  shared in chat, so treat it as public and testnet-only; mainnet gets a fresh key.
+- **Testnet contracts are live**, deployed from `/setup` on 2026-09-28:
+  - admin, signer and owner of both: `0x36b1f70cFcA2DB13aA43B0208f6979c5407099b9`
+  - FeeVault `0x79729a008b26Fd1c3d50a9dF4ceD538B096380E5` (admin nonce 0)
+  - SplitLaunchpad `0xB6404ab2d13808eFA3885ff05900aa9d59964cf3` (admin nonce 1)
+  - Both are pinned on Render (`NEXT_PUBLIC_FEE_VAULT_ADDRESS`, `NEXT_PUBLIC_LAUNCHPAD_ADDRESS`).
+  - Check them any time with the `inspect.yml` workflow: read-only, straight from the chain. With
+    `site` it also simulates a launch through the live site (real attestation, eth_call only).
+- **Contract changes are no longer free on testnet.** The live contracts can't be upgraded. A
+  changed .sol needs a new deployment: a new admin key on `/setup` (it deploys at nonces 0/1 of a
+  fresh key) or `deploy-testnet.yml`, then re-pin both addresses on Render. Coins launched on the
+  old contracts stay there.
+- **Mainnet** is not deployed. Use `render.mainnet.yaml` and follow MAINNET.md (audit, legal,
+  multisig owner, OAuth, `NEXTAUTH_URL`, `X_BEARER_TOKEN`, pinned addresses).
 
 ## History / where things stand
 
