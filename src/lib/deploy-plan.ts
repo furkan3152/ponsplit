@@ -268,16 +268,16 @@ export async function readPlan(client: PublicClient, n: Network, owner: Address,
 }
 
 /**
- * Whether `to` accepts a plain ETH transfer from a contract. On testnet the owner's wallet is the
- * Pons copy's protocol fee recipient, and Pons sends it every launch fee: a wallet with delegated
- * code that refuses ETH would make every launch revert. Simulated from a funded throwaway sender.
+ * Whether the owner's wallet accepts a plain ETH transfer. On testnet it is the pons copy's
+ * protocol fee recipient, and pons sends it every launch fee: a wallet with delegated code that
+ * refuses ETH would make every launch revert. Simulated as a transfer from the wallet to itself, so
+ * its own balance pays; only a revert counts as a refusal (anything else can't be judged).
  */
-export async function acceptsEth(client: PublicClient, to: Address, value: bigint): Promise<boolean> {
-  const from: Address = "0x00000000000000000000000000000000000dEaD1";
+export async function acceptsEth(client: PublicClient, wallet: Address, value: bigint): Promise<boolean> {
   try {
-    await client.call({ account: from, to, value, stateOverride: [{ address: from, balance: value * 10n }] });
+    await client.call({ account: wallet, to: wallet, value });
     return true;
-  } catch {
-    return false;
+  } catch (e) {
+    return !/revert/i.test(String((e as Error)?.message ?? e));
   }
 }
