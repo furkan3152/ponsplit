@@ -32,7 +32,7 @@ type Quote = { out: bigint; spent: bigint; refund: bigint };
 
 /**
  * Buys and sells a coin where it trades right now: on its pons bonding curve, then (after the
- * crossing buy and the pool's creation) in its pons Uniswap v4 pool through PonsEarn's router. In
+ * crossing buy and the pool's creation) in its pons Uniswap v4 pool through SplitEarn's router. In
  * between, anyone can push the graduation along; pons's own keeper usually does it first.
  */
 export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => void }) {
@@ -126,7 +126,7 @@ export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => voi
   const needsApproval = side === "sell" && parsed !== undefined && allowance !== undefined && allowance < parsed;
 
   // What this trade pays the coin's X accounts: the creator's part of the base fee plus the creator
-  // tax, less PonsEarn's share. On the curve both come out of the ETH side.
+  // tax, less SplitEarn's share. On the curve both come out of the ETH side.
   const ethSide = quote ? (side === "buy" ? quote.spent : quote.out) : undefined;
   const feeBps = Number(terms.feeBps);
   const toAccounts =

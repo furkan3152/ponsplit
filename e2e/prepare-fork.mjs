@@ -3,7 +3,7 @@
 //    set them) and refuse plain ETH; on the fork they become plain accounts again;
 //  - Arbitrum block headers have no blob-gas fields and the node can't run calls against the fork
 //    block itself, so one local block is mined before anything else reads the chain;
-//  - on mainnet, a closed pons launch gate is reopened (the tests are about PonsEarn, not about
+//  - on mainnet, a closed pons launch gate is reopened (the tests are about SplitEarn, not about
 //    pons's uptime), and said so.
 // Nothing here reaches the real network.
 //   RPC=http://127.0.0.1:8545 NETWORK=testnet|mainnet node prepare-fork.mjs

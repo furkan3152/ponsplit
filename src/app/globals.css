@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /*
- * PonsEarn "split terminal": near-black paper, Robin-neon lime, pastel account colors for the
+ * SplitEarn "split terminal": near-black paper, Robin-neon lime, pastel account colors for the
  * X accounts a coin pays. Dark is the house default; [data-theme="light"] is the paper edition.
  * Sticker fills stay bright in both themes; --outline is the ink the stickers are drawn with.
  */

@@ -8,7 +8,7 @@ import { DEFAULT_NETWORK } from "@/lib/networks";
 import { fetchCoin } from "@/lib/server-token";
 
 export const runtime = "nodejs";
-export const alt = "Coin on PonsEarn";
+export const alt = "Coin on SplitEarn";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -35,7 +35,7 @@ export default async function TokenOgImage({ params }: { params: { address: stri
         <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f5f7", fontSize: 64, fontWeight: 800, color: "#1d1d1f", gap: 24 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={logo} width={96} height={96} alt="" />
-          PonsEarn
+          SplitEarn
         </div>
       ),
       { ...size, headers: MISS }
@@ -52,7 +52,7 @@ export default async function TokenOgImage({ params }: { params: { address: stri
       <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 30, fontWeight: 700 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logo} width={48} height={48} alt="" />
-        PonsEarn
+        SplitEarn
         {testnet ? <span style={{ marginLeft: 12, fontSize: 22, fontWeight: 700, background: "#ffd84d", border: "3px solid #1d1d1f", borderRadius: 999, padding: "4px 14px" }}>TESTNET</span> : null}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 36, marginTop: 44 }}>

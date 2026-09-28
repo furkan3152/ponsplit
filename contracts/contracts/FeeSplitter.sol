@@ -13,10 +13,10 @@ interface IPlatformFeeSink {
 }
 
 /// @title FeeSplitter
-/// @notice The Pons creator fee recipient of one PonsEarn coin. Pons pays creator fees by crediting
+/// @notice The Pons creator fee recipient of one SplitEarn coin. Pons pays creator fees by crediting
 ///         this address in its fee escrow; `collect()` pulls them in and splits them: `platformBps` to
-///         PonsEarn, the rest to the coin's X accounts in the FeeVault.
-/// @dev Deployed once as an implementation by PonsEarnLauncher and then cloned (EIP-1167) per coin, so
+///         SplitEarn, the rest to the coin's X accounts in the FeeVault.
+/// @dev Deployed once as an implementation by SplitEarnLauncher and then cloned (EIP-1167) per coin, so
 ///      the immutables below are shared by every clone while `token`, `curve`, `poolId` and
 ///      `platformBps` are each clone's own storage. There is deliberately no way to hand the Pons
 ///      recipient role to another address: the split a coin launched with is the split it keeps.
@@ -34,7 +34,7 @@ contract FeeSplitter is ReentrancyGuardTransient {
     address public curve;
     bytes32 public poolId;
     uint16 public platformBps;
-    /// @notice Everything this splitter has paid out: to X accounts and to PonsEarn.
+    /// @notice Everything this splitter has paid out: to X accounts and to SplitEarn.
     uint256 public totalCollected;
 
     event Collected(uint256 amount, uint256 toPlatform, uint256 toRecipients);
@@ -101,7 +101,7 @@ contract FeeSplitter is ReentrancyGuardTransient {
         totalCollected += amount;
 
         feeVault.deposit{value: toRecipients}(token_);
-        // The launcher is immutable: PonsEarn's share can go nowhere else.
+        // The launcher is immutable: SplitEarn's share can go nowhere else.
         // slither-disable-next-line arbitrary-send-eth
         if (toPlatform != 0) IPlatformFeeSink(launcher).platformFeeIn{value: toPlatform}(token_);
         emit Collected(amount, toPlatform, toRecipients);
@@ -116,7 +116,7 @@ contract FeeSplitter is ReentrancyGuardTransient {
         if (reason.length == 0 || gasleft() < gasBefore / 63) revert OutOfGas();
     }
 
-    /// @notice Creator fees this coin has earned but not yet split, in wei, before PonsEarn's share:
+    /// @notice Creator fees this coin has earned but not yet split, in wei, before SplitEarn's share:
     ///         what sits in the curve's or the pool's ETH buckets, in the Pons escrow and here.
     /// @dev Pool fees taken in the coin itself are left out until Pons's keeper converts them to ETH.
     function pendingFees() public view returns (uint256 pending) {

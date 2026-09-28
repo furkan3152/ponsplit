@@ -1,9 +1,9 @@
-// The whole site on a fork of a Robinhood network, with PonsEarn deployed through /setup and pinned
+// The whole site on a fork of a Robinhood network, with SplitEarn deployed through /setup and pinned
 // (setup.mjs): launch a coin on pons with real X accounts, several wallets trade on the pons curve,
 // the curve sells out and the pool is opened from the coin page, trading continues on Uniswap v4,
 // the claim page reads the accounts' balances, the owner's switches work, and every page renders on
 // desktop, mobile and in the light theme without overflowing. Nothing here is mocked: the X
-// accounts are real (looked up through the site), and so are pons (mainnet) or PonsEarn's copy of
+// accounts are real (looked up through the site), and so are pons (mainnet) or SplitEarn's copy of
 // it (testnet) and Uniswap v4.
 //
 //   NETWORK=testnet|mainnet BASE=http://localhost:3000 RPC=http://127.0.0.1:8545 node full.mjs
@@ -72,7 +72,7 @@ try {
   // ── 2. The owner's switches on /setup ───────────────────────────────────────────────────
   const owner = await openAs(browser, OWNER, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await owner.goto(`${BASE}/setup`, { timeout: 180_000 });
-  await owner.getByText(`PonsEarn is live on ${NETWORK}`).waitFor({ timeout: 90_000 });
+  await owner.getByText(`SplitEarn is live on ${NETWORK}`).waitFor({ timeout: 90_000 });
   await connect(owner);
   await owner.getByRole("button", { name: "Pause launches" }).click({ timeout: 60_000 });
   await owner.getByRole("button", { name: "Resume launches" }).waitFor({ timeout: 60_000 });
@@ -109,7 +109,7 @@ try {
   const erc20 = new ethers.Contract(token, ["function balanceOf(address) view returns (uint256)", "function totalSupply() view returns (uint256)"], provider);
   if ((await erc20.balanceOf(A)) === 0n) fail("the first buy didn't reach the creator");
   if ((await erc20.totalSupply()) !== ethers.parseEther("1000000000")) fail("the coin isn't a 1B-supply pons coin");
-  step(`launched $SPLIT on ${NETWORK === "mainnet" ? "pons" : "PonsEarn's pons copy"} through the UI → ${token} (1% tax, first buy)`);
+  step(`launched $SPLIT on ${NETWORK === "mainnet" ? "pons" : "SplitEarn's pons copy"} through the UI → ${token} (1% tax, first buy)`);
   await creator.screenshot({ path: `${OUT}/01-launched-${NETWORK}.png`, fullPage: true });
 
   // ── 4. Several wallets trade on the curve through the UI ─────────────────────────────────
@@ -147,20 +147,20 @@ try {
   await opener.waitForTimeout(3000);
   await opener.screenshot({ path: `${OUT}/02-graduated-${NETWORK}.png`, fullPage: true });
 
-  // ── 6. Fees: collected into the vault; the owner withdraws PonsEarn's share ───────────────
+  // ── 6. Fees: collected into the vault; the owner withdraws SplitEarn's share ───────────────
   await (await launcher.connect(await provider.getSigner(WHALE)).collectMany([token])).wait();
   const split = await vault.tokenFees(token);
   const jack = await vault.claimable(IDS[0]);
   const x = await vault.claimable(IDS[1]);
   if (split === 0n || jack === 0n || x === 0n) fail(`fees didn't reach the X accounts: split ${split}, @jack ${jack}, @x ${x}`);
   const platform = await launcher.platformFees();
-  if (platform === 0n) fail("PonsEarn's share didn't arrive");
-  step(`fees split: ${ethers.formatEther(split)} ETH to the X accounts (@jack ${ethers.formatEther(jack)}, @x ${ethers.formatEther(x)}), ${ethers.formatEther(platform)} ETH to PonsEarn`);
+  if (platform === 0n) fail("SplitEarn's share didn't arrive");
+  step(`fees split: ${ethers.formatEther(split)} ETH to the X accounts (@jack ${ethers.formatEther(jack)}, @x ${ethers.formatEther(x)}), ${ethers.formatEther(platform)} ETH to SplitEarn`);
   await owner.goto(`${BASE}/setup`);
   await owner.getByRole("button", { name: "Withdraw to this wallet" }).click({ timeout: 60_000 });
   await owner.getByText("Withdraw to this wallet: done.").waitFor({ timeout: 60_000 });
   if ((await launcher.platformFees()) !== 0n) fail("the withdrawal didn't reach the chain");
-  step("the owner withdrew PonsEarn's share from /setup");
+  step("the owner withdrew SplitEarn's share from /setup");
 
   // ── 7. The claim page reads an account's vault and makes its proof post ───────────────────
   const claimer = traders[0];
@@ -177,7 +177,7 @@ try {
   const other = NETWORK === "testnet" ? "mainnet" : "testnet";
   await claimer.goto(`${BASE}/`);
   await claimer.getByRole("radio", { name: other === "testnet" ? /Test/ : /Main/ }).click();
-  await claimer.getByText(`PonsEarn isn't live on ${other} yet.`).waitFor({ timeout: 60_000 });
+  await claimer.getByText(`SplitEarn isn't live on ${other} yet.`).waitFor({ timeout: 60_000 });
   const cookie = (await claimer.context().cookies()).find((c) => c.name === "pe-network");
   if (cookie?.value !== other) fail(`the switch left the network cookie at ${cookie?.value}`);
   step(`the header switch moves the whole site to ${other}`);

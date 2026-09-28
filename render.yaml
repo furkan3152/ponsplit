@@ -4,7 +4,7 @@
 # the first deploy, open /setup and deploy the contracts from your own wallet (see MAINNET.md).
 services:
   - type: web
-    name: ponsearn
+    name: splitearn
     runtime: node
     plan: free
     buildCommand: npm ci && npm run build

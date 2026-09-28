@@ -9,7 +9,7 @@ export type Phase = "curve" | "graduating" | "pool" | "rescued";
 
 export type Recipient = { xId: bigint; handle: string; bps: number };
 
-/** A PonsEarn coin with the numbers every page shows. */
+/** A SplitEarn coin with the numbers every page shows. */
 export type Coin = {
   token: Address;
   curve: Address;
@@ -23,7 +23,7 @@ export type Coin = {
   /** The logo as launched on Pons (ipfs:// or https://); render only through safeUrl(). */
   logo: string;
   creatorTaxBps: number;
-  /** Share of every payout that goes to PonsEarn, in bps. */
+  /** Share of every payout that goes to SplitEarn, in bps. */
   platformBps: number;
   phase: Phase;
   /** Off the curve: graduating, on its pool, or rescued. */
@@ -50,7 +50,7 @@ export type Coin = {
   progress: number;
   /** ETH already credited to the X accounts. */
   feesSplit: bigint;
-  /** Creator fees earned but not split yet, before PonsEarn's share. */
+  /** Creator fees earned but not split yet, before SplitEarn's share. */
   feesPending: bigint;
   recipients: Recipient[];
   handles: string[];

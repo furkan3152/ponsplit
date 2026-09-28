@@ -12,11 +12,11 @@ export const metadata: Metadata = { title: "How it works" };
 const FAQ: { q: string; a: React.ReactNode }[] = [
   {
     q: "Where does the coin live?",
-    a: "On pons. PonsEarn launches it through pons's own factory, so it is a regular pons coin: pons mints it, runs its bonding curve and graduates it into a Uniswap v4 pool with locked liquidity. The only difference is who receives its creator fees: a per-coin splitter that pays the X accounts.",
+    a: "On pons. SplitEarn launches it through pons's own factory, so it is a regular pons coin: pons mints it, runs its bonding curve and graduates it into a Uniswap v4 pool with locked liquidity. The only difference is who receives its creator fees: a per-coin splitter that pays the X accounts.",
   },
   {
     q: "Where do the fees come from?",
-    a: "Every buy and sell pays pons's 1% fee: 30% of it goes to pons and 70% is the creator's. Of the creator's part, 80% goes to the coin's X accounts by the shares set at launch and 20% to PonsEarn. A coin can also carry a creator tax of up to 10%, chosen at launch; all of it goes to the X accounts. The split never changes after launch.",
+    a: "Every buy and sell pays pons's 1% fee: 30% of it goes to pons and 70% is the creator's. Of the creator's part, 80% goes to the coin's X accounts by the shares set at launch and 20% to SplitEarn. A coin can also carry a creator tax of up to 10%, chosen at launch; all of it goes to the X accounts. The split never changes after launch.",
   },
   {
     q: "What happens when the curve sells out?",
@@ -35,15 +35,15 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     a: "No. Any public X account can be added. Their earnings wait in the vault until they choose to claim.",
   },
   {
-    q: "Is PonsEarn part of pons?",
-    a: "No. PonsEarn is an independent app built on pons's public contracts. It is not affiliated with, endorsed by or operated by pons.",
+    q: "Is SplitEarn part of pons?",
+    a: "No. SplitEarn is an independent app built on pons's public contracts. It is not affiliated with, endorsed by or operated by pons.",
   },
   {
     q: "Which network is this?",
     a: (
       <>
         Both: Robinhood Chain mainnet (chain id {NETWORKS.mainnet.chain.id}) and its testnet (chain id {NETWORKS.testnet.chain.id}). Pick one at the top of any
-        page. pons itself runs on mainnet; on testnet, coins launch on PonsEarn&apos;s own copy of pons&apos;s open-source contracts. Test ETH is free from the{" "}
+        page. pons itself runs on mainnet; on testnet, coins launch on SplitEarn&apos;s own copy of pons&apos;s open-source contracts. Test ETH is free from the{" "}
         <a className="underline" href={NETWORKS.testnet.faucet} target="_blank" rel="noreferrer">
           faucet
         </a>
@@ -71,7 +71,7 @@ const ACCOUNTS: Account[] = [
 ];
 
 // The same numbers the FAQ states: pons's 1% fee on every trade, 70% of it the creator's, and 80% of
-// that to the accounts (20% to PonsEarn). A coin's optional creator tax comes on top, all to the accounts.
+// that to the accounts (20% to SplitEarn). A coin's optional creator tax comes on top, all to the accounts.
 const TRADE_ETH = 1;
 const FEE_PCT = 1;
 const CREATOR_PCT = 70;
@@ -108,7 +108,7 @@ export default function HowPage() {
               </span>
             </Reveal>
             <Reveal as="h1" delay={60} className="display mt-6 text-[52px] leading-[0.9] sm:text-[84px]">
-              How PonsEarn <span className="accent text-neon pr-2">works.</span>
+              How SplitEarn <span className="accent text-neon pr-2">works.</span>
             </Reveal>
             <Reveal delay={140}>
               <p className="mt-6 max-w-lg text-[17px] leading-relaxed text-ink-2 sm:text-[18px]">
@@ -285,7 +285,7 @@ function FeeFlow() {
           <SplitBar left={ACCOUNTS_PCT} leftLabel="X accounts" rightLabel={`${100 - ACCOUNTS_PCT}%`} delay={1020} />
           <div className="mt-2.5 flex items-center justify-between gap-3 font-mono text-[11px] text-ink-3">
             <span>to the X accounts</span>
-            <span>to PonsEarn</span>
+            <span>to SplitEarn</span>
           </div>
 
           <Wedge id="how-wedge-accounts" from={[0, ACCOUNTS_PCT]} delay={1300} />
@@ -397,7 +397,7 @@ function Receipt({ fee, toPons, creator, toPlatform, toAccounts }: { fee: number
           <ReceiptLine label={`pons (${100 - CREATOR_PCT}%)`} value={eth(toPons)} delay={340} />
           <ReceiptLine label={`Creator (${CREATOR_PCT}%)`} value={eth(creator)} delay={380} strong />
           <div className="space-y-2.5 border-l border-line-2 pl-3">
-            <ReceiptLine label={`PonsEarn (${100 - ACCOUNTS_PCT}%)`} value={eth(toPlatform)} delay={420} />
+            <ReceiptLine label={`SplitEarn (${100 - ACCOUNTS_PCT}%)`} value={eth(toPlatform)} delay={420} />
             <ReceiptLine label={`X accounts (${ACCOUNTS_PCT}%)`} value={eth(toAccounts)} delay={460} strong />
             <div className="space-y-2 border-l border-line-2 pl-3">
               {ACCOUNTS.map((a, i) => (

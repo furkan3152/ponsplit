@@ -4,9 +4,9 @@ import { robinhood, robinhoodTestnet } from "./chains";
 import copyTerms from "./pons-copy-terms.json";
 
 /**
- * PonsEarn runs on both Robinhood Chain networks at once; visitors switch between them at the top
+ * SplitEarn runs on both Robinhood Chain networks at once; visitors switch between them at the top
  * of every page. Mainnet uses the real Pons (ponsfamily.com). Pons has no testnet deployment, so the
- * testnet runs PonsEarn's own copy of Pons's open-source v2 contracts (deployed by the owner from
+ * testnet runs SplitEarn's own copy of Pons's open-source v2 contracts (deployed by the owner from
  * /setup) against the Uniswap v4 contracts that Robinhood Chain testnet shares with mainnet.
  */
 export type NetworkId = "mainnet" | "testnet";
@@ -32,12 +32,12 @@ export type Network = {
   /** JSON-RPC endpoint; NEXT_PUBLIC_<NETWORK>_RPC_URL overrides it (tests point it at a fork). */
   rpcUrl: string;
   explorer: string;
-  /** PonsEarn's contracts, once deployed and pinned (src/deployment.json or NEXT_PUBLIC_* variables). */
+  /** SplitEarn's contracts, once deployed and pinned (src/deployment.json or NEXT_PUBLIC_* variables). */
   launcher?: Address;
   feeVault?: Address;
-  /** The Pons factory coins launch on: Pons's own on mainnet, PonsEarn's copy on testnet. */
+  /** The Pons factory coins launch on: Pons's own on mainnet, SplitEarn's copy on testnet. */
   ponsFactory?: Address;
-  /** True on testnet, where "Pons" is PonsEarn's own copy of Pons's contracts. */
+  /** True on testnet, where "Pons" is SplitEarn's own copy of Pons's contracts. */
   ponsIsCopy: boolean;
   /** Coins the site doesn't list (the owner's tests, spam). */
   hidden: readonly Address[];
@@ -92,7 +92,7 @@ export const NETWORKS: Record<NetworkId, Network> = {
   },
 };
 
-/** Whether PonsEarn is live on a network: its contracts are deployed and pinned. */
+/** Whether SplitEarn is live on a network: its contracts are deployed and pinned. */
 export const isLive = (n: Network) => Boolean(n.launcher && n.feeVault);
 
 /** Where visitors land: NEXT_PUBLIC_DEFAULT_NETWORK, else mainnet once it's live, else testnet if it is. */

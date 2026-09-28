@@ -1,5 +1,5 @@
 // /setup end to end, as the owner does it from a phone: every contract is deployed from the owner's
-// own wallet (testnet: PonsEarn's copy of pons, then PonsEarn; mainnet: PonsEarn on the real pons),
+// own wallet (testnet: SplitEarn's copy of pons, then SplitEarn; mainnet: SplitEarn on the real pons),
 // a double tap still sends each transaction once, and a reload resumes instead of deploying again.
 // Writes the addresses to pin to deploy.env.
 //

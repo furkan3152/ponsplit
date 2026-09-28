@@ -88,7 +88,7 @@ export function useRiskGate() {
         <ul className="mt-6 divide-y divide-[var(--line)] border-y border-line text-[14px] leading-relaxed text-ink-2">
           <RiskItem n={1}>Coins here are speculative and can go to zero. Only use money you can afford to lose.</RiskItem>
           <RiskItem n={2}>Anyone can launch a coin and list any X account. A listed account has not endorsed the coin.</RiskItem>
-          <RiskItem n={3}>Trades are final. PonsEarn&apos;s contracts are experimental and have not been audited. PonsEarn is not affiliated with pons.</RiskItem>
+          <RiskItem n={3}>Trades are final. SplitEarn&apos;s contracts are experimental and have not been audited. SplitEarn is not affiliated with pons.</RiskItem>
           <RiskItem n={4}>You are responsible for following the laws where you live.</RiskItem>
         </ul>
         <div className="mt-6 flex gap-2.5">

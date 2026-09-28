@@ -1,6 +1,6 @@
 {
-  "_comment": "Terms of PonsEarn's own copy of Pons v2 (testnet and local test chains), mirroring Pons's live mainnet settings on 2026-09-28. Read by /setup (src/lib/deploy-plan.ts) and by contracts/scripts/lib/pons-stack.js.",
-  "saltPrefix": "ponsearn:v1",
+  "_comment": "Terms of SplitEarn's own copy of Pons v2 (testnet and local test chains), mirroring Pons's live mainnet settings on 2026-09-28. Read by /setup (src/lib/deploy-plan.ts) and by contracts/scripts/lib/pons-stack.js.",
+  "saltPrefix": "splitearn:v1",
   "launchFeeWei": "500000000000000",
   "snipeTaxSeconds": 3,
   "launchConfig": {

@@ -465,7 +465,7 @@ export const launcherAbi = [
                 "type": "bytes32"
               }
             ],
-            "internalType": "struct PonsEarnLauncher.Launch",
+            "internalType": "struct SplitEarnLauncher.Launch",
             "name": "launch",
             "type": "tuple"
           },
@@ -565,7 +565,7 @@ export const launcherAbi = [
             "type": "uint16[]"
           }
         ],
-        "internalType": "struct PonsEarnLauncher.LaunchView",
+        "internalType": "struct SplitEarnLauncher.LaunchView",
         "name": "v",
         "type": "tuple"
       }
@@ -638,7 +638,7 @@ export const launcherAbi = [
                 "type": "bytes32"
               }
             ],
-            "internalType": "struct PonsEarnLauncher.Launch",
+            "internalType": "struct SplitEarnLauncher.Launch",
             "name": "launch",
             "type": "tuple"
           },
@@ -738,7 +738,7 @@ export const launcherAbi = [
             "type": "uint16[]"
           }
         ],
-        "internalType": "struct PonsEarnLauncher.LaunchView[]",
+        "internalType": "struct SplitEarnLauncher.LaunchView[]",
         "name": "page",
         "type": "tuple[]"
       }
@@ -837,7 +837,7 @@ export const launcherAbi = [
             "type": "bytes32"
           }
         ],
-        "internalType": "struct PonsEarnLauncher.LaunchParams",
+        "internalType": "struct SplitEarnLauncher.LaunchParams",
         "name": "p",
         "type": "tuple"
       },
@@ -869,7 +869,7 @@ export const launcherAbi = [
             "type": "bytes"
           }
         ],
-        "internalType": "struct PonsEarnLauncher.SplitParams",
+        "internalType": "struct SplitEarnLauncher.SplitParams",
         "name": "s",
         "type": "tuple"
       },
@@ -999,7 +999,7 @@ export const launcherAbi = [
             "type": "bytes32"
           }
         ],
-        "internalType": "struct PonsEarnLauncher.Launch",
+        "internalType": "struct SplitEarnLauncher.Launch",
         "name": "l",
         "type": "tuple"
       }
@@ -1226,7 +1226,7 @@ export const launcherAbi = [
     "name": "router",
     "outputs": [
       {
-        "internalType": "contract PonsEarnRouter",
+        "internalType": "contract SplitEarnRouter",
         "name": "",
         "type": "address"
       }

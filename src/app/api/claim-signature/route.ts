@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   const body = await readJson<{ network?: string; to?: string; proofUrl?: string }>(req);
   const n = requestNetwork(body?.network);
   if (!n) return NextResponse.json({ error: "Unknown network." }, { status: 400 });
-  if (!isLive(n)) return NextResponse.json({ error: `PonsEarn isn't live on ${n.label} yet.` }, { status: 400 });
+  if (!isLive(n)) return NextResponse.json({ error: `SplitEarn isn't live on ${n.label} yet.` }, { status: 400 });
   if (!body?.to || !isAddress(body.to)) {
     return NextResponse.json({ error: "A valid destination wallet is required." }, { status: 400 });
   }

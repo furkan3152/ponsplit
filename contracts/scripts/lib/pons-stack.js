@@ -1,10 +1,10 @@
-// Deploys the real contracts PonsEarn runs on, for Hardhat tests and local chains:
+// Deploys the real contracts SplitEarn runs on, for Hardhat tests and local chains:
 //   - Uniswap v4 (PoolManager, PositionManager) and Permit2, on a bare local chain only (Robinhood
 //     Chain testnet and mainnet have them already, at the addresses in src/lib/pons-copy-terms.json);
 //   - a copy of Pons v2 built from its Blockscout-verified mainnet sources (vendor/), with the
 //     terms Pons runs on mainnet;
-//   - PonsEarn (FeeVault + PonsEarnLauncher).
-// Pons and PonsEarn are deployed through the deterministic CREATE2 proxy with salts derived from the
+//   - SplitEarn (FeeVault + SplitEarnLauncher).
+// Pons and SplitEarn are deployed through the deterministic CREATE2 proxy with salts derived from the
 // owner, like /setup does from the owner's wallet (src/lib/deploy-plan.ts), so a rerun finds what
 // is already there instead of deploying twice.
 const { ethers, network } = require("hardhat");
@@ -117,17 +117,17 @@ async function deployPonsCopy(owner, uni = terms.uniswap) {
   return { factory: factoryAddress, hook, escrow, vault, locker, executor, deployer, ...uni };
 }
 
-/** PonsEarn's FeeVault and launcher on top of a Pons factory, owned by `owner`. */
-async function deployPonsEarn(owner, { signer, ponsFactory }) {
+/** SplitEarn's FeeVault and launcher on top of a Pons factory, owned by `owner`. */
+async function deploySplitEarn(owner, { signer, ponsFactory }) {
   await ensureCreate2Proxy();
   const o = owner.address;
   const vaultF = await ethers.getContractFactory("FeeVault");
-  const launcherF = await ethers.getContractFactory("PonsEarnLauncher");
+  const launcherF = await ethers.getContractFactory("SplitEarnLauncher");
   const feeVault = await create2(owner, salt(o, "FeeVault"), await initcode(vaultF, [o, signer]));
-  const launcher = await create2(owner, salt(o, "PonsEarnLauncher"), await initcode(launcherF, [o, feeVault, ponsFactory]));
+  const launcher = await create2(owner, salt(o, "SplitEarnLauncher"), await initcode(launcherF, [o, feeVault, ponsFactory]));
   const vault = await ethers.getContractAt("FeeVault", feeVault, owner);
   if (!(await vault.isLauncher(launcher))) await (await vault.setLauncher(launcher, true)).wait();
   return { feeVault, launcher };
 }
 
-module.exports = { deployUniswapLocal, deployPonsCopy, deployPonsEarn, ensureCreate2Proxy, vendor, terms, PROXY };
+module.exports = { deployUniswapLocal, deployPonsCopy, deploySplitEarn, ensureCreate2Proxy, vendor, terms, PROXY };

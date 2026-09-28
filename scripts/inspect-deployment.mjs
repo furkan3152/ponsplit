@@ -1,4 +1,4 @@
-// Read-only check of a live PonsEarn deployment, straight from the chain (no server, no key):
+// Read-only check of a live SplitEarn deployment, straight from the chain (no server, no key):
 // contract code, wiring, the pons factory it launches on, signer, owners and launch terms. Exits
 // non-zero if anything is inconsistent.
 //
@@ -39,7 +39,7 @@ check(launcherBytes > 0, `launcher ${launcher} has code (${launcherBytes} bytes)
 const l = (functionName, args) => client.readContract({ address: launcher, abi: launcherAbi, functionName, args });
 const [vault, factory, router] = await Promise.all([l("feeVault"), l("ponsFactory"), l("router")]);
 console.log(`  FeeVault               ${vault}`);
-console.log(`  pons factory           ${factory}${net.pons ? "" : " (PonsEarn's copy)"}`);
+console.log(`  pons factory           ${factory}${net.pons ? "" : " (SplitEarn's copy)"}`);
 console.log(`  router                 ${router}`);
 if (net.pons) check(isAddressEqual(factory, net.pons), "the launcher launches on the real pons factory");
 check((await hasCode(vault)) > 0, "FeeVault has code");
@@ -61,13 +61,13 @@ if (!net.pons && owner) check(isAddressEqual(await f("owner"), owner), `the pons
 const [version, share, configId, launchFee, , maxTax, canLaunch, paused] = await l("launchTerms");
 const [count, platformFees, totalPlatformFees] = await Promise.all([l("launchCount"), l("platformFees"), l("totalPlatformFees")]);
 const [claimsPaused, totalDeposited] = await Promise.all([v("claimsPaused"), v("totalDeposited")]);
-console.log(`  terms                  version ${version}, PonsEarn ${share / 100}% of the creator fee, pons config ${configId}, max creator tax ${Number(maxTax) / 100}%`);
+console.log(`  terms                  version ${version}, SplitEarn ${share / 100}% of the creator fee, pons config ${configId}, max creator tax ${Number(maxTax) / 100}%`);
 console.log(`  pons launch fee        ${formatEther(launchFee)} ETH`);
 console.log(`  coins                  ${count}`);
 console.log(`  split to X accounts    ${formatEther(totalDeposited)} ETH`);
-console.log(`  PonsEarn's share       ${formatEther(platformFees)} ETH to withdraw, ${formatEther(totalPlatformFees)} ETH in all`);
+console.log(`  SplitEarn's share       ${formatEther(platformFees)} ETH to withdraw, ${formatEther(totalPlatformFees)} ETH in all`);
 check(canLaunch, "pons accepts launches from the launcher");
-check(!paused, "PonsEarn launches are open");
+check(!paused, "SplitEarn launches are open");
 check(!claimsPaused, "claims are open");
 
 if (problems.length) {

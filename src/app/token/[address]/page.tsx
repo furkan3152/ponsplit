@@ -53,7 +53,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   useNow(15_000);
   useGraduationCelebration(t?.token, t?.phase);
 
-  if (hidden) return <Missing text="This coin isn't listed on PonsEarn." />;
+  if (hidden) return <Missing text="This coin isn't listed on SplitEarn." />;
   if (!token) return <Missing text="That is not a valid coin address." />;
   if (isLoading) return <PageSkeleton />;
   // A failed read is a network problem, not proof the coin doesn't exist.
@@ -61,7 +61,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   if (!t) {
     if (elsewhere.data) return <OnOtherNetwork id={elsewhere.data} />;
     if (elsewhere.isLoading) return <PageSkeleton />;
-    return <Missing text={`This coin wasn't launched on PonsEarn ${n.isTestnet ? "testnet" : "mainnet"}.`} />;
+    return <Missing text={`This coin wasn't launched on SplitEarn ${n.isTestnet ? "testnet" : "mainnet"}.`} />;
   }
 
   const socials = info.data?.socials;
@@ -152,7 +152,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
 
       {t.feesMoved ? (
         <p className="card px-4 py-3.5 text-[13px] leading-relaxed text-ink-2">
-          pons now sends this coin&apos;s creator fees to <span className="num text-ink">{shortAddress(t.feeRecipient)}</span> instead of its PonsEarn split, so new
+          pons now sends this coin&apos;s creator fees to <span className="num text-ink">{shortAddress(t.feeRecipient)}</span> instead of its SplitEarn split, so new
           fees no longer reach the X accounts below. What they already earned stays theirs to claim.
         </p>
       ) : null}
@@ -503,7 +503,7 @@ function ShareButton({
     // @-mention only usernames confirmed to still belong to the fee recipient; a renamed account's
     // old name may now be someone else's, so it is written without the @.
     const who = checks.map((c) => (c.status === "current" ? `@${c.handle}` : c.handle)).join(" ");
-    const text = `${t.name} ($${t.symbol}) on PonsEarn${n.isTestnet ? " testnet" : ""}: every trade pays ${who}`;
+    const text = `${t.name} ($${t.symbol}) on SplitEarn${n.isTestnet ? " testnet" : ""}: every trade pays ${who}`;
     // The link opens the coin on its own network, whatever the reader was browsing.
     const url = `${location.origin}${onNetwork(`/token/${t.token}`, n.id)}`;
     window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, "_blank", "noopener,noreferrer");

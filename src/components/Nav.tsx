@@ -21,7 +21,7 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-[var(--glass)] backdrop-blur-xl backdrop-saturate-150">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-2 px-4 sm:gap-3 sm:px-6">
-        <Link href="/" className="group shrink-0" aria-label="PonsEarn home">
+        <Link href="/" className="group shrink-0" aria-label="SplitEarn home">
           <Wordmark textClassName="hidden min-[420px]:inline" />
         </Link>
         <nav className="no-scrollbar ml-4 hidden items-center gap-1 md:flex lg:ml-6">

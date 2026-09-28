@@ -6,7 +6,7 @@ import { useBytecode } from "wagmi";
 import { useNetwork, useSwitchNetwork } from "@/lib/network-context";
 import { NETWORKS, isLive, otherNetwork } from "@/lib/networks";
 
-/** Nudges to /setup until PonsEarn is live on the network being browsed, and says when its RPC is down. */
+/** Nudges to /setup until SplitEarn is live on the network being browsed, and says when its RPC is down. */
 export function ConfigBanner() {
   const pathname = usePathname();
   const n = useNetwork();
@@ -51,7 +51,7 @@ export function ConfigBanner() {
       <span className="relative mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[13px] font-medium text-ink">
         <span className="inline-flex items-center gap-2">
           <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-sun shadow-[0_0_10px_var(--sun)]" aria-hidden />
-          <span>PonsEarn isn&apos;t live on {n.label.toLowerCase()} yet.</span>
+          <span>SplitEarn isn&apos;t live on {n.label.toLowerCase()} yet.</span>
         </span>
         {isLive(other) ? (
           <button

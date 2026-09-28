@@ -37,10 +37,10 @@ function save(v: string | null) {
 const same = (a?: string, b?: string) => Boolean(a && b && a.toLowerCase() === b.toLowerCase());
 
 /**
- * Setting PonsEarn up on the network picked at the top of the page, from a phone:
+ * Setting SplitEarn up on the network picked at the top of the page, from a phone:
  *  1. the server's signing key (made here in the browser, pasted into the host by the owner);
- *  2. every contract deployed from the owner's own wallet (testnet: PonsEarn's copy of pons, then
- *     PonsEarn; mainnet: PonsEarn on the real pons), resumable at any point;
+ *  2. every contract deployed from the owner's own wallet (testnet: SplitEarn's copy of pons, then
+ *     SplitEarn; mainnet: SplitEarn on the real pons), resumable at any point;
  *  3. the addresses pinned in the site, after which the owner's switches appear here.
  */
 export default function SetupPage() {
@@ -69,11 +69,11 @@ export default function SetupPage() {
     <div className="mx-auto max-w-2xl space-y-6 pt-4">
       <div>
         <div className="eyebrow">{n.chain.name}</div>
-        <h1 className="display mt-2 text-[40px] leading-none">Set up PonsEarn</h1>
+        <h1 className="display mt-2 text-[40px] leading-none">Set up SplitEarn</h1>
         <p className="mt-2 text-[15px] leading-relaxed text-ink-2">
           {n.isTestnet
-            ? "On testnet, your wallet deploys PonsEarn's own copy of pons (pons itself isn't on testnet) and then PonsEarn. Pick the network at the top of the page."
-            : "On mainnet, your wallet deploys PonsEarn on top of the real pons. Pick the network at the top of the page."}
+            ? "On testnet, your wallet deploys SplitEarn's own copy of pons (pons itself isn't on testnet) and then SplitEarn. Pick the network at the top of the page."
+            : "On mainnet, your wallet deploys SplitEarn on top of the real pons. Pick the network at the top of the page."}
         </p>
       </div>
 
@@ -135,7 +135,7 @@ function ContractList({ n }: { n: Network }) {
     <ul className="space-y-1.5 text-[14px]">
       {row("Launcher", n.launcher)}
       {row("FeeVault", n.feeVault)}
-      {row(n.ponsIsCopy ? "pons factory (PonsEarn's copy)" : "pons factory", n.ponsFactory)}
+      {row(n.ponsIsCopy ? "pons factory (SplitEarn's copy)" : "pons factory", n.ponsFactory)}
     </ul>
   );
 }
@@ -183,7 +183,7 @@ function WalletDeploy({ n, signer }: { n: Network; signer: Address }) {
     return (
       <div className="space-y-3">
         <p className="text-[14px] leading-relaxed text-ink-2">
-          Connect the wallet that should own PonsEarn{n.ponsIsCopy ? " and its pons copy" : ""}. It deploys every contract and pays the gas; its key never
+          Connect the wallet that should own SplitEarn{n.ponsIsCopy ? " and its pons copy" : ""}. It deploys every contract and pays the gas; its key never
           leaves the wallet. On a phone, open this page in your wallet app&apos;s browser.
         </p>
         <button className="btn-primary" onClick={openConnectModal}>
@@ -240,7 +240,7 @@ function WalletDeploy({ n, signer }: { n: Network; signer: Address }) {
     }
   }
 
-  const groups = p ? (["pons", "ponsearn"] as const).filter((g) => p.steps.some((s) => s.group === g)) : [];
+  const groups = p ? (["pons", "splitearn"] as const).filter((g) => p.steps.some((s) => s.group === g)) : [];
 
   return (
     <div className="space-y-4 text-[14px]">
@@ -249,7 +249,7 @@ function WalletDeploy({ n, signer }: { n: Network; signer: Address }) {
         {balance.data ? <span className="ml-1">· {formatEther(balance.data.value).slice(0, 8)} ETH</span> : null}
       </p>
       <p className="leading-relaxed text-ink-2">
-        This wallet will own everything it deploys: it can pause launches and claims, withdraw PonsEarn&apos;s share of the fees and replace the signing key. Use the
+        This wallet will own everything it deploys: it can pause launches and claims, withdraw SplitEarn&apos;s share of the fees and replace the signing key. Use the
         wallet you want to keep in charge.
       </p>
       {n.ponsIsCopy && takesEth.data === false ? (
@@ -265,7 +265,7 @@ function WalletDeploy({ n, signer }: { n: Network; signer: Address }) {
         <div className="space-y-4">
           {groups.map((g) => (
             <div key={g}>
-              <div className="eyebrow mb-2">{g === "pons" ? "pons, PonsEarn's copy (testnet only)" : "PonsEarn"}</div>
+              <div className="eyebrow mb-2">{g === "pons" ? "pons, SplitEarn's copy (testnet only)" : "SplitEarn"}</div>
               <ol className="space-y-1.5">
                 {p.steps
                   .filter((s) => s.group === g)
@@ -495,7 +495,7 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
           : undefined,
     },
     {
-      label: `PonsEarn's share${share !== undefined ? ` (${share / 100}% of the creator fee)` : ""}`,
+      label: `SplitEarn's share${share !== undefined ? ` (${share / 100}% of the creator fee)` : ""}`,
       state: fees === undefined ? "…" : `${formatEther(fees)} ETH to withdraw`,
       ok: true,
       action:
@@ -515,7 +515,7 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
     <>
       <div className="card flex flex-col items-center gap-3 p-8 text-center">
         <GraduatedArt className="h-20 w-20" />
-        <h2 className="display text-[26px]">PonsEarn is live on {n.label.toLowerCase()}</h2>
+        <h2 className="display text-[26px]">SplitEarn is live on {n.label.toLowerCase()}</h2>
         {wired === false ? (
           <p className="text-[14px] font-medium text-down-ink">The FeeVault doesn&apos;t accept this launcher yet, so launches revert. Finish the deployment above.</p>
         ) : (

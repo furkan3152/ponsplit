@@ -53,8 +53,8 @@ jobs:
       - name: Slither (fails on medium or higher)
         run: slither . --fail-medium
 
-  # PonsEarn against real chain state: on a mainnet fork with the real Pons v2 and Uniswap v4 (and a
-  # byte-for-byte check of the vendored Pons code), and on a testnet fork with PonsEarn's own copy of
+  # SplitEarn against real chain state: on a mainnet fork with the real Pons v2 and Uniswap v4 (and a
+  # byte-for-byte check of the vendored Pons code), and on a testnet fork with SplitEarn's own copy of
   # Pons deployed the way /setup does. Read-only towards the real networks.
   pons-fork:
     runs-on: ubuntu-latest
@@ -103,8 +103,8 @@ jobs:
           NEXT_TELEMETRY_DISABLED: 1
 
   # The real web app (production build) in a real browser with several wallets, on a fork of each
-  # Robinhood network. The owner's wallet deploys everything through /setup (testnet: PonsEarn's
-  # copy of pons, then PonsEarn; mainnet: PonsEarn on the real pons), the site is rebuilt with the
+  # Robinhood network. The owner's wallet deploys everything through /setup (testnet: SplitEarn's
+  # copy of pons, then SplitEarn; mainnet: SplitEarn on the real pons), the site is rebuilt with the
   # addresses pinned, and a coin is launched with real X accounts, traded on the curve, graduated
   # into its Uniswap v4 pool, traded there, and its fees split. Nothing reaches the real networks.
   e2e:

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-// The slices of Pons v2 (ponsfamily.com) on Robinhood Chain that PonsEarn talks to, transcribed
-// from the verified sources and the Pons v2 integration docs. PonsEarn is not affiliated with Pons.
+// The slices of Pons v2 (ponsfamily.com) on Robinhood Chain that SplitEarn talks to, transcribed
+// from the verified sources and the Pons v2 integration docs. SplitEarn is not affiliated with Pons.
 
 struct PonsSocials {
     string twitter;
@@ -81,7 +81,7 @@ interface IPonsFactory {
 interface IPonsCurve {
     function buy(uint256 quoteIn, uint256 minTokensOut, address recipient) external payable returns (uint256 tokensOut);
     function sell(uint256 tokensIn, uint256 minQuoteOut, address recipient) external returns (uint256 quoteOut);
-    /// @dev Callable by the creator fee recipient while no buyback is earmarked (PonsEarn launches
+    /// @dev Callable by the creator fee recipient while no buyback is earmarked (SplitEarn launches
     ///      never enable buybacks). Reverts once the curve has graduated.
     function sweepFees(uint256 minBuybackTokensOut) external;
 
