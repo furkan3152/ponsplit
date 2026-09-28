@@ -21,7 +21,7 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
   },
   {
     q: "Can someone claim fees for an account they don't own?",
-    a: "No. A claim needs a signature that is only issued after that exact account posts a one-time code (or signs in with X). The code and the signature are both bound to the destination wallet, so copying someone’s post gets you nothing.",
+    a: "A claim needs a signature that is only issued after that account itself posts one exact sentence naming the destination wallet in full, plus a one-time code (or signs in with X). Replies, quotes and reposts never count, and a code that only appears inside some other post is ignored. Copying someone’s post gets you nothing: it names their wallet, not yours. Never post a proof text someone else sends you.",
   },
   {
     q: "Do the X accounts need to do anything to be added?",

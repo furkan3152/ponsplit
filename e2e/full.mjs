@@ -218,10 +218,15 @@ try {
     for (const path of pages) {
       await p.goto(`${BASE}${path}`, { timeout: 120_000 });
       await p.waitForTimeout(1500);
-      const overflow = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-      if (overflow > 0) throw new Error(`${label} ${path}: horizontal overflow ${overflow}px`);
       const name = path === "/" ? "home" : path.split("/").filter(Boolean)[0];
+      // Measure both before and after the page settles (wallet auto-connect, data loads), since
+      // late content such as a connected address can be what overflows.
+      const measure = () => p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      const before = await measure();
+      await p.waitForTimeout(2500);
       await p.screenshot({ path: `${OUT}/page-${label}-${name}.png`, fullPage: true });
+      const overflow = Math.max(before, await measure());
+      if (overflow > 0) throw new Error(`${label} ${path}: horizontal overflow ${overflow}px`);
     }
     step(`${label}: ${pages.length} pages render without horizontal overflow`);
   }

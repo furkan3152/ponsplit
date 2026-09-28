@@ -11,6 +11,8 @@ import { errorMessage, formatEth, formatTokens } from "@/lib/format";
 import { useRiskGate } from "./RiskNotice";
 
 const SLIPPAGES = [50n, 100n, 200n, 500n]; // bps
+/** ETH kept back for gas when buying with "Balance" (ETH is Robinhood Chain's gas token). */
+const GAS_RESERVE = parseEther("0.0002");
 
 function parse(v: string): bigint | undefined {
   try {
@@ -52,7 +54,7 @@ export function TradePanel({ token, symbol, graduated, onTraded }: { token: Addr
     chainId: activeChain.id,
     functionName: "quoteBuy",
     args: parsed ? [token, parsed] : undefined,
-    query: { enabled: side === "buy" && Boolean(parsed && LAUNCHPAD_ADDRESS) },
+    query: { enabled: side === "buy" && Boolean(parsed && LAUNCHPAD_ADDRESS), refetchInterval: 5_000 },
   });
   const { data: sellQuote } = useReadContract({
     address: LAUNCHPAD_ADDRESS,
@@ -60,7 +62,7 @@ export function TradePanel({ token, symbol, graduated, onTraded }: { token: Addr
     chainId: activeChain.id,
     functionName: "quoteSell",
     args: parsed ? [token, parsed] : undefined,
-    query: { enabled: side === "sell" && Boolean(parsed && LAUNCHPAD_ADDRESS) },
+    query: { enabled: side === "sell" && Boolean(parsed && LAUNCHPAD_ADDRESS), refetchInterval: 5_000 },
   });
 
   const out = side === "buy" ? buyQuote?.[0] : sellQuote?.[0];
@@ -68,6 +70,7 @@ export function TradePanel({ token, symbol, graduated, onTraded }: { token: Addr
   const refund = side === "buy" ? buyQuote?.[2] : 0n;
   const balance = side === "buy" ? ethBalance?.value : tokenBalance;
   const insufficient = parsed !== undefined && balance !== undefined && parsed > balance;
+  const noGasLeft = side === "buy" && !insufficient && parsed !== undefined && balance !== undefined && parsed + GAS_RESERVE > balance;
   const noEth = isConnected && side === "buy" && ethBalance?.value === 0n;
 
   const presets =
@@ -82,14 +85,20 @@ export function TradePanel({ token, symbol, graduated, onTraded }: { token: Addr
     setBusy(true);
     try {
       if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
-      const min = (out * (10_000n - slippage)) / 10_000n;
+      // Re-quote right before sending: the number on screen may be seconds (or a trade) old.
+      const fresh =
+        side === "buy"
+          ? (await publicClient.readContract({ address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, functionName: "quoteBuy", args: [token, parsed] }))[0]
+          : (await publicClient.readContract({ address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, functionName: "quoteSell", args: [token, parsed] }))[0];
+      if (fresh === 0n) throw new Error("That amount is too small to trade.");
+      const min = (fresh * (10_000n - slippage)) / 10_000n;
       const hash =
         side === "buy"
           ? await writeContractAsync({ address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, chainId: activeChain.id, functionName: "buy", args: [token, min], value: parsed })
           : await writeContractAsync({ address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, chainId: activeChain.id, functionName: "sell", args: [token, parsed, min] });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("Transaction reverted");
-      setMsg({ kind: "ok", text: side === "buy" ? `Bought ${formatTokens(out)} ${symbol}` : `Sold for ${formatEth(out)} ETH` });
+      setMsg({ kind: "ok", text: side === "buy" ? `Bought ${formatTokens(fresh)} ${symbol}` : `Sold for ${formatEth(fresh)} ETH` });
       setAmount("");
       refetchEth();
       refetchToken();
@@ -125,7 +134,14 @@ export function TradePanel({ token, symbol, graduated, onTraded }: { token: Addr
         <div className="mb-2 flex justify-between text-[12px] text-ink-2">
           <span>{side === "buy" ? "You pay" : "You sell"}</span>
           {isConnected ? (
-            <button className="num hover:text-ink" onClick={() => balance !== undefined && setAmount(formatUnits(balance, 18))}>
+            <button
+              className="num hover:text-ink"
+              onClick={() => {
+                if (balance === undefined) return;
+                const usable = side === "buy" ? (balance > GAS_RESERVE ? balance - GAS_RESERVE : 0n) : balance;
+                setAmount(usable > 0n ? formatUnits(usable, 18) : "");
+              }}
+            >
               Balance {side === "buy" ? `${ethBalance ? formatEth(ethBalance.value) : "–"} ETH` : `${tokenBalance !== undefined ? formatTokens(tokenBalance) : "–"} ${symbol}`}
             </button>
           ) : null}
@@ -170,10 +186,18 @@ export function TradePanel({ token, symbol, graduated, onTraded }: { token: Addr
 
       <button
         className={`w-full py-3.5 ${side === "buy" ? "btn-buy" : "btn-sell"}`}
-        disabled={isConnected && (busy || !parsed || !out || insufficient)}
+        disabled={isConnected && (busy || !parsed || !out || insufficient || noGasLeft)}
         onClick={() => guard(trade)}
       >
-        {!isConnected ? "Connect wallet" : busy ? "Confirming…" : insufficient ? "Insufficient balance" : `${side === "buy" ? "Buy" : "Sell"} ${symbol}`}
+        {!isConnected
+          ? "Connect wallet"
+          : busy
+            ? "Confirming…"
+            : insufficient
+              ? "Insufficient balance"
+              : noGasLeft
+                ? "Leave a little ETH for gas"
+                : `${side === "buy" ? "Buy" : "Sell"} ${symbol}`}
       </button>
       {noEth && activeChain.testnet ? (
         <p className="text-center text-[12px] text-ink-2">

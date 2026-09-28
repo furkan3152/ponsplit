@@ -8,9 +8,14 @@ import { mockXId, resolverMode } from "./x";
 /**
  * "Post to verify": proves control of an X account without an X developer app.
  *
- * The code is an HMAC over (username, wallet, UTC day) keyed by a secret derived from the signer
- * key, so it cannot be forged, only works for the wallet it was issued for, and expires after a
- * day or two. Anyone copying the post can at most send the fees to the poster's own wallet.
+ * The account posts one exact sentence naming the full destination wallet plus a code. The code is
+ * an HMAC over (username, wallet, UTC day) keyed by a secret derived from the signer key, so it
+ * cannot be forged and expires after a day or two.
+ *
+ * Verification is deliberately strict: the whole post must be exactly that text (only trailing
+ * links, e.g. an attached image, are ignored), and replies, quotes and reposts never count. A code
+ * that merely appears somewhere in a post (in a link, a coin name, a bot's echo of a mention) is
+ * rejected, so nobody can get an account to "prove" a wallet it didn't choose by posting it itself.
  */
 
 const DAY = 86_400;
@@ -21,25 +26,56 @@ function secret(): Buffer {
   return createHash("sha256").update(`ponsplit-x-proof:${key}`).digest();
 }
 
-export function proofCode(handle: string, wallet: Address, day = Math.floor(Date.now() / 1000 / DAY)): string {
+export function proofCode(handle: string, wallet: Address, day = currentDay()): string {
   const mac = createHmac("sha256", secret()).update(`${normalizeHandle(handle)}|${getAddress(wallet)}|${day}`).digest("hex");
   return `PS-${mac.slice(0, 10).toUpperCase()}`;
 }
 
-export function proofText(handle: string, wallet: Address): string {
-  const w = getAddress(wallet);
-  return `Claiming my coin fees on PonSplit 🪙\nwallet ${w.slice(0, 6)}…${w.slice(-4)}\nproof ${proofCode(handle, wallet)}`;
+export function proofText(handle: string, wallet: Address, day = currentDay()): string {
+  return `Claiming my PonSplit coin fees to wallet ${getAddress(wallet)}\nproof ${proofCode(handle, wallet, day)}`;
+}
+
+function currentDay() {
+  return Math.floor(Date.now() / 1000 / DAY);
+}
+
+/** Whitespace-insensitive form used to compare a post with the expected proof text. */
+function canonical(s: string): string {
+  return s.normalize("NFC").replace(/\s+/g, " ").trim();
+}
+
+/** Drops links at the very end of a post (X appends one for attached media). */
+function withoutTrailingLinks(s: string): string {
+  return s.replace(/(\s+https?:\/\/\S+)+$/i, "");
 }
 
 export type ProofResult = { id: string; username: string; name?: string; image?: string };
 
-/** Status id from x.com / twitter.com / fxtwitter links. */
+/** Status id from x.com / twitter.com / fxtwitter links, including /i/web/status/<id>. */
 export function statusId(url: string): string | undefined {
-  const m = url.trim().match(/(?:x|twitter|fxtwitter|vxtwitter|fixupx)\.com\/[^/]+\/status(?:es)?\/(\d{5,25})/i);
+  const m = url
+    .trim()
+    .match(/(?:^|\/\/|\.)(?:x|twitter|fxtwitter|vxtwitter|fixupx|fixvx)\.com\/(?:[^/?#]+|i\/web)\/status(?:es)?\/(\d{5,25})/i);
   return m?.[1];
 }
 
-/** Checks that `url` is a post by some account that contains a valid proof code for `wallet`. */
+type FxStatus = {
+  tweet?: {
+    text?: string;
+    raw_text?: { text?: string };
+    author?: { id?: string; screen_name?: string; name?: string; avatar_url?: string };
+    replying_to?: string | null;
+    replying_to_status?: string | null;
+    quote?: unknown;
+    retweet?: unknown;
+    reposted_by?: unknown;
+  };
+};
+
+/**
+ * Checks that `url` is a standalone post whose text is exactly the proof for `wallet`, and returns
+ * its author. Accepts the codes for today and yesterday (UTC).
+ */
 export async function verifyProofPost(url: string, wallet: Address): Promise<ProofResult> {
   if (resolverMode() === "mock") {
     // Local development: "mock:<username>" stands in for a real post.
@@ -50,19 +86,39 @@ export async function verifyProofPost(url: string, wallet: Address): Promise<Pro
 
   const id = statusId(url);
   if (!id) throw new Error("Paste the link to your post (x.com/…/status/…).");
-  const res = await fetch(`https://api.fxtwitter.com/status/${id}`, { cache: "no-store" });
+  const res = await fetch(`https://api.fxtwitter.com/status/${id}`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(8_000),
+  }).catch(() => null);
+  if (!res) throw new Error("Could not load the post. Try again in a minute.");
   if (res.status === 404) throw new Error("Post not found. Is it public and not deleted?");
   if (!res.ok) throw new Error(`Could not load the post (${res.status}). Try again in a minute.`);
-  const body = (await res.json()) as {
-    tweet?: { text?: string; author?: { id?: string; screen_name?: string; name?: string; avatar_url?: string } };
-  };
-  const text = body.tweet?.text ?? "";
-  const author = body.tweet?.author;
-  if (!author?.id || !/^\d+$/.test(author.id) || !author.screen_name) throw new Error("Could not read the post's author.");
+  const body = (await res.json().catch(() => ({}))) as FxStatus;
+  const tweet = body.tweet;
+  const author = tweet?.author;
+  if (!tweet || !author?.id || !/^\d+$/.test(author.id) || !author.screen_name) {
+    throw new Error("Could not read the post's author.");
+  }
+  if (tweet.replying_to || tweet.replying_to_status) {
+    throw new Error("That post is a reply. Post the proof as a new post, not a reply.");
+  }
+  if (tweet.quote || tweet.retweet || tweet.reposted_by) {
+    throw new Error("That post quotes or reposts another post. Post the proof text on its own.");
+  }
 
   const username = author.screen_name.toLowerCase();
-  const today = Math.floor(Date.now() / 1000 / DAY);
-  const ok = [today, today - 1].some((d) => text.includes(proofCode(username, wallet, d)));
-  if (!ok) throw new Error(`That post by @${username} doesn't contain a valid proof for this wallet. Post the exact text shown.`);
+  // fxtwitter gives the text twice: as posted (t.co links) and with links expanded. Either may match.
+  const posted = [tweet.raw_text?.text, tweet.text]
+    .filter((t): t is string => typeof t === "string")
+    .map((t) => canonical(withoutTrailingLinks(t)));
+  if (posted.some((t) => t.startsWith("RT @"))) throw new Error("Reposts don't count. Post the proof text yourself.");
+  const today = currentDay();
+  const expected = [today, today - 1].map((d) => canonical(proofText(username, wallet, d)));
+  const ok = posted.some((t) => expected.includes(t));
+  if (!ok) {
+    throw new Error(
+      `That post by @${username} isn't the proof for this wallet. Post the exact text shown, from @${username}, without changes.`
+    );
+  }
   return { id: author.id, username, name: author.name, image: author.avatar_url };
 }

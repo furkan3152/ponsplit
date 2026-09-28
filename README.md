@@ -24,11 +24,14 @@ contracts/      Solidity (Hardhat): SplitLaunchpad, FeeVault, SplitToken
    - **Varsayılan, X geliştirici hesabı gerekmez:** Kullanıcı tek kullanımlık bir kod içeren bir post atıp linkini yapıştırır. Kod, kullanıcı adına, cüzdana ve güne bağlı bir HMAC'tir; başkası kopyalasa bile ödeme yalnızca post sahibinin cüzdanına gider.
    - **Opsiyonel:** X anahtarları verilirse "Sign in with X" (OAuth).
 
+   - Post ile doğrulama katıdır. Post, hesabın kendi attığı yeni bir post olmalı ve metni tam olarak gösterilen metin olmalı: hedef cüzdanın tam adresi ile kod. Yanıtlar, alıntılar ve kodu sadece içeren postlar sayılmaz.
+
    Ardından sunucu o hesabın ID'si için hedef cüzdana bağlı, 15 dakika geçerli bir imza üretir ve `FeeVault.claim` birikmiş ETH'yi bu cüzdana gönderir.
 5. **Grafik ve işlem geçmişi:** Her işlem zincir üstüne kaydedilir. Mum grafiği, işlem listesi ve canlı işlem şeridi indexer gerektirmeden doğrudan kontrattan okunur.
 
 ### Güvenlik notları
 
+- Kontratlar deploy edildikten sonra `/setup` sayfasının gösterdiği `NEXT_PUBLIC_FEE_VAULT_ADDRESS` ve `NEXT_PUBLIC_LAUNCHPAD_ADDRESS` değerlerini barındırma ayarlarına ekle. Böylece imza anahtarı değişse bile site aynı kontratlara bakar.
 - Launch attestation'ı ve claim imzaları aynı `SIGNER_PRIVATE_KEY` ile atılır. Bu anahtar yalnızca sunucuda durmalı ve deployer anahtarından ayrı olmalı. Sızarsa kontrat sahibi `FeeVault.setSigner` ile değiştirir.
 - Attestation, coin'i oluşturan adrese bağlıdır ve 30 dakikada geçerliliğini yitirir.
 - X ID çözümlemesi resmi X API ile (`X_BEARER_TOKEN`, ücretli Basic plan) ya da ücretsiz, gayriresmî `api.fxtwitter.com` üzerinden yapılır. İkincisi "best effort" çalışır; ciddi kullanımda resmi API önerilir.
@@ -77,7 +80,7 @@ Opsiyonel ortam değişkenleri `.env.example` dosyasında:
 ```bash
 # kontratlar
 cd contracts && npm install
-npm test                  # 25 test
+npm test                  # 26 test
 npm run export-abi        # ABI'leri src/lib/abi.ts dosyasına yazar
 
 # yerel uçtan uca deneme (gerçek zincir ve X hesabı gerekmez)

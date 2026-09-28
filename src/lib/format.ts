@@ -7,8 +7,14 @@ export function formatPrice(n: number, sig = 3): string {
   if (!Number.isFinite(n) || n === 0) return "0";
   if (n >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
   if (n >= 0.001) return n.toPrecision(sig);
-  const zeros = Math.floor(-Math.log10(n)) - 1;
-  const digits = Math.round(n * 10 ** (zeros + sig)).toString().slice(0, sig);
+  // The subscript counts every zero after the decimal point: 2.05e-9 has 8 of them.
+  let zeros = -Math.floor(Math.log10(n)) - 1;
+  let digits = Math.round(n * 10 ** (zeros + sig));
+  if (digits >= 10 ** sig) {
+    // Rounding carried into a new digit (e.g. 9.9996e-4 → 1000): one zero fewer.
+    zeros -= 1;
+    digits = Math.round(digits / 10);
+  }
   const sub = zeros
     .toString()
     .split("")

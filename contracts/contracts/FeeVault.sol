@@ -34,6 +34,8 @@ contract FeeVault is Ownable2Step, ReentrancyGuard, EIP712 {
 
     mapping(address token => Recipient[]) private _splits;
     mapping(address token => uint256) public tokenFees;
+    /// @notice All fees ever split to X accounts, across every token.
+    uint256 public totalDeposited;
     mapping(uint64 xId => uint256) public claimable;
     mapping(uint64 xId => uint256) public totalEarned;
     mapping(uint64 xId => uint256) public nonces;
@@ -151,6 +153,7 @@ contract FeeVault is Ownable2Step, ReentrancyGuard, EIP712 {
             totalEarned[split[i].xId] += share;
         }
         tokenFees[token] += msg.value;
+        totalDeposited += msg.value;
         emit FeesDeposited(token, msg.value);
     }
 

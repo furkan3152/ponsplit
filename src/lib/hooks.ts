@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { Address } from "viem";
-import { usePublicClient, useReadContract } from "wagmi";
+import { usePublicClient, useReadContract, useReadContracts } from "wagmi";
 import { feeVaultAbi, launchpadAbi } from "./abi";
 import { activeChain } from "./chains";
 import { FEE_VAULT_ADDRESS, LAUNCHPAD_ADDRESS } from "./config";
@@ -14,29 +14,54 @@ const base = { address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, chainId: activeCha
 // getTokens costs ~105k gas per token in an eth_call; 60 per call stays far below RPC gas caps.
 const TOKEN_PAGE = 60;
 
-/** Newest `limit` tokens, fetched in parallel pages of 60. */
-export function useTokens(limit = 60) {
+export function useTokenCount() {
+  return useReadContract({ ...base, functionName: "tokenCount", query: { enabled: Boolean(LAUNCHPAD_ADDRESS), refetchInterval: 10_000 } });
+}
+
+/**
+ * Every token, newest first, fetched in parallel pages of 60. Pages are re-read as the count
+ * moves, so lists, search and sorting always cover all coins, not only the newest ones.
+ * (At very large scale this belongs in an indexer; see MAINNET.md.)
+ */
+export function useAllTokens() {
   const client = usePublicClient({ chainId: activeChain.id });
-  return useQuery({
-    queryKey: ["tokens", limit],
-    enabled: Boolean(client && LAUNCHPAD_ADDRESS),
-    refetchInterval: 10_000,
+  const { data: count, error: countError } = useTokenCount();
+  const query = useQuery({
+    queryKey: ["tokens", "all", count?.toString()],
+    enabled: Boolean(client && LAUNCHPAD_ADDRESS && count !== undefined),
+    refetchInterval: 15_000,
     placeholderData: (prev) => prev,
     queryFn: async () => {
-      const pages = Math.ceil(limit / TOKEN_PAGE);
+      const total = Number(count ?? 0n);
+      const pages = Math.ceil(total / TOKEN_PAGE);
       const results = await Promise.all(
         Array.from({ length: pages }, (_, i) =>
           client!.readContract({
             address: LAUNCHPAD_ADDRESS!,
             abi: launchpadAbi,
             functionName: "getTokens",
-            args: [BigInt(i * TOKEN_PAGE), BigInt(Math.min(TOKEN_PAGE, limit - i * TOKEN_PAGE))],
+            args: [BigInt(i * TOKEN_PAGE), BigInt(Math.min(TOKEN_PAGE, total - i * TOKEN_PAGE))],
           })
         )
       );
       return results.flat();
     },
   });
+  return { ...query, error: query.error ?? countError, isLoading: query.isLoading || (count === undefined && !countError) };
+}
+
+/** Platform totals straight from the contracts (not summed from a page of coins). */
+export function useGlobalStats() {
+  const { data } = useReadContracts({
+    contracts: [
+      { ...base, functionName: "tokenCount" },
+      { ...base, functionName: "globalTradeCount" },
+      { address: FEE_VAULT_ADDRESS, abi: feeVaultAbi, chainId: activeChain.id, functionName: "totalDeposited" },
+    ],
+    query: { enabled: Boolean(LAUNCHPAD_ADDRESS && FEE_VAULT_ADDRESS), refetchInterval: 10_000 },
+  });
+  const pick = (i: number) => (data?.[i]?.status === "success" ? (data[i].result as bigint) : undefined);
+  return { coins: pick(0), trades: pick(1), feesSplit: pick(2) };
 }
 
 export function useToken(token: Address | undefined) {
@@ -58,8 +83,18 @@ export function useRecentTrades(limit = 30) {
 }
 
 export function useLaunchpadNumber(functionName: "feeBps" | "protocolShareBps" | "creationFee") {
-  const { data } = useReadContract({ ...base, functionName, query: { enabled: Boolean(LAUNCHPAD_ADDRESS) } });
+  const { data } = useReadContract({ ...base, functionName, query: { enabled: Boolean(LAUNCHPAD_ADDRESS), refetchInterval: 30_000 } });
   return data;
+}
+
+/** The value, once it has stopped changing for `ms` (use primitives: arrays are new every render). */
+export function useDebounced<T>(value: T, ms = 450) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(id);
+  }, [value, ms]);
+  return v;
 }
 
 export function useLaunchesPaused() {

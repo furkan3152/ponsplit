@@ -7,6 +7,7 @@ import { createPublicClient, http } from "viem";
 import { activeChain, rpcUrl } from "@/lib/chains";
 import { deadlineFromNow, signAttestation, signerAccount } from "@/lib/signing";
 import { resolveHandles } from "@/lib/x";
+import { readJson } from "@/lib/body";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
   }
   if (!signerAccount()) return NextResponse.json({ error: "Launches are not configured on this server." }, { status: 500 });
 
-  const body = (await req.json().catch(() => null)) as { creator?: string; handles?: string[] } | null;
+  const body = await readJson<{ creator?: string; handles?: string[] }>(req);
   if (!body?.creator || !isAddress(body.creator)) return NextResponse.json({ error: "Connect a wallet first." }, { status: 400 });
   const handles = (body.handles ?? []).map(normalizeHandle);
   if (handles.length === 0 || handles.length > MAX_RECIPIENTS || !handles.every(isValidHandle)) {
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
   if (new Set(xIds.map(String)).size !== xIds.length) {
     return NextResponse.json({ error: "Two usernames point to the same X account." }, { status: 400 });
   }
-  const client = createPublicClient({ chain: activeChain, transport: http(rpcUrl) });
+  const client = createPublicClient({ chain: activeChain, transport: http(rpcUrl, { fetchOptions: { cache: "no-store" } }) });
   const deadline = await deadlineFromNow(client, TTL_SECONDS);
   const attestation = await signAttestation({ creator: getAddress(body.creator), xIds, handles, deadline });
 
