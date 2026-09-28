@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { formatEther, getContractAddress, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { useAccount, useBalance, useDeployContract, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
+import { useAccount, useBalance, useDeployContract, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { GraduatedArt } from "@/components/art";
 import { feeVaultAbi, launchpadAbi } from "@/lib/abi";
 import { activeChain, explorerUrl } from "@/lib/chains";
@@ -279,7 +279,155 @@ function AfterDeploy({ s }: { s: Status }) {
           Launch a coin
         </Link>
       </div>
+      <OwnerControls s={s} />
     </>
+  );
+}
+
+/**
+ * The owner's switches, usable from a phone once the contracts are live: pause or resume launches
+ * and claims, point FeeVault at the site's signing key, and withdraw the protocol's share of fees.
+ * Only the owner wallet can send these; anyone else sees the state read-only.
+ */
+function OwnerControls({ s }: { s: Status }) {
+  const { address, isConnected, chainId } = useAccount();
+  const { openConnectModal } = useConnectModal();
+  const { switchChainAsync } = useSwitchChain();
+  const publicClient = usePublicClient({ chainId: activeChain.id });
+  const { writeContractAsync } = useWriteContract();
+  const fees = useReadContract({
+    address: s.launchpad,
+    abi: launchpadAbi,
+    functionName: "protocolFees",
+    chainId: activeChain.id,
+    query: { enabled: Boolean(s.launchpad), refetchInterval: 30_000 },
+  });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const lock = useRef(false);
+  const vault = s.vault;
+  const launchpad = s.launchpad;
+  if (!vault || !launchpad || !s.owner) return null;
+  const isOwner = same(address, s.owner) && same(address, s.vaultOwner);
+
+  async function send(label: string, question: string, write: () => Promise<Hex>) {
+    if (lock.current || !publicClient) return;
+    if (!window.confirm(question)) return;
+    lock.current = true;
+    setBusy(label);
+    setMsg(null);
+    try {
+      if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
+      const hash = await write();
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("The transaction reverted.");
+      setMsg({ ok: true, text: `${label}: done. The page updates in a few seconds.` });
+    } catch (e) {
+      setMsg({ ok: false, text: errorMessage(e) });
+    } finally {
+      lock.current = false;
+      setBusy(null);
+      void fees.refetch();
+    }
+  }
+
+  const rows: { label: string; state: string; ok: boolean; action?: { text: string; run: () => void } }[] = [
+    {
+      label: "New launches",
+      state: s.launchesPaused ? "Paused" : "Open",
+      ok: !s.launchesPaused,
+      action: {
+        text: s.launchesPaused ? "Resume launches" : "Pause launches",
+        run: () =>
+          send(
+            s.launchesPaused ? "Resume launches" : "Pause launches",
+            s.launchesPaused ? "Let people launch new coins again?" : "Stop new launches? Existing coins keep trading.",
+            () => writeContractAsync({ address: launchpad, abi: launchpadAbi, functionName: "setLaunchesPaused", args: [!s.launchesPaused], chainId: activeChain.id })
+          ),
+      },
+    },
+    {
+      label: "Claims",
+      state: s.claimsPaused ? "Paused" : "Open",
+      ok: !s.claimsPaused,
+      action: {
+        text: s.claimsPaused ? "Resume claims" : "Pause claims",
+        run: () =>
+          send(
+            s.claimsPaused ? "Resume claims" : "Pause claims",
+            s.claimsPaused ? "Let X accounts claim their fees again?" : "Stop all claims? Balances stay in the vault until you resume.",
+            () => writeContractAsync({ address: vault, abi: feeVaultAbi, functionName: "setClaimsPaused", args: [!s.claimsPaused], chainId: activeChain.id })
+          ),
+      },
+    },
+    {
+      label: "Signing key",
+      state: s.signerMatches === false ? "Doesn't match this site" : "Matches this site",
+      ok: s.signerMatches !== false,
+      action:
+        s.signerMatches === false && s.admin
+          ? {
+              text: "Use this site's key",
+              run: () =>
+                send(
+                  "Use this site's key",
+                  `Make FeeVault accept signatures from ${s.admin}? Signatures from ${s.signer} stop working.`,
+                  () => writeContractAsync({ address: vault, abi: feeVaultAbi, functionName: "setSigner", args: [s.admin!], chainId: activeChain.id })
+                ),
+            }
+          : undefined,
+    },
+    {
+      label: "Protocol fees",
+      state: fees.data === undefined ? "…" : `${formatEther(fees.data)} ETH`,
+      ok: true,
+      action:
+        fees.data && address
+          ? {
+              text: "Withdraw to this wallet",
+              run: () =>
+                send("Withdraw to this wallet", `Send ${formatEther(fees.data!)} ETH of protocol fees to ${address}?`, () =>
+                  writeContractAsync({ address: launchpad, abi: launchpadAbi, functionName: "withdrawProtocolFees", args: [address], chainId: activeChain.id })
+                ),
+            }
+          : undefined,
+    },
+  ];
+
+  return (
+    <section className="card p-5 sm:p-6">
+      <div className="eyebrow">Owner controls</div>
+      <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
+        {isOwner
+          ? "You're connected with the owner wallet. Each switch is one transaction."
+          : `Only the owner wallet (${shortAddress(s.owner)}) can change these.`}
+      </p>
+      <ul className="mt-3 divide-y divide-line">
+        {rows.map((r) => (
+          <li key={r.label} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
+            <div className="min-w-0">
+              <div className="text-[14px] font-medium">{r.label}</div>
+              <div className={`num text-[12px] ${r.ok ? "text-ink-2" : "text-down-ink"}`}>{r.state}</div>
+            </div>
+            {r.action && isOwner ? (
+              <button className="btn-secondary min-h-[40px] px-4 py-2 text-[13px]" disabled={Boolean(busy)} onClick={r.action.run}>
+                {busy === r.action.text ? "Confirm in your wallet…" : r.action.text}
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {!isConnected ? (
+        <button className="btn-secondary mt-2 min-h-[40px] px-4 py-2 text-[13px]" onClick={openConnectModal}>
+          Connect the owner wallet
+        </button>
+      ) : null}
+      {msg ? (
+        <p role="status" className={`mt-3 text-[13px] ${msg.ok ? "text-up-ink" : "text-down-ink"}`}>
+          {msg.text}
+        </p>
+      ) : null}
+    </section>
   );
 }
 

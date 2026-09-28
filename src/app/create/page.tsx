@@ -34,7 +34,9 @@ const byteLength = (v: string) => new TextEncoder().encode(v).length;
 
 function safeParseEther(v: string): bigint | undefined {
   try {
-    return v.trim() ? parseEther(v.trim()) : 0n;
+    const n = v.trim() ? parseEther(v.trim()) : 0n;
+    // parseEther accepts "-1"; a negative first buy is not a number we can send.
+    return n < 0n ? undefined : n;
   } catch {
     return undefined;
   }
@@ -226,7 +228,7 @@ export default function CreatePage() {
       const fresh = await readLaunchTerms(publicClient);
       if (fresh.version !== shownTerms.version) {
         await terms.refetch();
-        throw new Error("The launch terms just changed. Review the updated fee below and launch again.");
+        throw new Error("The launch terms just changed. Review the updated fee above and launch again.");
       }
       const firstBuy = safeParseEther(devBuy) ?? 0n;
       const minTokensOut =
@@ -419,7 +421,7 @@ export default function CreatePage() {
                 return (
                   <li
                     key={i}
-                    className="grid animate-slide-up grid-cols-[12px_minmax(0,1fr)_5.25rem_2.5rem] items-start gap-x-2 sm:grid-cols-[12px_minmax(0,1fr)_6rem_2.5rem] sm:gap-x-3"
+                    className="grid animate-slide-up grid-cols-[12px_minmax(0,1fr)_5.5rem_2.5rem] items-start gap-x-2 sm:grid-cols-[12px_minmax(0,1fr)_6rem_2.5rem] sm:gap-x-3"
                     onFocus={() => setHot(i)}
                     onBlur={(e) => {
                       if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHot(null);
@@ -455,13 +457,13 @@ export default function CreatePage() {
                     </div>
                     <div className="relative">
                       <input
-                        className="input num pl-3 pr-7 text-right"
+                        className="input num pl-2 pr-6 text-right sm:pl-3 sm:pr-7"
                         inputMode="decimal"
                         aria-label={`Share ${i + 1}`}
                         value={r.percent}
                         onChange={(e) => update(i, { percent: e.target.value })}
                       />
-                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 font-mono text-[13px] text-ink-3">%</span>
+                      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[13px] text-ink-3 sm:right-3">%</span>
                     </div>
                     <button
                       type="button"

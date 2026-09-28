@@ -14,7 +14,7 @@ import { TokenAvatar } from "@/components/TokenAvatar";
 import { TradePanel } from "@/components/TradePanel";
 import { TradesTable } from "@/components/TradesTable";
 import { explorerUrl } from "@/lib/chains";
-import { compact, formatEth, formatPrice, formatTokens, recordPrice, shortAddress, timeAgo } from "@/lib/format";
+import { compact, formatEth, formatPrice, formatTokens, progressText, recordPrice, shortAddress, timeAgo } from "@/lib/format";
 import { useHandleChecks, useNow, useToken, useTrades } from "@/lib/hooks";
 import { describe } from "@/lib/market";
 import type { TokenView, TradeRecord } from "@/lib/types";
@@ -149,7 +149,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
                   <div className="flex-1">
                     <Progress value={progress} size="sm" />
                   </div>
-                  <span className="num text-[11px] font-semibold text-ink-2">{progress.toFixed(0)}%</span>
+                  <span className="num text-[11px] font-semibold text-ink-2">{progressText(progress)}%</span>
                 </div>
               )
             }
@@ -266,7 +266,7 @@ function LockIcon() {
 /** The last few dozen trade prices as a tiny line, green if the price rose over them, red if it fell. */
 function Sparkline({ trades }: { trades: readonly TradeRecord[] | undefined }) {
   const prices = (trades ?? []).slice(-48).map((r) => recordPrice(r.price));
-  if (prices.length < 2) return <Foot>{trades ? "waiting for trades" : "…"}</Foot>;
+  if (prices.length < 2) return <Foot>{!trades ? "…" : trades.length ? "1 trade so far" : "waiting for trades"}</Foot>;
   const W = 100;
   const H = 26;
   const lo = Math.min(...prices);
@@ -296,7 +296,7 @@ function CurveCard({ t, progress }: { t: TokenView; progress: number }) {
           <div className="eyebrow">Road to PonSwap</div>
           <h2 className="display mt-1 text-[26px] leading-none">Bonding curve</h2>
         </div>
-        <span className="num text-neon text-[24px] font-bold leading-none">{progress.toFixed(1)}%</span>
+        <span className="num text-neon text-[24px] font-bold leading-none">{progressText(progress, 1)}%</span>
       </div>
       <CurveSketch progress={progress} ratio={r > 0.05 && r < 0.98 ? r : 0.739} />
       <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
@@ -326,7 +326,7 @@ function CurveSketch({ progress, ratio }: { progress: number; ratio: number }) {
   const [px, py] = at(p);
   const [ex, ey] = at(1);
   return (
-    <div className="mt-4" role="progressbar" aria-label="Bonding curve progress" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}>
+    <div className="mt-4" role="progressbar" aria-label="Bonding curve progress" aria-valuenow={Math.floor(progress)} aria-valuemin={0} aria-valuemax={100}>
       {/* The dot is positioned in % of this box, so it holds only the drawing. */}
       <div className="relative">
         <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full overflow-visible" aria-hidden>

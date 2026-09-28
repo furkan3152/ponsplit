@@ -16,7 +16,7 @@
   --card-3: #24242a;
   --ink: #f4f4ee;
   --ink-2: #a1a1a9;
-  --ink-3: #63636d;
+  --ink-3: #85858f; /* 5.1:1 on --card, 4.7:1 on --card-2 (AA for small text) */
   --line: rgba(255, 255, 255, 0.075);
   --line-2: rgba(255, 255, 255, 0.16);
   --glass: rgba(9, 9, 11, 0.72);
@@ -52,8 +52,8 @@
   --card-2: #efeee7;
   --card-3: #e5e4db;
   --ink: #0b0b0d;
-  --ink-2: #5a5a61;
-  --ink-3: #9b9ba2;
+  --ink-2: #4a4a51;
+  --ink-3: #6b6b72; /* 5.3:1 on --card, 4.6:1 on --card-2 */
   --line: rgba(11, 11, 13, 0.09);
   --line-2: rgba(11, 11, 13, 0.2);
   --glass: rgba(243, 242, 236, 0.78);
@@ -221,11 +221,16 @@ body::after {
     box-shadow: 0 10px 28px -14px var(--green);
   }
   .btn-sell {
-    @apply btn bg-down text-white hover:brightness-110;
+    /* Dark label: white on the bright red is only 3:1. */
+    @apply btn bg-down text-[#1a0503] hover:brightness-110;
     box-shadow: 0 10px 28px -14px var(--red);
   }
+  /* Paper edition: deeper fills so a white label keeps AA contrast (5.6:1 and 6:1). */
   [data-theme="light"] .btn-buy {
-    @apply text-white;
+    @apply bg-[var(--green-ink)] text-white;
+  }
+  [data-theme="light"] .btn-sell {
+    @apply bg-[var(--red-ink)] text-white;
   }
   .segmented {
     @apply inline-flex rounded-full border border-line bg-card-2 p-1;
