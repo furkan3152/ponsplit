@@ -54,6 +54,11 @@ export const launcherAbi = [
     "type": "error"
   },
   {
+    "inputs": [],
+    "name": "OutOfGas",
+    "type": "error"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -2184,6 +2189,11 @@ export const feeSplitterAbi = [
   {
     "inputs": [],
     "name": "OnlyOwner",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OutOfGas",
     "type": "error"
   },
   {

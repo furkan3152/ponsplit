@@ -143,6 +143,7 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
     error TransferFailed();
     error PonsMismatch();
     error ZeroAddress();
+    error OutOfGas();
 
     constructor(address owner_, FeeVault feeVault_, IPonsFactory ponsFactory_) Ownable(owner_) {
         if (address(feeVault_) == address(0) || address(ponsFactory_) == address(0)) revert ZeroAddress();
@@ -280,14 +281,25 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
 
     /// @notice Collects several coins' fees in one transaction (see FeeSplitter.collect). A coin
     ///         whose collection fails is skipped rather than failing the rest.
+    /// @dev ...unless it failed for lack of gas, here or in its own sweep (FeeSplitter.OutOfGas):
+    ///      then the whole call fails. Otherwise gas estimation could settle on a limit at which a
+    ///      collection silently runs dry (EIP-150 leaves this loop 1/64 of the gas to carry on
+    ///      with), and a claim right after it would pay out less.
     function collectMany(address[] calldata tokens) public returns (uint256 total) {
         for (uint256 i; i < tokens.length; ++i) {
             uint256 index = _indexOf[tokens[i]];
             // slither-disable-next-line incorrect-equality
             if (index == 0) continue;
+            uint256 gasBefore = gasleft();
             try FeeSplitter(payable(_launches[index - 1].splitter)).collect() returns (uint256 amount) {
                 total += amount;
-            } catch {}
+            } catch (bytes memory reason) {
+                // Running out of gas returns no data, however deep it happened.
+                if (
+                    reason.length == 0 || gasleft() < gasBefore / 63
+                        || (reason.length == 4 && bytes4(reason) == FeeSplitter.OutOfGas.selector)
+                ) revert OutOfGas();
+            }
         }
     }
 

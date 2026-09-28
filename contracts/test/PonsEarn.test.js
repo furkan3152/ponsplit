@@ -406,6 +406,47 @@ describe("PonsEarnLauncher", () => {
       expect(await fx.launcher.platformFees()).to.equal(E("0.0028"));
     });
 
+    it("collects in full at the gas the node estimates, also for a graduated coin", async () => {
+      // The e2e found this on a mainnet fork: with failed collections skipped, gas estimation
+      // settled on a limit at which a collection ran dry and was skipped, so a claim right after
+      // it paid nothing. A starved collection now fails instead.
+      const fx = await loadFixture(deploy);
+      const c = await launch(fx, fx.alice, { tax: 100 });
+      const token = await c.token.getAddress();
+      await graduate(fx, c);
+      const trader = fx.router.connect(fx.trader);
+      const deadline = ethers.MaxUint256;
+      await (await trader.buy(token, 0, fx.trader.address, deadline, { value: E("0.3") })).wait();
+      const bal = await c.token.balanceOf(fx.trader.address);
+      await c.token.connect(fx.trader).approve(await fx.router.getAddress(), bal / 2n);
+      await (await trader.sell(token, bal / 2n, 0, fx.trader.address, deadline)).wait();
+      expect(await fx.escrow.balanceOf(await c.splitter.getAddress())).to.be.gt(0);
+      // No gas limit given: the node estimates it, as a wallet would.
+      await (await fx.launcher.connect(fx.bob).collectMany([token])).wait();
+      expect(await fx.escrow.balanceOf(await c.splitter.getAddress())).to.equal(0);
+      expect(await fx.vault.tokenFees(token)).to.be.gt(0);
+    });
+
+    it("fails a collection that runs out of gas instead of skipping it", async () => {
+      const fx = await loadFixture(deploy);
+      const c = await launch(fx, fx.alice);
+      await pastSnipeWindow();
+      await c.curve.connect(fx.trader).buy(E("1"), 0, fx.trader.address, { value: E("1") });
+      const token = await c.token.getAddress();
+      const full = await fx.launcher.collectMany.estimateGas([token]);
+      // Below what it needs, wherever it runs dry, the call fails rather than succeed without collecting.
+      for (let pct = 99n; pct >= 40n; pct -= 3n) {
+        await expect(fx.launcher.collectMany([token], { gasLimit: (full * pct) / 100n }), `${pct}%`).to.be.reverted;
+      }
+      const alone = await c.splitter.collect.estimateGas();
+      for (let pct = 99n; pct >= 40n; pct -= 3n) {
+        await expect(c.splitter.collect({ gasLimit: (alone * pct) / 100n }), `alone ${pct}%`).to.be.reverted;
+      }
+      expect(await fx.vault.tokenFees(token)).to.equal(0);
+      await (await fx.launcher.collectMany([token], { gasLimit: full })).wait();
+      expect(await fx.vault.tokenFees(token)).to.be.gt(0);
+    });
+
     it("lets only the owner withdraw PonsEarn's share and recover stray tokens", async () => {
       const fx = await loadFixture(deploy);
       const c = await launch(fx, fx.alice, { firstBuy: E("0.1") });
