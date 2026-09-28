@@ -18,7 +18,7 @@ const mobile =
   (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
 
 export const wagmiConfig = getDefaultConfig({
-  appName: "PonSplit",
+  appName: "PonsEarn",
   // A placeholder id still lets browser wallets connect; WalletConnect needs a real one.
   projectId: projectId || "00000000000000000000000000000000",
   chains: [activeChain],

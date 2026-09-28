@@ -1,11 +1,12 @@
-# PonSplit: working notes for Claude
+# PonsEarn (repo: ponsplit): working notes for Claude
 
 The owner (GitHub: furkan3152) writes in Turkish, so answer in Turkish. They often work from a
 phone and can't edit environments by hand. Keep instructions to taps and copy/paste.
 
 ## What this is
 
-PonSplit is the Robinhood Chain version of usesplit.pro: a pump.fun-style launchpad where every
+PonsEarn (called PonSplit until 2026-09-28; the repo, package, storage keys and the contracts'
+EIP-712 domain "PonSplit FeeVault" keep the old name) is the Robinhood Chain version of usesplit.pro: a pump.fun-style launchpad where every
 trade's fee is split between up to 10 X (Twitter) accounts.
 
 - **Chain.** Robinhood Chain is an Arbitrum Orbit chain with ETH as gas. Testnet chainId is 46630,
@@ -101,6 +102,11 @@ Gotchas:
   - Both are pinned on Render (`NEXT_PUBLIC_FEE_VAULT_ADDRESS`, `NEXT_PUBLIC_LAUNCHPAD_ADDRESS`).
   - Check them any time with the `inspect.yml` workflow: read-only, straight from the chain. With
     `site` it also simulates a launch through the live site (real attestation, eth_call only).
+  - Source verified on the testnet Blockscout with `verify.yml` (2026-09-28).
+  - **Hidden coins:** `src/deployment.json` `<network>.hidden` lists coins the site leaves out of every
+    list, search, stat and the ticker (their page says "isn't listed"). Testnet hides the owner's
+    test coin `0xd2d892e94738A8C5962FC359208fecE1b23C9744` ("test", $TEST, created by the owner's
+    wallet `0xFf3a3CFC42D27E85DbA9Ea85f0bFEC34bd632f9A`). Coins can't be deleted on-chain.
 - **Contract changes are no longer free on testnet.** The live contracts can't be upgraded, and
   `/setup` never deploys while addresses are pinned (nor offers a new key while one is set). A
   changed .sol needs a new deployment, either:

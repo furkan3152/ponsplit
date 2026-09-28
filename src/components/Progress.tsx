@@ -3,7 +3,7 @@ export function Progress({ value, graduated, size = "md" }: { value: number; gra
   const v = graduated ? 100 : Math.min(100, Math.max(0, value));
   const h = size === "sm" ? "h-1.5" : "h-3";
   return (
-    <div role="progressbar" aria-valuenow={Math.round(v)} aria-valuemin={0} aria-valuemax={100} className={`${h} w-full overflow-hidden rounded-full bg-card-3`}>
+    <div role="progressbar" aria-valuenow={Math.floor(v)} aria-valuemin={0} aria-valuemax={100} className={`${h} w-full overflow-hidden rounded-full bg-card-3`}>
       <div
         className={`relative h-full overflow-hidden rounded-full transition-[width] duration-700 ease-out ${graduated ? "bg-up" : "bg-lime"}`}
         style={{ width: `${Math.max(v, v > 0 ? 3 : 0)}%`, boxShadow: graduated ? undefined : "0 0 14px var(--glow)" }}

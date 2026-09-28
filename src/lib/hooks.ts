@@ -1,12 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import { createPublicClient, http, type Address } from "viem";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPublicClient, http, zeroAddress, type Address } from "viem";
 import { usePublicClient, useReadContract, useReadContracts } from "wagmi";
 import { feeVaultAbi, launchpadAbi } from "./abi";
 import { activeChain, rpcUrl } from "./chains";
-import { FEE_VAULT_ADDRESS, LAUNCHPAD_ADDRESS } from "./config";
+import { FEE_VAULT_ADDRESS, HIDDEN_COINS, LAUNCHPAD_ADDRESS, isHiddenCoin } from "./config";
 import type { TokenView, TradeRecord } from "./types";
 
 const base = { address: LAUNCHPAD_ADDRESS, abi: launchpadAbi, chainId: activeChain.id } as const;
@@ -69,21 +69,38 @@ export function useAllTokens() {
       refetch();
     }
   }, [count, data, isFetching, refetch]);
-  return query;
+  // Hidden coins (src/deployment.json) are left out of every list; the count above is compared
+  // with the full list, so they don't look like missing coins.
+  const listed = useMemo(() => (data && HIDDEN_COINS.length ? data.filter((t) => !isHiddenCoin(t.token)) : data), [data]);
+  return { ...query, data: listed };
 }
 
-/** Platform totals straight from the contracts (not summed from a page of coins). */
+/**
+ * Platform totals straight from the contracts (not summed from a page of coins), less whatever
+ * the hidden coins (src/deployment.json) contributed.
+ */
 export function useGlobalStats() {
   const { data } = useReadContracts({
     contracts: [
       { ...base, functionName: "tokenCount" },
       { ...base, functionName: "globalTradeCount" },
       { address: FEE_VAULT_ADDRESS, abi: feeVaultAbi, chainId: activeChain.id, functionName: "totalDeposited" },
+      ...HIDDEN_COINS.map((token) => ({ ...base, functionName: "getToken" as const, args: [token] as const })),
     ],
     query: { enabled: Boolean(LAUNCHPAD_ADDRESS && FEE_VAULT_ADDRESS), refetchInterval: 10_000 },
   });
   const pick = (i: number) => (data?.[i]?.status === "success" ? (data[i].result as bigint) : undefined);
-  return { coins: pick(0), trades: pick(1), feesSplit: pick(2) };
+  const hidden = HIDDEN_COINS.map((_, i) => (data?.[3 + i]?.status === "success" ? (data[3 + i].result as TokenView) : undefined));
+  // Until every hidden coin has been read, the totals would count it, so they wait.
+  if (hidden.some((t) => !t)) return { coins: undefined, trades: undefined, feesSplit: undefined };
+  // A hidden address that isn't a coin on this deployment contributed nothing.
+  const real = hidden.filter((t): t is TokenView => Boolean(t && t.token !== zeroAddress));
+  const less = (v: bigint | undefined, by: bigint) => (v === undefined ? undefined : v > by ? v - by : 0n);
+  return {
+    coins: less(pick(0), BigInt(real.length)),
+    trades: less(pick(1), real.reduce((s, t) => s + t.tradeCount, 0n)),
+    feesSplit: less(pick(2), real.reduce((s, t) => s + t.creatorFees, 0n)),
+  };
 }
 
 export function useToken(token: Address | undefined) {
@@ -100,7 +117,12 @@ export function useRecentTrades(limit = 30) {
     ...base,
     functionName: "getRecentTrades",
     args: [BigInt(limit)],
-    query: { enabled: Boolean(LAUNCHPAD_ADDRESS), refetchInterval: 6_000 },
+    query: {
+      enabled: Boolean(LAUNCHPAD_ADDRESS),
+      refetchInterval: 6_000,
+      // Hidden coins (src/deployment.json) don't appear on the tape either.
+      select: (trades) => (HIDDEN_COINS.length ? trades.filter((r) => !isHiddenCoin(r.token)) : trades),
+    },
   });
 }
 

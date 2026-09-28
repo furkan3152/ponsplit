@@ -19,7 +19,7 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-[var(--glass)] backdrop-blur-xl backdrop-saturate-150">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4 sm:px-6">
-        <Link href="/" className="group shrink-0" aria-label="PonSplit home">
+        <Link href="/" className="group shrink-0" aria-label="PonsEarn home">
           <Wordmark />
         </Link>
         <nav className="no-scrollbar ml-6 hidden items-center gap-1 sm:flex">
@@ -65,7 +65,7 @@ function WalletButton() {
         }
         if (chain?.unsupported) {
           return (
-            <button className="btn bg-down px-4 py-2 text-[13px] text-white" onClick={openChainModal}>
+            <button className="btn-sell px-4 py-2 text-[13px]" onClick={openChainModal}>
               Switch to {activeChain.name.replace("Robinhood Chain", "Robinhood")}
             </button>
           );

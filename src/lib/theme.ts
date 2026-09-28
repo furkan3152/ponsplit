@@ -36,6 +36,9 @@ function current(): Theme {
 export function useTheme(): [Theme, (t: Theme) => void] {
   const [theme, setThemeState] = useState<Theme>("dark");
   useEffect(() => {
+    // Tells THEME_SCRIPT's failsafe that the app is running. Providers uses this hook, so it runs
+    // on every page, whether or not the page has anything to reveal.
+    document.documentElement.setAttribute("data-hydrated", "");
     setThemeState(current());
     paintBar(current());
     const mo = new MutationObserver(() => {

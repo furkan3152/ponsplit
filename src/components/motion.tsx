@@ -25,8 +25,6 @@ export function useInView<T extends Element>({ once = true, rootMargin = "0px 0p
   const ref = useRef<T>(null);
   const [inView, setInView] = useState(false);
   useEffect(() => {
-    // Tells THEME_SCRIPT's failsafe that the app is running (see src/lib/theme.ts).
-    document.documentElement.setAttribute("data-hydrated", "");
     const el = ref.current;
     if (!el) return;
     if (typeof IntersectionObserver === "undefined") {
