@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ipKey, isPrivateIp } from "./ip.ts";
+import { ipKey, isPrivateIp, networkKey } from "./ip.ts";
 
 test("IPv4-mapped addresses are keyed as their IPv4 address, one key per client", () => {
   assert.equal(ipKey("::ffff:203.0.113.5"), "203.0.113.5");
@@ -23,4 +23,10 @@ test("private and loopback detection, including mapped forms", () => {
   for (const ip of ["203.0.113.5", "8.8.8.8", "2606:4700::1111", "::ffff:8.8.8.8"]) {
     assert.equal(isPrivateIp(ip), false, ip);
   }
+});
+
+test("IPv6 clients are grouped per /48 as their network; IPv4 is its own network", () => {
+  assert.equal(networkKey(ipKey("2001:db8:1:2:aaaa::1")), "2001:db8:1::/48");
+  assert.equal(networkKey(ipKey("2001:db8:1:ff::1")), "2001:db8:1::/48");
+  assert.equal(networkKey("203.0.113.5"), "203.0.113.5");
 });

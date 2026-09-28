@@ -1,7 +1,7 @@
 import "server-only";
 import { lookup } from "dns/promises";
 import { isIP } from "net";
-import { imageWithinLimits, sniffImage } from "./image-bytes";
+import { imageWithinLimits, satoriCanSizeJpeg, sniffImage } from "./image-bytes";
 
 /**
  * Downloads a user-supplied image (coin metadata) for server-side rendering without letting the
@@ -78,6 +78,8 @@ async function download(start: string): Promise<string | null> {
     // The OG renderer draws PNG, JPEG and GIF (first frame); WebP falls back to the initials card.
     const type = sniffImage(bytes);
     if ((type !== "image/png" && type !== "image/jpeg" && type !== "image/gif") || !imageWithinLimits(bytes)) return null;
+    // The renderer's own JPEG parser is stricter than decoders; files it can't read would break the card.
+    if (type === "image/jpeg" && !satoriCanSizeJpeg(bytes)) return null;
     return `data:${type};base64,${Buffer.from(bytes).toString("base64")}`;
   }
   return null;

@@ -54,3 +54,12 @@ function expand6(ip: string): string[] | null {
   const fill = Array(8 - a.length - b.length).fill("0");
   return [...a, ...fill, ...b].map((g) => g.toLowerCase());
 }
+
+/**
+ * The wider network a client key belongs to: IPv6 /64 keys group per /48 (one customer usually
+ * holds a whole /48, i.e. 65,536 /64s). IPv4 keys stay as they are.
+ */
+export function networkKey(client: string): string {
+  const m = /^([0-9a-f]+:[0-9a-f]+:[0-9a-f]+):[0-9a-f]+::\/64$/i.exec(client);
+  return m ? `${m[1]}::/48` : client;
+}

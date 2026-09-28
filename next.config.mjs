@@ -1,5 +1,5 @@
 import { readFileSync } from "fs";
-import { getContractAddress, keccak256, toBytes } from "viem";
+import { getContractAddress, isAddress, keccak256, toBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
 /**
@@ -28,6 +28,13 @@ function adminKeyFromEnv() {
   return undefined;
 }
 
+/** A pinned address must be exactly 0x + 40 hex characters; anything else fails the build. */
+function checkAddress(value, name) {
+  if (!isAddress(value, { strict: false })) {
+    throw new Error(`${name} is set but isn't an address: use 0x followed by 40 hex characters, with no quotes, spaces or "NAME=" prefix.`);
+  }
+}
+
 function predictedAddresses() {
   // Pinning is all or nothing: with only one address set, the app would find its launchpad but not
   // its vault, and signing would quietly switch off.
@@ -36,10 +43,20 @@ function predictedAddresses() {
   if (pinnedVault !== pinnedLaunchpad) {
     throw new Error("Set both NEXT_PUBLIC_FEE_VAULT_ADDRESS and NEXT_PUBLIC_LAUNCHPAD_ADDRESS, or neither.");
   }
+  if (pinnedVault) {
+    checkAddress(process.env.NEXT_PUBLIC_FEE_VAULT_ADDRESS, "NEXT_PUBLIC_FEE_VAULT_ADDRESS");
+    checkAddress(process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS, "NEXT_PUBLIC_LAUNCHPAD_ADDRESS");
+  }
   const deployment = JSON.parse(readFileSync(new URL("./src/deployment.json", import.meta.url), "utf8"));
   const key = adminKeyFromEnv();
   const chain = process.env.NEXT_PUBLIC_CHAIN || "testnet";
-  const committed = Boolean(deployment[chain]?.launchpad);
+  const entry = deployment[chain] ?? {};
+  if (Boolean(entry.launchpad) !== Boolean(entry.feeVault)) throw new Error(`src/deployment.json: set both launchpad and feeVault for "${chain}", or neither.`);
+  if (entry.launchpad) {
+    checkAddress(entry.feeVault, `src/deployment.json ${chain}.feeVault`);
+    checkAddress(entry.launchpad, `src/deployment.json ${chain}.launchpad`);
+  }
+  const committed = Boolean(entry.launchpad);
   if (committed || process.env.NEXT_PUBLIC_LAUNCHPAD_ADDRESS || !key) return {};
   const admin = privateKeyToAccount(key).address;
   return {

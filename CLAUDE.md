@@ -104,7 +104,7 @@ Gotchas:
   fixed:
   - `termsVersion`: a launch pins the fee and curve terms it was shown; any change reverts it.
   - OG images reject decompression bombs by reading the real pixel size (`src/lib/image-bytes.ts`).
-  - Per-client and global X lookup budgets for previews and launches.
+  - Per-client X lookup budgets for previews and launches.
   - `getTokens` pages kept out of Multicall3 batching (the `pagedClient` in hooks).
   - Trade slippage is measured from the quote the user saw.
   - IPv4-mapped IPs keyed correctly (`src/lib/ip.ts`).
@@ -122,5 +122,16 @@ Gotchas:
   - clearer upload and /setup messages
   - home cards use stickers
   - a "missing" status, distinct from "renamed"
+- A fourth pass found 10 issues in the new budgets. All are fixed:
+  - No shared counter can stop launches or claims any more: limits are per client (IP; IPv6 per
+    /64) plus per IPv6 /48 (`limitClient` in `src/lib/ratelimit.ts`, used by every API route).
+  - Previews keep a global cap, but past it each client still gets a fair share; `/api/x/resolve`
+    returns `incomplete` handles and `useXProfiles` retries them.
+  - In x-api mode, X API calls are capped at `X_API_CALLS_PER_MIN`; past that, launches use fxtwitter.
+  - Proof posts are cached per status id (404s too) and fetches are budgeted per client.
+  - Shared windows live in their own map, so a flood of client keys can't reset them.
+  - Share cards only get JPEGs satori can size, and fall back to the initials card if rendering fails.
+  - Malformed pinned addresses fail the build.
+  - `npm test` loads server modules through `src/lib/test-hooks.mjs` (server-only stub, .ts resolution).
 - If you change anything substantial, run a review → fix → verify loop again. Unit tests live in
   `src/lib/*.test.ts` and run with `npm test`.
