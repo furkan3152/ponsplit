@@ -12,7 +12,10 @@ import { activeChain, rpcUrl } from "./chains";
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 // On phones RainbowKit's MetaMask option opens the app through the MetaMask SDK, which needs no
 // WalletConnect id; on desktop without the extension it would show a WalletConnect QR instead.
-const mobile = typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+// iPadOS reports a desktop Mac user agent, so it is recognised by touch, as RainbowKit does.
+const mobile =
+  typeof navigator !== "undefined" &&
+  (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
 
 export const wagmiConfig = getDefaultConfig({
   appName: "PonSplit",
