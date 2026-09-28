@@ -96,7 +96,8 @@ if (phase === "deploy") {
       await page.waitForTimeout(1200);
       await page.getByText("E2E Wallet").first().click({ force: true, timeout: 10_000 });
     }
-    await deployButton.click({ timeout: 60_000 });
+    // A double tap (easy on a phone) must still send exactly three transactions.
+    await deployButton.dblclick({ timeout: 60_000 });
     await page.getByText("Important: pin the contract addresses").waitFor({ timeout: 120_000 });
     const lines = await page.locator("pre").first().textContent();
     const vault = ethers.getAddress(/NEXT_PUBLIC_FEE_VAULT_ADDRESS=(0x[0-9a-fA-F]{40})/.exec(lines)[1]);

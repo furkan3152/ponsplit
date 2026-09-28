@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { formatEther, getContractAddress, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -284,9 +284,12 @@ function AfterDeploy({ s }: { s: Status }) {
 }
 
 type Found = {
-  /** Newest FeeVault from this wallet that it owns and that trusts the server's signer. */
+  /**
+   * A FeeVault from this wallet that it owns and that trusts the server's signer: one already
+   * wired to one of the wallet's launchpads if there is one, otherwise the newest.
+   */
   vault?: Address;
-  /** Newest launchpad from this wallet that it owns and that uses that vault. */
+  /** The launchpad that vault is wired to, otherwise the newest of the wallet's launchpads using it. */
   launchpad?: Address;
   wired: boolean;
   /** A transaction from the wallet is still pending, so its next contract address isn't known yet. */
@@ -324,14 +327,25 @@ async function findDeployment(client: PublicClient, wallet: Address, signer: Add
     })
   );
   const mine = info.filter((c) => same(c.owner, wallet));
-  const vault = mine.find((c) => same(c.vaultSigner, signer))?.address;
-  const launchpad = vault ? mine.find((c) => same(c.itsVault, vault))?.address : undefined;
+  // Newest first. If an earlier attempt left extra contracts behind, a vault that is already wired
+  // to one of this wallet's launchpads is a complete deployment and wins over a newer, unwired one.
+  const vaults = mine.filter((c) => same(c.vaultSigner, signer)).map((c) => c.address);
+  const wiredTo = await Promise.all(vaults.map((address) => client.readContract({ address, abi: feeVaultAbi, functionName: "launchpad" })));
+  const isMyLaunchpadFor = (lp: string, v: string) => mine.some((c) => same(c.address, lp) && same(c.itsVault, v));
+  const pick = Math.max(0, vaults.findIndex((v, i) => isMyLaunchpadFor(wiredTo[i], v)));
+  const vault = vaults[pick] as Address | undefined;
+  let launchpad: Address | undefined;
   let wired = false;
   let problem: string | undefined;
   if (vault) {
-    const wiredTo = await client.readContract({ address: vault, abi: feeVaultAbi, functionName: "launchpad" });
-    if (launchpad && same(wiredTo, launchpad)) wired = true;
-    else if (wiredTo !== zeroAddress) problem = `FeeVault ${vault} is already connected to another launchpad (${wiredTo}).`;
+    const w = wiredTo[pick];
+    if (isMyLaunchpadFor(w, vault)) {
+      launchpad = w;
+      wired = true;
+    } else {
+      launchpad = mine.find((c) => same(c.itsVault, vault))?.address;
+      if (w !== zeroAddress) problem = `FeeVault ${vault} is already connected to another launchpad (${w}).`;
+    }
   }
   return { vault, launchpad, wired, busy: pending > latest, problem };
 }
@@ -421,6 +435,19 @@ function WalletDeploy({ signer, found, checking, onChange }: { signer: Address; 
   const [running, setRunning] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [txs, setTxs] = useState<Hex[]>([]);
+  // Set synchronously on the first tap, so a second tap during the first await can't start a
+  // second, identical set of deployments.
+  const busy = useRef(false);
+  // Contracts this page has seen confirmed or found; a later read that misses one of them comes
+  // from a node that is behind, and must not lead to deploying it again.
+  const seen = useRef<{ vault?: Address; launchpad?: Address }>({});
+  if (found?.vault) seen.current.vault ??= found.vault;
+  if (found?.launchpad) seen.current.launchpad ??= found.launchpad;
+
+  // Load the contract code while the owner reads the page, not after the tap.
+  useEffect(() => {
+    void import("@/lib/bytecode");
+  }, []);
 
   if (!isConnected || !address) {
     return (
@@ -439,7 +466,9 @@ function WalletDeploy({ signer, found, checking, onChange }: { signer: Address; 
   const empty = balance.data?.value === 0n;
 
   async function run() {
-    if (!publicClient || !address) return;
+    if (busy.current || !publicClient || !address) return;
+    busy.current = true;
+    setRunning("Checking…");
     setErr(null);
     try {
       if (chainId !== activeChain.id) await switchChainAsync({ chainId: activeChain.id });
@@ -447,6 +476,9 @@ function WalletDeploy({ signer, found, checking, onChange }: { signer: Address; 
       let f = await findDeployment(publicClient, address, signer);
       if (f.problem) throw new Error(f.problem);
       if (f.busy) throw new Error("A transaction from this wallet is still pending. Wait a few seconds and try again.");
+      if ((seen.current.vault && !f.vault) || (seen.current.launchpad && !f.launchpad)) {
+        throw new Error("The network hasn't caught up with your last transaction yet. Wait a few seconds and try again.");
+      }
       const { feeVaultBytecode, launchpadBytecode } = await import("@/lib/bytecode");
       const confirm = async (hash: Hex) => {
         setTxs((t) => [...t, hash]);
@@ -459,12 +491,14 @@ function WalletDeploy({ signer, found, checking, onChange }: { signer: Address; 
         setRunning("Deploying FeeVault (1 of 3)…");
         const r = await confirm(await deployContractAsync({ abi: feeVaultAbi, bytecode: feeVaultBytecode, args: [address, signer], chainId: activeChain.id }));
         if (!r.contractAddress) throw new Error("FeeVault deployment returned no address.");
+        seen.current.vault = r.contractAddress;
         f = { ...f, vault: r.contractAddress };
       }
       if (!f.launchpad) {
         setRunning("Deploying the launchpad (2 of 3)…");
         const r = await confirm(await deployContractAsync({ abi: launchpadAbi, bytecode: launchpadBytecode, args: [address, f.vault!, CURVE], chainId: activeChain.id }));
         if (!r.contractAddress) throw new Error("Launchpad deployment returned no address.");
+        seen.current.launchpad = r.contractAddress;
         f = { ...f, launchpad: r.contractAddress };
       }
       if (!f.wired) {
@@ -474,6 +508,7 @@ function WalletDeploy({ signer, found, checking, onChange }: { signer: Address; 
     } catch (e) {
       setErr(errorMessage(e));
     } finally {
+      busy.current = false;
       setRunning(null);
       onChange();
     }
