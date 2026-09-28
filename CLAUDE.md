@@ -28,6 +28,28 @@ Layout: `contracts/` holds Hardhat (SplitLaunchpad, FeeVault, SplitToken, plus t
 The Next.js 14 app is at the repo root: `src/app`, `src/lib`, `src/components`. The Playwright
 end-to-end suite is in `e2e/`. Docs are Turkish: README.md and MAINNET.md.
 
+## Design system ("split terminal")
+
+The owner asked for a UI that doesn't look generated. Keep new work in this language:
+- **Theme.** Near-black paper with film grain and ambient light, Robin-neon lime `#ccff00`, and
+  pastel account colors (sky, pink, sun, lilac, orange) for the X accounts. Dark by default; the
+  light "paper edition" is chosen with `<ThemeToggle>`. The choice lives in `<html data-theme>`,
+  set before first paint by `THEME_SCRIPT` in `src/lib/theme.ts`. Tailwind `dark:` uses that
+  attribute, not the OS setting.
+- **Tokens.** CSS variables in `src/app/globals.css` (colors, `.card`, `.card-hover`, `.ring-glow`,
+  `.bg-grid`, `.eyebrow`, `.display`, `.accent`, `.text-neon`, `.btn-neon`, …) plus `tailwind.config.ts`
+  (colors, fonts, animations).
+- **Fonts.** Bricolage Grotesque (`display`), Instrument Sans (body), Instrument Serif (`accent`, at
+  most one word per page) and Martian Mono (`num`, all numbers and addresses).
+- **Motion.** `src/components/motion.tsx`: `<Reveal>`, `<CountUp>`, `<Flash>`, `celebrate()`.
+  Everything stops under reduced motion; SVG/JS motion checks `useReducedMotion()`.
+- **Hero art.** The hero is `src/components/art/SplitMachine.tsx`. The sticker art in
+  `src/components/art` stays for avatars and states.
+- **Width.** Decorations must never widen the page. The e2e measures overflow against the
+  configured viewport width.
+- **Screenshots.** `e2e/screens.mjs` takes review screenshots of every page (dark/light,
+  desktop/mobile).
+
 ## Hard rules
 
 - **Never generate, read, print or store private keys or seeds.** Not in chat, git, files or tool
