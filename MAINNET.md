@@ -23,7 +23,9 @@ Bu adımları kod çözemez; karar ve sorumluluk proje sahibinde.
 4. **X doğrulaması.**
    - Mainnet'te "Sign in with X" (OAuth) açılmalı: `TWITTER_CLIENT_ID`, `TWITTER_CLIENT_SECRET`.
    - Kendi alan adın varsa `NEXTAUTH_URL=https://<alan-adın>` ekle ve X uygulamasına `https://<alan-adın>/api/auth/callback/twitter` adresini callback olarak kaydet. Yoksa X kullanıcıyı onrender.com adresine döndürür ve giriş başarısız olur.
-   - Kullanıcı adını ID'ye çevirmek için resmi API kullanılmalı: `X_BEARER_TOKEN`. Launch'lar bu API'yi kullanır. Önizlemeler (yazarken görünen avatarlar) ücretsiz aynadan ve ortak bir dakikalık bütçeden gelir, yani kimse API kotanı tüketip launch'ları durduramaz. X API hız sınırına takılırsa launch'lar geçici olarak aynaya düşer.
+   - Kullanıcı adını ID'ye çevirmek için resmi API kullanılmalı: `X_BEARER_TOKEN`. Launch'lar bu API'yi kullanır; önizlemeler (yazarken görünen avatarlar) ücretsiz aynadan gelir.
+   - Sınırlar istemci başınadır (IP; IPv6'da /64, ayrıca /48 ağı başına). Launch'lar ve claim'ler için ortak bir üst sınır yok; yani birkaç adresten gelen yoğun istek başkalarının launch'ını ya da claim'ini durduramaz. Kötüye kullanım en fazla kendi adresinin kotasını bitirir.
+   - Sunucu X API'yi dakikada en fazla 60 kez çağırır (her çağrı bir launch'ın tüm hesaplarını çözer). Bu sınır dolarsa ya da X hız sınırı koyarsa launch'lar o dakika aynadan çözülür; durmaz. Sınırı `src/lib/x.ts` içindeki `X_API_CALLS_PER_MIN` belirler; X API planının maliyetine göre ayarla.
    - Varsayılan fxtwitter aynası ücretsiz ama gayriresmî.
    - Post ile doğrulama katıdır. Post, hesabın kendi attığı yeni bir post olmalı (yanıt, alıntı ya da repost olamaz). Metni de tam olarak şu olmalı: hedef cüzdanın tam adresi ve tek kullanımlık kod. Kodu sadece içeren postlar reddedilir. Bu sayede @grok gibi otomatik yanıt veren ya da metni tekrarlayan hesaplar üzerinden başkasının fee'si çekilemez.
 5. **Altyapı.**

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { clientIp, rateLimit } from "@/lib/ratelimit";
+import { clientIp, limitClient } from "@/lib/ratelimit";
 import { runSetup, setupStatus } from "@/lib/setup";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export async function GET() {
  * from the server's own admin key, once, and every step is derived from on-chain state.
  */
 export async function POST(req: Request) {
-  if (!rateLimit(`setup:${clientIp(req)}`, 5, 60_000)) {
+  if (!limitClient("setup", clientIp(req), 5)) {
     return NextResponse.json({ error: "Slow down a little." }, { status: 429 });
   }
   try {

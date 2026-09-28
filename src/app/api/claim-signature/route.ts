@@ -5,9 +5,9 @@ import { feeVaultAbi } from "@/lib/abi";
 import { authOptions } from "@/lib/auth";
 import { activeChain, rpcUrl } from "@/lib/chains";
 import { FEE_VAULT_ADDRESS } from "@/lib/config";
-import { clientIp, rateLimit } from "@/lib/ratelimit";
+import { clientIp, limitClient } from "@/lib/ratelimit";
 import { deadlineFromNow, signClaim, signerAccount } from "@/lib/signing";
-import { verifyProofPost, type ProofResult } from "@/lib/xproof";
+import { ProofBusyError, verifyProofPost, type ProofResult } from "@/lib/xproof";
 import { readJson } from "@/lib/body";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,8 @@ const SIGNATURE_TTL_SECONDS = 15 * 60;
  * The account comes from either the X OAuth session or a verified proof post, never from the body.
  */
 export async function POST(req: Request) {
-  if (!rateLimit(`claim:${clientIp(req)}`, 20, 60_000)) {
+  const ip = clientIp(req);
+  if (!limitClient("claim", ip, 20)) {
     return NextResponse.json({ error: "Too many attempts, try again in a minute." }, { status: 429 });
   }
   const body = await readJson<{ to?: string; proofUrl?: string }>(req);
@@ -36,9 +37,9 @@ export async function POST(req: Request) {
   let x: ProofResult | undefined;
   if (body.proofUrl) {
     try {
-      x = await verifyProofPost(body.proofUrl, to);
+      x = await verifyProofPost(body.proofUrl, to, ip);
     } catch (e) {
-      return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+      return NextResponse.json({ error: (e as Error).message }, { status: e instanceof ProofBusyError ? 429 : 400 });
     }
   } else {
     x = (await getServerSession(authOptions))?.x;

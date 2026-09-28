@@ -234,19 +234,29 @@ export function useHandleChecks(handles: readonly string[], xIds: readonly bigin
   });
 }
 
-/** Looks up X profiles through the app's resolver API. */
+/**
+ * Looks up X profiles through the app's resolver API. Handles the server couldn't fit into its
+ * lookup budget this minute are absent from `data`; the query retries them shortly instead of
+ * keeping the partial answer for the full stale time.
+ */
 export function useXProfiles(handles: string[]) {
-  const key = handles.slice().sort().join(",");
+  const key = Array.from(new Set(handles)).sort().join(",");
   return useQuery({
     queryKey: ["x-profiles", key],
     enabled: handles.length > 0,
-    staleTime: 5 * 60_000,
+    staleTime: (q) => (q.state.data?.incomplete.length ? 0 : 5 * 60_000),
+    refetchInterval: (q) => (q.state.status === "error" || q.state.data?.incomplete.length ? 30_000 : false),
     retry: false,
     queryFn: async () => {
       const res = await fetch(`/api/x/resolve?handles=${encodeURIComponent(key)}`);
-      const body = (await res.json()) as { profiles?: Record<string, XProfileLite | null>; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        profiles?: Record<string, XProfileLite | null>;
+        incomplete?: string[];
+        error?: string;
+      };
       if (!res.ok) throw new Error(body.error || "Lookup failed");
-      return body.profiles ?? {};
+      return { profiles: body.profiles ?? {}, incomplete: body.incomplete ?? [] };
     },
+    select: (d) => d.profiles,
   });
 }
