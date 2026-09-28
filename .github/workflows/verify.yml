@@ -38,6 +38,8 @@ jobs:
           cache: npm
           cache-dependency-path: contracts/package-lock.json
       - run: npm ci
+      # verify matches the chain's code against local artifacts, so they must exist first.
+      - run: npx hardhat compile
       - name: Read the constructor arguments back from the chain
         run: |
           node -e '
