@@ -9,12 +9,12 @@ export function LogoMark({ size = 32, className }: { size?: number; className?: 
   );
 }
 
-/** LogoMark + "PonSplit" wordmark as a flex row; text inherits the font. */
+/** LogoMark + "PonSplit" wordmark as a flex row. The mark turns a little when its link is hovered. */
 export function Wordmark({ className, size = 28 }: { className?: string; size?: number }) {
   return (
     <span className={`inline-flex items-center gap-2 ${className ?? ""}`}>
-      <LogoMark size={size} />
-      <span className="font-semibold tracking-tight">PonSplit</span>
+      <LogoMark size={size} className="transition-transform duration-500 group-hover:-rotate-12 group-hover:scale-110" />
+      <span className="display text-[20px] leading-none">PonSplit</span>
     </span>
   );
 }

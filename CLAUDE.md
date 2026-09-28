@@ -79,10 +79,14 @@ Gotchas:
   - Both are pinned on Render (`NEXT_PUBLIC_FEE_VAULT_ADDRESS`, `NEXT_PUBLIC_LAUNCHPAD_ADDRESS`).
   - Check them any time with the `inspect.yml` workflow: read-only, straight from the chain. With
     `site` it also simulates a launch through the live site (real attestation, eth_call only).
-- **Contract changes are no longer free on testnet.** The live contracts can't be upgraded. A
-  changed .sol needs a new deployment: a new admin key on `/setup` (it deploys at nonces 0/1 of a
-  fresh key) or `deploy-testnet.yml`, then re-pin both addresses on Render. Coins launched on the
-  old contracts stay there.
+- **Contract changes are no longer free on testnet.** The live contracts can't be upgraded, and
+  `/setup` never deploys while addresses are pinned (nor offers a new key while one is set). A
+  changed .sol needs a new deployment, either:
+  - `deploy-testnet.yml` with the site's current `SIGNER_PRIVATE_KEY` as the workflow key (FeeVault's
+    signer is the deployer), then re-pin both addresses on Render; or
+  - remove both pins and `SIGNER_PRIVATE_KEY` on Render, rebuild, generate a new key on `/setup`,
+    fund it, deploy, then pin the new addresses. Launches and claims are down in between.
+  Coins launched on the old contracts stay there.
 - **Mainnet** is not deployed yet. It runs on **Vercel** (the owner's choice), built with
   `NEXT_PUBLIC_CHAIN=mainnet`, which makes `/setup` wallet mode (`SETUP_MODE` in `src/lib/config.ts`):
   1. the owner generates the signing key on `/setup` and pastes it into Vercel as `SIGNER_PRIVATE_KEY`;

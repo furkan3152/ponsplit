@@ -19,9 +19,11 @@ import { useServerConfig } from "@/lib/useServerConfig";
 
 type Row = { handle: string; percent: string };
 
+/** "12.5" or "12,5" (comma keypads, e.g. an iPhone set to Turkey) → basis points; NaN if invalid. */
 function toBps(percent: string): number {
-  if (!/^\d{1,3}(\.\d{0,2})?$/.test(percent.trim())) return NaN;
-  return Math.round(parseFloat(percent) * 100);
+  const v = percent.trim().replace(",", ".");
+  if (!/^\d{1,3}(\.\d{0,2})?$/.test(v)) return NaN;
+  return Math.round(parseFloat(v) * 100);
 }
 
 /** The contract limits lengths in UTF-8 bytes, not characters (emoji and accents take more). */
@@ -96,7 +98,7 @@ export default function CreatePage() {
   // Debounce a string, not an array: a fresh array every render would re-arm the timer forever.
   const lookupKey = useDebounced(handles.filter(isValidHandle).join(","));
   const lookup = useMemo(() => (lookupKey ? lookupKey.split(",") : []), [lookupKey]);
-  const profiles = useXProfiles(lookup);
+  const profiles = useXProfiles(lookup, { recheckMisses: true });
   const inFlight = useRef(false);
 
   const imageUrl = image.trim() ? safeUrl(image.trim()) : undefined;

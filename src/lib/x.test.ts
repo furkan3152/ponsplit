@@ -101,3 +101,9 @@ test("a launch looks a remembered miss up again", async () => {
   await resolveHandles(["nobody2"], "display", "1.1.1.2");
   assert.equal(upstream.length, 0);
 });
+
+test("concurrent lookups of the same account share one upstream request", async () => {
+  upstream.length = 0;
+  await Promise.all([1, 2, 3, 4].map((i) => resolveHandles(["rshared"], "display", `1.1.2.${i}`)));
+  assert.equal(upstream.filter((u) => u.endsWith("/rshared")).length, 1);
+});
