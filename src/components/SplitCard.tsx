@@ -27,7 +27,7 @@ function ethText(n: number, digits = 4) {
   return n.toLocaleString("en-US", { maximumFractionDigits: digits });
 }
 
-/** Of every trade's volume, the part (in %) that reaches the X accounts: the creator's share of pons's fee plus the creator tax, less PonsEarn's cut. */
+/** Of every trade's volume, the part (in %) that reaches the X accounts: the creator's share of pons's fee plus the creator tax, less SplitEarn's cut. */
 export function accountsPct(creatorTaxBps: number, platformBps: number, feeBps = PONS_FEE_BPS) {
   const creator = (feeBps * (10_000 - PONS_PROTOCOL_SHARE_BPS)) / 10_000 + creatorTaxBps;
   return (creator * (10_000 - platformBps)) / 10_000 / 100;
@@ -135,7 +135,7 @@ export function SplitCard({ t }: { t: Coin }) {
         })}
       </ul>
       <p className="mt-4 border-t border-dashed border-line-2 pt-3 text-[11px] leading-relaxed text-ink-3">
-        Usernames as of launch. Fees follow each account&apos;s permanent X id, so a rename never moves them. PonsEarn keeps {pct(t.platformBps)} of each payout.
+        Usernames as of launch. Fees follow each account&apos;s permanent X id, so a rename never moves them. SplitEarn keeps {pct(t.platformBps)} of each payout.
       </p>
     </section>
   );

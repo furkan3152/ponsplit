@@ -70,7 +70,7 @@ const STRIPES = "repeating-linear-gradient(135deg, transparent 0 3px, rgba(11, 1
 const colorOf = (i: number) => ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
 const swatch = (i: number): CSSProperties => ({ backgroundColor: colorOf(i), backgroundImage: i >= ACCOUNT_COLORS.length ? STRIPES : undefined });
 
-/** PonsEarn's share of every payout for a coin with this creator tax (PonsEarnLauncher.platformBpsFor). */
+/** SplitEarn's share of every payout for a coin with this creator tax (SplitEarnLauncher.platformBpsFor). */
 function platformBpsFor(t: LaunchTerms, taxBps: number): bigint {
   const creatorBase = t.curveFeeBps * (BPS - BigInt(PONS_PROTOCOL_SHARE_BPS));
   const all = creatorBase + BigInt(taxBps) * BPS;
@@ -120,7 +120,7 @@ type Issue = { step: 1 | 2 | 3; text: string };
 const HANDLE_STATUS =
   "pointer-events-none mt-1.5 block w-fit max-w-full truncate rounded-full px-2 py-0.5 text-[12px] font-medium sm:absolute sm:right-2.5 sm:top-1/2 sm:mt-0 sm:max-w-[8rem] sm:-translate-y-1/2";
 
-/** Any unused value; pons combines it with the launching wallet (and PonsEarn with the creator). */
+/** Any unused value; pons combines it with the launching wallet (and SplitEarn with the creator). */
 const newSalt = (): Hex => bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
 
 export default function CreatePage() {
@@ -226,7 +226,7 @@ export default function CreatePage() {
         setStatus("Switching network…");
         await switchChainAsync({ chainId: n.chain.id });
       }
-      // The launch is priced on the terms shown on this page and pinned to them on-chain (PonsEarn's
+      // The launch is priced on the terms shown on this page and pinned to them on-chain (SplitEarn's
       // terms version and pons's economics), so a change after this point reverts it instead of
       // costing the creator more.
       setStatus("Checking launch terms…");
@@ -235,7 +235,7 @@ export default function CreatePage() {
         await terms.refetch();
         throw new Error("The launch terms just changed. Review the updated numbers and launch again.");
       }
-      if (fresh.paused) throw new Error("New launches are paused by PonsEarn's owner for now.");
+      if (fresh.paused) throw new Error("New launches are paused by SplitEarn's owner for now.");
       if (!fresh.canLaunch) throw new Error("pons isn't taking new launches right now.");
       const firstBuy = safeParseEther(devBuy) ?? 0n;
       const minTokensOut = firstBuy > 0n ? (simulateLaunch(firstBuy, shownTerms, taxBps).tokens * (10_000n - FIRST_BUY_SLIPPAGE_BPS)) / 10_000n : 0n;
@@ -300,7 +300,7 @@ export default function CreatePage() {
   const shareLabels = handles.map((h, i) => (isValidHandle(h) ? `@${h}` : `Account ${i + 1}`));
   const previewHandles = Array.from(new Set(handles.filter(isValidHandle)));
   const platformBps = shownTerms ? Number(platformBpsFor(shownTerms, taxBps)) : undefined;
-  // Of every trade: the creator's part of pons's fee plus the tax, less PonsEarn's share.
+  // Of every trade: the creator's part of pons's fee plus the tax, less SplitEarn's share.
   const accountsPct =
     shownTerms && platformBps !== undefined
       ? ((Number(shownTerms.curveFeeBps) * (10_000 - PONS_PROTOCOL_SHARE_BPS)) / 10_000 + taxBps) * (1 - platformBps / 10_000) / 100
@@ -742,10 +742,10 @@ export default function CreatePage() {
                       <b className="font-semibold text-ink">
                         {accountsPct.toLocaleString("en-US", { maximumFractionDigits: 2 })}% of every trade goes to your X accounts
                       </b>
-                      ; PonsEarn keeps {shownTerms.platformShareBps / 100}% of the creator&apos;s share of the fee{taxBps ? " (none of the tax)" : ""}.
+                      ; SplitEarn keeps {shownTerms.platformShareBps / 100}% of the creator&apos;s share of the fee{taxBps ? " (none of the tax)" : ""}.
                     </p>
                   ) : (
-                    <p className="mt-1.5 text-[14px] text-ink-3">{live ? `Reading the launch terms from ${n.chain.name}…` : `PonsEarn isn't live on ${n.label.toLowerCase()} yet.`}</p>
+                    <p className="mt-1.5 text-[14px] text-ink-3">{live ? `Reading the launch terms from ${n.chain.name}…` : `SplitEarn isn't live on ${n.label.toLowerCase()} yet.`}</p>
                   )}
                 </div>
               </div>
@@ -803,7 +803,7 @@ export default function CreatePage() {
                 <p className="flex items-start gap-2.5 rounded-2xl bg-card-2 px-4 py-3 text-[13px] text-ink-2">
                   <AlertIcon />
                   <span>
-                    PonsEarn isn&apos;t live on {n.label.toLowerCase()} yet.{" "}
+                    SplitEarn isn&apos;t live on {n.label.toLowerCase()} yet.{" "}
                     <Link href="/setup" className="font-medium text-ink underline">
                       Set it up
                     </Link>{" "}
@@ -814,7 +814,7 @@ export default function CreatePage() {
               {shownTerms?.paused ? (
                 <p className="flex items-start gap-2.5 rounded-2xl bg-down-soft px-4 py-3 text-[14px] font-medium text-down-ink">
                   <PauseIcon />
-                  <span>New launches are paused by PonsEarn&apos;s owner for now.</span>
+                  <span>New launches are paused by SplitEarn&apos;s owner for now.</span>
                 </p>
               ) : shownTerms && !shownTerms.canLaunch ? (
                 <p className="flex items-start gap-2.5 rounded-2xl bg-down-soft px-4 py-3 text-[14px] font-medium text-down-ink">

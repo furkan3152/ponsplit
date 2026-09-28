@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   const body = await readJson<{ network?: string; creator?: string; handles?: string[] }>(req);
   const n = requestNetwork(body?.network);
   if (!n) return NextResponse.json({ error: "Unknown network." }, { status: 400 });
-  if (!isLive(n)) return NextResponse.json({ error: `PonsEarn isn't live on ${n.label} yet.` }, { status: 400 });
+  if (!isLive(n)) return NextResponse.json({ error: `SplitEarn isn't live on ${n.label} yet.` }, { status: 400 });
   if (!body?.creator || !isAddress(body.creator)) return NextResponse.json({ error: "Connect a wallet first." }, { status: 400 });
   const handles = (Array.isArray(body.handles) ? body.handles : []).map((h) => normalizeHandle(String(h)));
   if (handles.length === 0 || handles.length > MAX_RECIPIENTS || !handles.every(isValidHandle)) {

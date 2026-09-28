@@ -60,7 +60,7 @@ export function useCoins() {
   return { ...query, data };
 }
 
-/** One coin with its live Pons state; `null` when it isn't a PonsEarn coin on this network. */
+/** One coin with its live Pons state; `null` when it isn't a SplitEarn coin on this network. */
 export function useCoin(token: Address | undefined) {
   const n = useNetwork();
   return useQuery({
@@ -77,7 +77,7 @@ export function useCoin(token: Address | undefined) {
 }
 
 /**
- * Whether a coin that isn't on this network is a PonsEarn coin on the other one (a shared link can
+ * Whether a coin that isn't on this network is a SplitEarn coin on the other one (a shared link can
  * reach someone browsing the other network). Returns that network's id, or null.
  */
 export function useCoinElsewhere(token: Address | undefined, enabled: boolean) {
@@ -379,7 +379,7 @@ async function tradesBetween(
       )
     )
   ).flat();
-  // Pool trades made through PonsEarn name the trader; other apps' only show their router.
+  // Pool trades made through SplitEarn name the trader; other apps' only show their router.
   const traders = new Map<string, Address>();
   if (swapLogs.length) {
     const tagged = await logsOver(

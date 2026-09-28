@@ -7,13 +7,13 @@ const path = require("path");
 const hardhat = (name) => require(path.join(__dirname, "..", "artifacts", "contracts", `${name}.sol`, `${name}.json`));
 const vendor = (name) => require(path.join(__dirname, "..", "vendor", "out", `${name}.json`));
 
-// PonsEarn's own contracts, and the Pons v2 / Uniswap v4 ABIs the app reads and writes (the real
+// SplitEarn's own contracts, and the Pons v2 / Uniswap v4 ABIs the app reads and writes (the real
 // ones, from the verified sources in contracts/vendor).
 const abis = {
-  launcherAbi: hardhat("PonsEarnLauncher").abi,
+  launcherAbi: hardhat("SplitEarnLauncher").abi,
   feeVaultAbi: hardhat("FeeVault").abi,
   feeSplitterAbi: hardhat("FeeSplitter").abi,
-  routerAbi: hardhat("PonsEarnRouter").abi,
+  routerAbi: hardhat("SplitEarnRouter").abi,
   ponsFactoryAbi: vendor("PonsV2LaunchFactory").abi,
   ponsCurveAbi: vendor("PonsV2BondingCurve").abi,
   ponsTokenAbi: vendor("PonsV2LauncherToken").abi,
@@ -34,11 +34,11 @@ const out = path.join(__dirname, "..", "..", "src", "lib", "abi.ts");
 fs.writeFileSync(out, src);
 console.log(`Wrote ${out}`);
 
-// Creation bytecode for /setup, where the owner's wallet deploys PonsEarn (both networks) and, on
-// testnet, PonsEarn's copy of Pons v2. Loaded only when /setup deploys.
+// Creation bytecode for /setup, where the owner's wallet deploys SplitEarn (both networks) and, on
+// testnet, SplitEarn's copy of Pons v2. Loaded only when /setup deploys.
 const bytecodes = {
   feeVault: hardhat("FeeVault").bytecode,
-  launcher: hardhat("PonsEarnLauncher").bytecode,
+  launcher: hardhat("SplitEarnLauncher").bytecode,
   ponsFeeEscrow: vendor("PonsV2FeeEscrow").bytecode,
   ponsMemeHook: vendor("PonsV2MemeHook").bytecode,
   ponsBuybackVault: vendor("PonsV2BuybackVault").bytecode,

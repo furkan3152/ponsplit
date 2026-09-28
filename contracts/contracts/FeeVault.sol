@@ -8,7 +8,7 @@ import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /// @title FeeVault
-/// @notice Holds the X (Twitter) accounts' share of PonsEarn coins' creator fees until their owners
+/// @notice Holds the X (Twitter) accounts' share of SplitEarn coins' creator fees until their owners
 ///         claim it.
 /// @dev Recipients are keyed by their numeric X user id, which never changes when an account is
 ///      renamed. `signer` is an off-chain service that
@@ -16,7 +16,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 ///        2. signs a claim once the caller has proven ownership of an X account.
 ///      If the signer key ever leaks, the owner pauses claims, rotates the signer, and unpauses:
 ///      balances never move while paused, and signatures from the old signer stop working.
-///      Launchers (PonsEarnLauncher) register splits; deposits are open to anyone, since they can
+///      Launchers (SplitEarnLauncher) register splits; deposits are open to anyone, since they can
 ///      only add to what the recipients are owed.
 contract FeeVault is Ownable2Step, ReentrancyGuard, EIP712 {
     uint256 public constant BPS = 10_000;
@@ -62,7 +62,7 @@ contract FeeVault is Ownable2Step, ReentrancyGuard, EIP712 {
     error TransferFailed();
     error ClaimsPaused();
 
-    constructor(address owner_, address signer_) Ownable(owner_) EIP712("PonsEarn FeeVault", "1") {
+    constructor(address owner_, address signer_) Ownable(owner_) EIP712("SplitEarn FeeVault", "1") {
         if (signer_ == address(0)) revert ZeroAddress();
         signer = signer_;
         emit SignerSet(signer_);

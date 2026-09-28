@@ -34,9 +34,9 @@ import copyTerms from "./pons-copy-terms.json";
  * same whoever pays the gas. Mirrors contracts/scripts/lib/pons-stack.js, which deploys the same
  * contracts the same way for the Hardhat tests.
  *
- *  - Testnet: PonsEarn's copy of Pons v2 (7 contracts, then 9 wiring calls with Pons's live mainnet
- *    terms) against the Uniswap v4 contracts Robinhood Chain testnet already has, then PonsEarn.
- *  - Mainnet: PonsEarn only (FeeVault, launcher, one wiring call), on the real Pons.
+ *  - Testnet: SplitEarn's copy of Pons v2 (7 contracts, then 9 wiring calls with Pons's live mainnet
+ *    terms) against the Uniswap v4 contracts Robinhood Chain testnet already has, then SplitEarn.
+ *  - Mainnet: SplitEarn only (FeeVault, launcher, one wiring call), on the real Pons.
  */
 export const CREATE2_PROXY = copyTerms.create2Proxy as Address;
 
@@ -44,7 +44,7 @@ export type PlanStep = {
   key: string;
   /** What the step does, for the owner. */
   label: string;
-  group: "pons" | "ponsearn";
+  group: "pons" | "splitearn";
   done: boolean;
   /** The transaction that performs it, sent from the owner's wallet. */
   tx: { to: Address; data: Hex };
@@ -54,7 +54,7 @@ export type PlanAddresses = {
   ponsFactory: Address;
   feeVault: Address;
   launcher: Address;
-  /** The rest of PonsEarn's Pons copy (testnet only). */
+  /** The rest of SplitEarn's Pons copy (testnet only). */
   pons?: { escrow: Address; hook: Address; buybackVault: Address; locker: Address; executor: Address; deployer: Address };
 };
 
@@ -74,7 +74,7 @@ let loaded: Promise<Bytecodes> | null = null;
 /** The contracts' creation code (large), loaded when /setup first needs it. */
 export const loadBytecode = () => (loaded ??= import("./bytecode").then((m) => m.bytecode));
 
-/** keccak256(abi.encode("ponsearn:v1", owner, name[, i])): pons-stack.js's `salt`. */
+/** keccak256(abi.encode("splitearn:v1", owner, name[, i])): pons-stack.js's `salt`. */
 export function saltFor(owner: Address, name: string, extra?: bigint): Hex {
   return keccak256(
     extra === undefined
@@ -171,12 +171,12 @@ export async function planDeploys(n: Network, owner: Address, signer: Address): 
     );
     pons = { escrow, hook, buybackVault, locker, executor, deployer };
   }
-  const feeVault = add("earn:vault", "PonsEarn FeeVault", "ponsearn", saltFor(owner, "FeeVault"), encodeDeployData({ abi: feeVaultAbi, bytecode: code.feeVault, args: [owner, signer] }));
+  const feeVault = add("earn:vault", "SplitEarn FeeVault", "splitearn", saltFor(owner, "FeeVault"), encodeDeployData({ abi: feeVaultAbi, bytecode: code.feeVault, args: [owner, signer] }));
   const launcher = add(
     "earn:launcher",
-    "PonsEarn launcher",
-    "ponsearn",
-    saltFor(owner, "PonsEarnLauncher"),
+    "SplitEarn launcher",
+    "splitearn",
+    saltFor(owner, "SplitEarnLauncher"),
     encodeDeployData({ abi: launcherAbi, bytecode: code.launcher, args: [owner, feeVault, ponsFactory] })
   );
   return { deploys, addresses: { ponsFactory, feeVault, launcher, pons } };
@@ -253,7 +253,7 @@ export async function readPlan(client: PublicClient, n: Network, owner: Address,
   await wire(
     "earn:link",
     "Let the launcher register fee splits in the FeeVault",
-    "ponsearn",
+    "splitearn",
     bothUp,
     () => client.readContract({ address: addresses.feeVault, abi: feeVaultAbi, functionName: "isLauncher", args: [addresses.launcher] }),
     (v) => v === true,

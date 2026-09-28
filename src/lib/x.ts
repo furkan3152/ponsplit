@@ -174,7 +174,7 @@ export async function resolveHandles(
 type Source = "x" | "fx";
 
 /** The FxTwitter API asks every client to identify itself with a descriptive User-Agent. */
-const FX_HEADERS = { "user-agent": "PonsEarn/1.0 (+https://github.com/furkan3152/ponsplit)" };
+const FX_HEADERS = { "user-agent": "SplitEarn/1.0 (+https://github.com/furkan3152/ponsplit)" };
 
 /** GET from the FxTwitter API, retrying once after a short pause if it rate-limits us. */
 export async function fxFetch(url: string): Promise<Response> {

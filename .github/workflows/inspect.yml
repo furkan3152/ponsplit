@@ -1,6 +1,6 @@
 name: Inspect deployment
 
-# Read-only: checks a live PonsEarn deployment straight from the chain (code, wiring, the pons
+# Read-only: checks a live SplitEarn deployment straight from the chain (code, wiring, the pons
 # factory, signer, owners, terms). With `site`, also simulates a launch end to end: the site attests
 # real X accounts and the launch is simulated on the live contracts. Nothing is ever sent.
 on:
@@ -10,7 +10,7 @@ on:
         description: testnet or mainnet
         default: testnet
       launcher:
-        description: PonsEarnLauncher address
+        description: SplitEarnLauncher address
         required: true
       owner:
         description: Expected owner (optional), the wallet that deployed from /setup

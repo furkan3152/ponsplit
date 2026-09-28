@@ -8,7 +8,7 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {FeeVault} from "./FeeVault.sol";
 import {FeeSplitter} from "./FeeSplitter.sol";
-import {PonsEarnRouter} from "./PonsEarnRouter.sol";
+import {SplitEarnRouter} from "./SplitEarnRouter.sol";
 import {
     IPonsCurve,
     IPonsEscrow,
@@ -21,23 +21,23 @@ import {
 } from "./interfaces/IPons.sol";
 import {IPoolManager, PoolKey} from "./interfaces/IUniswapV4.sol";
 
-/// @title PonsEarnLauncher
+/// @title SplitEarnLauncher
 /// @notice Launches coins on Pons (ponsfamily.com) whose creator fees are split between up to 10 X
 ///         (Twitter) accounts. Pons mints the coin, runs its bonding curve and graduates it into a
 ///         locked Uniswap v4 pool exactly as for any other Pons launch; the only difference is that
 ///         the coin's creator fee recipient is a per-coin FeeSplitter:
-///           - `platformShareBps` of the standard creator fee goes to PonsEarn,
+///           - `platformShareBps` of the standard creator fee goes to SplitEarn,
 ///           - the rest of it, and the whole creator tax the launcher chose, goes to the X accounts.
-///         PonsEarn is not affiliated with Pons.
+///         SplitEarn is not affiliated with Pons.
 /// @dev Pons's creator share is 70% of its 1% trade fee, plus the creator tax (0–10%). A splitter
 ///      cannot tell the two apart once Pons has paid them out, so each coin snapshots the fraction of
-///      every payout that PonsEarn's share amounts to (`platformBps`) at launch.
-contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
+///      every payout that SplitEarn's share amounts to (`platformBps`) at launch.
+contract SplitEarnLauncher is Ownable2Step, ReentrancyGuard {
     uint256 public constant BPS = 10_000;
-    /// @notice PonsEarn never takes more than 30% of the standard creator fee.
+    /// @notice SplitEarn never takes more than 30% of the standard creator fee.
     uint16 public constant MAX_PLATFORM_SHARE_BPS = 3_000;
     /// @dev Transient slot holding the curve allowed to refund ETH during a launch's first buy.
-    bytes32 private constant REFUNDER_SLOT = keccak256("ponsearn.launcher.refunder");
+    bytes32 private constant REFUNDER_SLOT = keccak256("splitearn.launcher.refunder");
 
     struct LaunchParams {
         string name;
@@ -67,7 +67,7 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
         uint64 createdAt;
         uint64 createdBlock; // the chain's own block number (where to start reading its trades)
         uint16 creatorTaxBps;
-        uint16 platformBps; // share of every payout that goes to PonsEarn
+        uint16 platformBps; // share of every payout that goes to SplitEarn
         bytes32 poolId; // the Uniswap v4 pool it graduates into
     }
 
@@ -88,7 +88,7 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
         uint160 sqrtPriceX96; // pool price once on Uniswap v4
         uint128 liquidity;
         uint256 feesSplit; // ETH already credited to the X accounts
-        uint256 feesPending; // creator fees earned but not split yet (before PonsEarn's share)
+        uint256 feesPending; // creator fees earned but not split yet (before SplitEarn's share)
         uint64[] xIds;
         string[] handles;
         uint16[] bps;
@@ -100,16 +100,16 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
     IPoolManager public immutable poolManager;
     FeeVault public immutable feeVault;
     FeeSplitter public immutable splitterImplementation;
-    PonsEarnRouter public immutable router;
+    SplitEarnRouter public immutable router;
 
-    /// @notice PonsEarn's cut of the standard creator fee, in bps of it (2000 = 20%).
+    /// @notice SplitEarn's cut of the standard creator fee, in bps of it (2000 = 20%).
     uint16 public platformShareBps = 2_000;
     /// @notice The Pons launch config coins use (0: ETH-paired, graduating at 4.2 ETH).
     uint256 public launchConfigId;
     /// @notice Bumped whenever a term above changes; a launch pins the version it was shown.
     uint256 public termsVersion = 1;
     bool public launchesPaused;
-    /// @notice PonsEarn's share collected so far and not withdrawn yet.
+    /// @notice SplitEarn's share collected so far and not withdrawn yet.
     uint256 public platformFees;
     uint256 public totalPlatformFees;
 
@@ -153,7 +153,7 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
         ponsHook = IPonsHook(ponsFactory_.memeHook());
         poolManager = IPoolManager(ponsFactory_.poolManager());
         splitterImplementation = new FeeSplitter(address(this), feeVault_, ponsEscrow, ponsHook);
-        router = new PonsEarnRouter(poolManager, ponsFactory_);
+        router = new SplitEarnRouter(poolManager, ponsFactory_);
     }
 
     // ----------------------------------------------------------------- launch
@@ -224,7 +224,7 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
         return ok && ret.length == 32 ? abi.decode(ret, (uint256)) : block.number;
     }
 
-    /// @notice The fraction of every payout (in bps) that PonsEarn's share of the standard creator fee
+    /// @notice The fraction of every payout (in bps) that SplitEarn's share of the standard creator fee
     ///         amounts to, for a coin with these Pons terms.
     function platformBpsFor(uint256 feeBps, uint256 protocolFeeShareBps, uint16 creatorTaxBps)
         public
@@ -271,7 +271,7 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
 
     // ------------------------------------------------------------------- fees
 
-    /// @notice Where each coin's FeeSplitter sends PonsEarn's share.
+    /// @notice Where each coin's FeeSplitter sends SplitEarn's share.
     function platformFeeIn(address token) external payable {
         if (!isSplitter[msg.sender]) revert NotSplitter();
         platformFees += msg.value;
@@ -352,7 +352,7 @@ contract PonsEarnLauncher is Ownable2Step, ReentrancyGuard {
         return _launches.length;
     }
 
-    /// @notice The registry record of a PonsEarn coin (all zero for any other token).
+    /// @notice The registry record of a SplitEarn coin (all zero for any other token).
     function launchOf(address token) public view returns (Launch memory l) {
         uint256 index = _indexOf[token];
         if (index != 0) l = _launches[index - 1];

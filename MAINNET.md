@@ -9,16 +9,16 @@
 | `pons-fork` (mainnet) | Robinhood mainnet fork'unda **gerçek pons** ile: vendor'daki pons kodunun zincirdekiyle bayt bayt aynı olduğu, launch + ilk alım, pons'un fiyat formülü, fee bölüşümü, iki aşamalı mezuniyet, Uniswap v4 havuzunda router işlemleri, mezuniyet sonrası fee'ler. |
 | `pons-fork` (testnet) | Testnet fork'unda pons kopyası `/setup`'ın yaptığı gibi kurulur ve aynı akış çalıştırılır. |
 | `web` | Typecheck, lint, birim testleri ve production build. |
-| `e2e` (testnet, mainnet) | Her ağın fork'unda production build, gerçek tarayıcı, birden çok cüzdan: `/setup`'tan cüzdanla deploy (testnet 19, mainnet 3 işlem; çift dokunuşta bile her işlem bir kez), yenilemede kaldığı yerden devam, adreslerin sabitlenmesi, **gerçek X hesaplarıyla** (@jack, @x) arayüzden launch, eğride al/sat, mezuniyet ve havuzun coin sayfasından açılması, havuzda al/sat, fee bölüşümü, sahip panelinden durdurma/devam ve PonsEarn payını çekme, claim sayfası, üstteki ağ seçici, 8 sayfa masaüstü/mobil/açık tema taşma kontrolü. |
+| `e2e` (testnet, mainnet) | Her ağın fork'unda production build, gerçek tarayıcı, birden çok cüzdan: `/setup`'tan cüzdanla deploy (testnet 19, mainnet 3 işlem; çift dokunuşta bile her işlem bir kez), yenilemede kaldığı yerden devam, adreslerin sabitlenmesi, **gerçek X hesaplarıyla** (@jack, @x) arayüzden launch, eğride al/sat, mezuniyet ve havuzun coin sayfasından açılması, havuzda al/sat, fee bölüşümü, sahip panelinden durdurma/devam ve SplitEarn payını çekme, claim sayfası, üstteki ağ seçici, 8 sayfa masaüstü/mobil/açık tema taşma kontrolü. |
 
 ## Mainnet öncesi yapılması gerekenler
 
 Bu adımları kod çözemez; karar ve sorumluluk proje sahibinde.
 
-1. **Bağımsız güvenlik denetimi (audit).** PonsEarn kontratları gerçek para yönlendirecek. Otomatik testler ve Slither bir denetimin yerini tutmaz.
+1. **Bağımsız güvenlik denetimi (audit).** SplitEarn kontratları gerçek para yönlendirecek. Otomatik testler ve Slither bir denetimin yerini tutmaz.
 2. **Hukuki kontrol.** Token launchpad'leri birçok ülkede düzenlemeye tabi. Herkes herhangi bir X hesabını listeleyebilir; site bunun bir onay olmadığını söylüyor, ama taklit ve şikâyet durumları için bir kaldırma süreci planla (gizli coin listesi: `src/deployment.json` → `hidden`).
 3. **Roller.**
-   - **Sahip:** kontratları kendi cüzdanınla deploy edersin, sahibi baştan sensin. Durdurma, imza anahtarını değiştirme ve PonsEarn payını çekme yetkisi bu cüzdandadır. Özel anahtarı cüzdandan hiç çıkmaz.
+   - **Sahip:** kontratları kendi cüzdanınla deploy edersin, sahibi baştan sensin. Durdurma, imza anahtarını değiştirme ve SplitEarn payını çekme yetkisi bu cüzdandadır. Özel anahtarı cüzdandan hiç çıkmaz.
    - **İmza anahtarı** (`SIGNER_PRIVATE_KEY`): sunucuda durur ve yalnızca launch ve claim imzalar. Para tutmaz, hiçbir kontratın sahibi değildir. `/setup`'ta tarayıcında üretilir, yalnızca barındırma paneline yapıştırılır; hiçbir sohbete ya da dosyaya yazılmaz. İki ağda da aynı anahtar kullanılır.
 4. **X doğrulaması.**
    - "Sign in with X" (OAuth) için: `TWITTER_CLIENT_ID`, `TWITTER_CLIENT_SECRET`, `NEXTAUTH_URL=https://<site-adresin>`; X uygulamasına `https://<site-adresin>/api/auth/callback/twitter` callback olarak kaydedilir.
@@ -29,7 +29,7 @@ Bu adımları kod çözemez; karar ve sorumluluk proje sahibinde.
    - Kendi alan adını bağla (Vercel → Settings → Domains).
    - Özel RPC sağlayıcısı: `NEXT_PUBLIC_MAINNET_RPC_URL` (ve istersen `NEXT_PUBLIC_TESTNET_RPC_URL`). Herkese açık RPC hız sınırlı.
    - Mobil cüzdanlar için `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`.
-6. **PonsEarn'ün ayarları.** Sahip, PonsEarn'ün payını (`setPlatformShareBps`, en fazla creator payının %30'u) ve kullanılan pons launch ayarını (`setLaunchConfigId`) değiştirebilir. Her değişiklik `termsVersion`'ı artırır; arayüz kullanıcının gördüğü koşulların sürümünü launch'a ekler, koşullar imza sırasında değişirse launch geri çevrilir. Var olan coin'ler launch anındaki oranlarını korur.
+6. **SplitEarn'ün ayarları.** Sahip, SplitEarn'ün payını (`setPlatformShareBps`, en fazla creator payının %30'u) ve kullanılan pons launch ayarını (`setLaunchConfigId`) değiştirebilir. Her değişiklik `termsVersion`'ı artırır; arayüz kullanıcının gördüğü koşulların sürümünü launch'a ekler, koşullar imza sırasında değişirse launch geri çevrilir. Var olan coin'ler launch anındaki oranlarını korur.
 
 ## Kurulum adımları (telefondan)
 
@@ -38,7 +38,7 @@ Bu adımları kod çözemez; karar ve sorumluluk proje sahibinde.
    - Vercel → proje → **Settings → Environment Variables** → `SIGNER_PRIVATE_KEY` olarak yapıştır (Sensitive) → Save → **Deployments → ⋯ → Redeploy**.
 3. **Ağı seç.** Sayfanın üstündeki **Main / Test** seçicisinden kurulacak ağı seç.
 4. **Deploy.** `/setup`'ı cüzdan uygulamanın tarayıcısında aç (MetaMask, Rabby…) ve bağlan → **Deploy**.
-   - **Testnet:** 19 işlem. Önce pons kopyası (7 kontrat + 9 bağlantı: pons'un mainnet ayarları, %1 fee, 4,2 ETH mezuniyet, 3 saniyelik snipe vergisi), sonra PonsEarn (FeeVault, launcher, bağlantı). Gas için faucet: https://faucet.testnet.chain.robinhood.com
+   - **Testnet:** 19 işlem. Önce pons kopyası (7 kontrat + 9 bağlantı: pons'un mainnet ayarları, %1 fee, 4,2 ETH mezuniyet, 3 saniyelik snipe vergisi), sonra SplitEarn (FeeVault, launcher, bağlantı). Gas için faucet: https://faucet.testnet.chain.robinhood.com
    - **Mainnet:** 3 işlem (FeeVault, launcher, bağlantı); coin'ler gerçek pons'ta çıkar.
    - Her işlemi cüzdan ayrı ayrı sorar. Sayfa yarıda kapanırsa tekrar aç: yapılanları zincirden bulur ve kaldığı yerden devam eder, hiçbir şeyi iki kez göndermez.
    - Testnet'te cüzdanın pons kopyasının launch ücretini alır; cüzdan düz ETH transferini reddediyorsa sayfa uyarır.
@@ -52,8 +52,8 @@ Hepsi sahip cüzdanından yapılır. Çoğu, `/setup` sayfasındaki **Owner cont
 | Durum | Ne yapılır |
 |---|---|
 | Sunucu imza anahtarı sızdı | 1) Her iki ağda **Pause claims** (`FeeVault.setClaimsPaused(true)`). 2) Vercel'de `SIGNER_PRIVATE_KEY`'i sil → Redeploy. 3) `/setup` → **Generate signing key** → Vercel'e ekle → Redeploy. 4) Her iki ağda **Use this site's key** (`FeeVault.setSigner(yeni)`). 5) **Resume claims**. Bakiyeler durdurma sırasında yerinde kalır; eski imzalar geçersizleşir. |
-| Kötüye kullanım / spam coin dalgası | **Pause launches** (`PonsEarnLauncher.setLaunchesPaused(true)`). Var olan coin'ler pons'ta işlem görmeye devam eder; kimsenin parası kilitli kalmaz. Coin'i listeden gizlemek için adresini `src/deployment.json` → `hidden`'a ekle. |
-| PonsEarn gelirini çekmek | **Withdraw to this wallet** (`PonsEarnLauncher.withdrawPlatformFees`). Coin'lerin fee'leri claim'lerle ya da herhangi birinin `collectMany` çağrısıyla toplanır. |
+| Kötüye kullanım / spam coin dalgası | **Pause launches** (`SplitEarnLauncher.setLaunchesPaused(true)`). Var olan coin'ler pons'ta işlem görmeye devam eder; kimsenin parası kilitli kalmaz. Coin'i listeden gizlemek için adresini `src/deployment.json` → `hidden`'a ekle. |
+| SplitEarn gelirini çekmek | **Withdraw to this wallet** (`SplitEarnLauncher.withdrawPlatformFees`). Coin'lerin fee'leri claim'lerle ya da herhangi birinin `collectMany` çağrısıyla toplanır. |
 | Sahipliği devretmek | `transferOwnership(yeni)` → yeni adres `acceptOwnership()` (iki adımlı; launcher, FeeVault ve testnet'te pons kopyası ayrı ayrı). |
 
 ## Tasarım gereği güven varsayımları

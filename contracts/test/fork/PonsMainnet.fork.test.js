@@ -1,9 +1,9 @@
-// Runs PonsEarn on a fork of a Robinhood Chain network. Needs network access, so it only runs with
+// Runs SplitEarn on a fork of a Robinhood Chain network. Needs network access, so it only runs with
 // FORK_URL set:
 //   FORK_URL=https://rpc.mainnet.chain.robinhood.com npx hardhat test test/fork/PonsMainnet.fork.test.js
 //     → against the real Pons v2 and Uniswap v4 on mainnet;
 //   FORK_NETWORK=testnet FORK_URL=https://rpc.testnet.chain.robinhood.com npx hardhat test test/fork/...
-//     → deploys PonsEarn's own copy of Pons v2 on testnet (as /setup does) against the testnet's Uniswap v4.
+//     → deploys SplitEarn's own copy of Pons v2 on testnet (as /setup does) against the testnet's Uniswap v4.
 const { expect } = require("chai");
 const { ethers, network } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
@@ -110,13 +110,13 @@ function sameCode(onchain, artifact) {
   return blank(onchain) === blank(artifact.deployedBytecode);
 }
 
-(FORK ? describe : describe.skip)(`PonsEarn on a Robinhood Chain ${FORK_NETWORK} fork`, function () {
+(FORK ? describe : describe.skip)(`SplitEarn on a Robinhood Chain ${FORK_NETWORK} fork`, function () {
   this.timeout(600_000);
   let owner, signer, alice, trader, whale, vault, launcher, router, pons, hook, escrow;
   let token, curve, splitter, coin, poolId;
 
   const domain = async () => ({
-    name: "PonsEarn FeeVault",
+    name: "SplitEarn FeeVault",
     version: "1",
     chainId: (await ethers.provider.getNetwork()).chainId,
     verifyingContract: await vault.getAddress(),
@@ -136,21 +136,21 @@ function sameCode(onchain, artifact) {
     // block itself without them; every call runs on local blocks from here on.
     await network.provider.send("evm_mine");
     if (FORK_NETWORK === "testnet") {
-      // Pons has no testnet deployment: this is PonsEarn's copy, deployed the way /setup does.
+      // Pons has no testnet deployment: this is SplitEarn's copy, deployed the way /setup does.
       ponsFactory = (await deployPonsCopy(owner)).factory;
       console.log(`      Pons copy deployed on the testnet fork: factory ${ponsFactory}`);
     }
     pons = await ethers.getContractAt(factoryAbi, ponsFactory);
     // Pons can close launches for everyone but whitelisted launchers. These tests are about
-    // PonsEarn, not Pons's uptime, so a closed gate is reopened on the fork (and reported).
+    // SplitEarn, not Pons's uptime, so a closed gate is reopened on the fork (and reported).
     if (!(await pons.launchEnabled())) {
       console.log("      (Pons launches are closed on mainnet right now; reopened on the fork)");
       await pons.connect(await impersonate(await pons.owner())).setLaunchEnabled(true);
     }
     vault = await ethers.deployContract("FeeVault", [owner.address, signer.address]);
-    launcher = await ethers.deployContract("PonsEarnLauncher", [owner.address, await vault.getAddress(), ponsFactory]);
+    launcher = await ethers.deployContract("SplitEarnLauncher", [owner.address, await vault.getAddress(), ponsFactory]);
     await vault.setLauncher(await launcher.getAddress(), true);
-    router = await ethers.getContractAt("PonsEarnRouter", await launcher.router());
+    router = await ethers.getContractAt("SplitEarnRouter", await launcher.router());
     hook = await ethers.getContractAt(hookAbi, await pons.memeHook());
     escrow = await ethers.getContractAt(escrowAbi, await pons.feeEscrow());
   });
@@ -192,13 +192,13 @@ function sameCode(onchain, artifact) {
     const firstBuy = E("0.1");
     const tx = await launcher.connect(alice).launch(
       {
-        name: "PonsEarn Fork",
+        name: "SplitEarn Fork",
         symbol: "PEFORK",
         logo: "ipfs://bafkreiaaaa",
         description: "fork test",
         socials: { ...SOCIALS, twitter: "https://x.com/alpha" },
         creatorTaxBps: 100,
-        salt: ethers.id("ponsearn-fork"),
+        salt: ethers.id("splitearn-fork"),
         expectedEconomics: terms.economics,
       },
       { xIds, handles, bps: [7000, 3000], deadline, attestation },
@@ -250,7 +250,7 @@ function sameCode(onchain, artifact) {
     expect(ethGot).to.equal(expectedEth);
   });
 
-  it("collects curve fees and splits them: PonsEarn's share and the X accounts'", async () => {
+  it("collects curve fees and splits them: SplitEarn's share and the X accounts'", async () => {
     const fees = await curve.quoteFeeBalance();
     const tax = await curve.creatorTaxBalance();
     const pending = await splitter.pendingFees();
@@ -261,7 +261,7 @@ function sameCode(onchain, artifact) {
     expect(await launcher.platformFees()).to.equal(platform);
     expect(await vault.tokenFees(token)).to.equal(pending - platform);
     expect(await vault.claimable(111n)).to.equal(((pending - platform) * 7000n) / BPS);
-    console.log(`      split ${ethers.formatEther(pending)} ETH: ${ethers.formatEther(platform)} to PonsEarn`);
+    console.log(`      split ${ethers.formatEther(pending)} ETH: ${ethers.formatEther(platform)} to SplitEarn`);
   });
 
   it("graduates the Pons way: the curve sells out, then the v4 pool is created", async () => {
@@ -343,7 +343,7 @@ function sameCode(onchain, artifact) {
     console.log(`      getLaunches(0, 50) gas with one coin: ${gas}`);
     const page = await launcher.getLaunches(0, 50);
     expect(page[0].launch.token).to.equal(token);
-    expect(page[0].name).to.equal("PonsEarn Fork");
+    expect(page[0].name).to.equal("SplitEarn Fork");
     expect(page[0].handles).to.deep.equal(["alpha", "beta"]);
   });
 });

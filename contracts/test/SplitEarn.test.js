@@ -1,10 +1,10 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { loadFixture, time } = require("@nomicfoundation/hardhat-network-helpers");
-const { deployUniswapLocal, deployPonsCopy, deployPonsEarn, vendor } = require("../scripts/lib/pons-stack");
+const { deployUniswapLocal, deployPonsCopy, deploySplitEarn, vendor } = require("../scripts/lib/pons-stack");
 
 // Everything below runs on the real code: Uniswap v4 and Permit2 built from their verified sources,
-// a copy of Pons v2 built from its verified mainnet sources (contracts/vendor), and PonsEarn.
+// a copy of Pons v2 built from its verified mainnet sources (contracts/vendor), and SplitEarn.
 
 const E = ethers.parseEther;
 const BPS = 10_000n;
@@ -15,12 +15,12 @@ async function deploy() {
   const [owner, signer, alice, bob, carol, trader] = await ethers.getSigners();
   const uni = await deployUniswapLocal(owner);
   const stack = await deployPonsCopy(owner, uni);
-  const earn = await deployPonsEarn(owner, { signer: signer.address, ponsFactory: stack.factory });
+  const earn = await deploySplitEarn(owner, { signer: signer.address, ponsFactory: stack.factory });
   const at = (name, address) => new ethers.Contract(address, vendor(name).abi, owner);
   const pons = at("PonsV2LaunchFactory", stack.factory);
   const vault = await ethers.getContractAt("FeeVault", earn.feeVault);
-  const launcher = await ethers.getContractAt("PonsEarnLauncher", earn.launcher);
-  const router = await ethers.getContractAt("PonsEarnRouter", await launcher.router());
+  const launcher = await ethers.getContractAt("SplitEarnLauncher", earn.launcher);
+  const router = await ethers.getContractAt("SplitEarnRouter", await launcher.router());
   const hook = at("PonsV2MemeHook", stack.hook);
   const escrow = at("PonsV2FeeEscrow", stack.escrow);
   // Pons's fee sweep operator is the owner of this copy (Pons's keeper plays that role on mainnet).
@@ -29,7 +29,7 @@ async function deploy() {
 
 async function domain(vault) {
   const { chainId } = await ethers.provider.getNetwork();
-  return { name: "PonsEarn FeeVault", version: "1", chainId, verifyingContract: await vault.getAddress() };
+  return { name: "SplitEarn FeeVault", version: "1", chainId, verifyingContract: await vault.getAddress() };
 }
 
 async function attest(vault, signer, creator, xIds, handles, deadline) {
@@ -124,7 +124,7 @@ async function ethDelta(who, fn) {
   return after - before + receipt.gasUsed * receipt.gasPrice;
 }
 
-describe("PonsEarnLauncher", () => {
+describe("SplitEarnLauncher", () => {
   describe("launch", () => {
     it("launches on Pons with the coin's splitter as the creator fee recipient", async () => {
       const fx = await loadFixture(deploy);
@@ -175,9 +175,9 @@ describe("PonsEarnLauncher", () => {
       expect(forked.receipt.gasUsed).to.be.lt(plain.receipt.gasUsed + 25_000n);
     });
 
-    it("gives PonsEarn 20% of the standard creator fee, whatever the creator tax", async () => {
+    it("gives SplitEarn 20% of the standard creator fee, whatever the creator tax", async () => {
       const fx = await loadFixture(deploy);
-      // 70 bps of volume is the creator's part of Pons's fee; PonsEarn takes 14 bps of it.
+      // 70 bps of volume is the creator's part of Pons's fee; SplitEarn takes 14 bps of it.
       expect(await fx.launcher.platformBpsFor(100, 3000, 0)).to.equal(2000);
       expect(await fx.launcher.platformBpsFor(100, 3000, 300)).to.equal(378); // 14 / (70 + 300)
       expect(await fx.launcher.platformBpsFor(100, 3000, 1000)).to.equal(130); // 14 / (70 + 1000)
@@ -226,7 +226,7 @@ describe("PonsEarnLauncher", () => {
       await expect(launcher.connect(alice).launch(params(), await split(fx, alice.address), 0, 0, v, { value: fee })).to.be.revertedWithCustomError(launcher, "WrongValue");
     });
 
-    it("bumps the terms version when PonsEarn's terms change", async () => {
+    it("bumps the terms version when SplitEarn's terms change", async () => {
       const fx = await loadFixture(deploy);
       const v = await fx.launcher.termsVersion();
       await fx.launcher.setPlatformShareBps(1500);
@@ -292,7 +292,7 @@ describe("PonsEarnLauncher", () => {
   });
 
   describe("fees", () => {
-    it("splits curve fees: 20% of the standard creator fee to PonsEarn, the rest to the X accounts", async () => {
+    it("splits curve fees: 20% of the standard creator fee to SplitEarn, the rest to the X accounts", async () => {
       const fx = await loadFixture(deploy);
       const c = await launch(fx, fx.alice);
       const token = await c.token.getAddress();
@@ -326,7 +326,7 @@ describe("PonsEarnLauncher", () => {
       const platform = (creator * 245n) / BPS;
       expect(await fx.launcher.platformFees()).to.equal(platform);
       expect(await fx.vault.tokenFees(await c.token.getAddress())).to.equal(creator - platform);
-      // PonsEarn ends up with about 14 bps of the volume, the X accounts with the rest.
+      // SplitEarn ends up with about 14 bps of the volume, the X accounts with the rest.
       expect(platform).to.be.closeTo(E("0.0014"), E("0.00001"));
     });
 
@@ -396,7 +396,7 @@ describe("PonsEarnLauncher", () => {
       expect(await fx.vault.tokenFees(token)).to.equal(0);
     });
 
-    it("collects many coins at once and skips what isn't a PonsEarn coin", async () => {
+    it("collects many coins at once and skips what isn't a SplitEarn coin", async () => {
       const fx = await loadFixture(deploy);
       const a = await launch(fx, fx.alice);
       const b = await launch(fx, fx.bob);
@@ -447,7 +447,7 @@ describe("PonsEarnLauncher", () => {
       expect(await fx.vault.tokenFees(token)).to.be.gt(0);
     });
 
-    it("lets only the owner withdraw PonsEarn's share and recover stray tokens", async () => {
+    it("lets only the owner withdraw SplitEarn's share and recover stray tokens", async () => {
       const fx = await loadFixture(deploy);
       const c = await launch(fx, fx.alice, { firstBuy: E("0.1") });
       await pastSnipeWindow();

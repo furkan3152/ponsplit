@@ -20,7 +20,7 @@ async function readCoin(n: Network, token: `0x${string}`): Promise<ServerCoin | 
 /**
  * A coin for server-side metadata and share images: looked up on `prefer` first, then on the other
  * network (a shared link may reach someone browsing the other one). Null when it isn't a listed
- * PonsEarn coin on either, or the chain can't be read right now.
+ * SplitEarn coin on either, or the chain can't be read right now.
  */
 export async function fetchCoin(address: string, prefer: NetworkId): Promise<ServerCoin | null> {
   if (!isAddress(address)) return null;

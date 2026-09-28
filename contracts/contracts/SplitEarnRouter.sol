@@ -7,13 +7,13 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
 import {IPonsFactory, PonsLaunchedToken} from "./interfaces/IPons.sol";
 import {IPoolManager, IUnlockCallback, PoolKey, SwapParams} from "./interfaces/IUniswapV4.sol";
 
-/// @title PonsEarnRouter
+/// @title SplitEarnRouter
 /// @notice Trades a graduated, ETH-paired Pons coin in its Uniswap v4 pool (the one Pons created with
 ///         its fee hook), with a plain ERC-20 approval for sells. Quotes run the same swap and revert
 ///         it, so they include Pons's hook fee and creator tax exactly.
 /// @dev Stateless and permissionless: it only ever moves the caller's own ETH or tokens, and only to
-///      the recipient the caller names. Deployed by PonsEarnLauncher.
-contract PonsEarnRouter is IUnlockCallback, ReentrancyGuardTransient {
+///      the recipient the caller names. Deployed by SplitEarnLauncher.
+contract SplitEarnRouter is IUnlockCallback, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     /// @dev TickMath.MIN_SQRT_PRICE + 1 and TickMath.MAX_SQRT_PRICE - 1: no price limit.
