@@ -161,6 +161,7 @@ Gotchas:
   for a future upgrade. Today mainnet has one launcher. The site shows no contract addresses (owner's request).
 - **Docs.** `/docs` (sidebar, footer, sitemap): overview, getting started, launching, trading, fees (a live table from
   `useLaunchTerms`), getting paid, safety. No contract addresses, mainnet only.
+- **Official token** (2026-09-29): `0x3DedFf3Ad2254AC78744176B7BBF16cd94699f04`, set in `mainnet.officialToken`.
 - **$SPLIT** (`0x8A5B967B7632E6b168F02Fc45b7960249ef0256e`, 2026-09-29) is a user's coin, NOT the official token (owner said so).
 - **Brand.** X account @SplitEarn (`src/lib/brand.ts`: FollowX button in the home card, sidebar, footer). The home page's
   "Official token" card shows the official CA from `mainnet.officialToken` in `src/deployment.json` (empty = "Coming soon");
