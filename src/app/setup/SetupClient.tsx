@@ -10,7 +10,7 @@ import { useAccount, useBalance, useReadContracts, useSendTransaction, useSwitch
 import { GraduatedArt } from "@/components/art";
 import { feeVaultAbi, launcherAbi } from "@/lib/abi";
 import { errorMessage, shortAddress } from "@/lib/format";
-import { clientFor } from "@/lib/hooks";
+import { clientFor, useCoins } from "@/lib/hooks";
 import { useNetwork } from "@/lib/network-context";
 import { explorerLink, isLive, type Network } from "@/lib/networks";
 import copyTerms from "@/lib/pons-copy-terms.json";
@@ -429,6 +429,7 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
       { ...vault, functionName: "claimsPaused" },
       { ...vault, functionName: "signer" },
       { ...vault, functionName: "isLauncher", args: [n.launcher!] },
+      { ...launcher, functionName: "totalPlatformFees" },
     ],
     query: { refetchInterval: 20_000 },
   });
@@ -441,6 +442,12 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
   const claimsPaused = v<boolean>(5);
   const vaultSigner = v<Address>(6);
   const wired = v<boolean>(7);
+  const total = v<bigint>(8);
+  // SplitEarn's share that is still in the coins' splitters: it reaches the launcher when a coin's
+  // fees are collected (at every claim, or by the owner here before withdrawing).
+  const { data: coins } = useCoins();
+  const uncollected = coins?.reduce((a, c) => a + c.platformPending, 0n);
+  const toCollect = (coins ?? []).filter((c) => c.feesPending > 0n).map((c) => c.token);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const lock = useRef(false);
@@ -520,15 +527,29 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
     },
     {
       label: `SplitEarn's share${share !== undefined ? ` (${share / 100}% of the creator fee)` : ""}`,
-      state: fees === undefined ? "…" : `${formatEther(fees)} ETH to withdraw`,
+      state:
+        fees === undefined || uncollected === undefined
+          ? "…"
+          : `${formatEther(fees)} ETH ready${uncollected ? ` + ${formatEther(uncollected)} ETH still in the coins` : ""}${total !== undefined ? ` · ${formatEther(total)} ETH earned in all` : ""}`,
       ok: true,
       action:
-        fees && address
+        address && isOwner && (fees || uncollected)
           ? {
-              text: "Withdraw to this wallet",
+              text: toCollect.length ? "Collect & withdraw to this wallet" : "Withdraw to this wallet",
               run: () =>
-                send("Withdraw to this wallet", `Send ${formatEther(fees)} ETH to ${address}?`, () =>
-                  writeContractAsync({ ...launcher, functionName: "withdrawPlatformFees", args: [address] })
+                send(
+                  "Withdraw to this wallet",
+                  toCollect.length
+                    ? `Collect the fees of ${toCollect.length} coin${toCollect.length === 1 ? "" : "s"}, then send all of SplitEarn's share to ${address}? Two transactions.`
+                    : `Send ${formatEther(fees ?? 0n)} ETH to ${address}?`,
+                  async () => {
+                    if (toCollect.length) {
+                      const hash = await writeContractAsync({ ...launcher, functionName: "collectMany", args: [toCollect] });
+                      const r = await client.waitForTransactionReceipt({ hash });
+                      if (r.status !== "success") throw new Error("Collecting the coins' fees reverted.");
+                    }
+                    return writeContractAsync({ ...launcher, functionName: "withdrawPlatformFees", args: [address] });
+                  }
                 ),
             }
           : undefined,
