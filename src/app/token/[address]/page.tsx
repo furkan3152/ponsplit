@@ -204,7 +204,8 @@ export default function TokenPage({ params }: { params: { address: string } }) {
               </Foot>
             }
           >
-            <Flash value={t.accountsEarned} className="text-up-ink">{`${formatEth(t.accountsEarned, 4)} Ξ`}</Flash>
+            {/* Paid means in the vault already; what the coin still holds is the "on the way" line. */}
+            <Flash value={t.feesSplit} className="text-up-ink">{`${formatEth(t.feesSplit, 4)} Ξ`}</Flash>
           </Tile>
         </dl>
       </Reveal>
