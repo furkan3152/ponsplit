@@ -15,6 +15,7 @@ import { TradePanel } from "@/components/TradePanel";
 import { TradesTable } from "@/components/TradesTable";
 import { coinImage } from "@/lib/coin-ui";
 import { compact, formatEth, formatPrice, formatTokens, progressText, shortAddress, timeAgo } from "@/lib/format";
+import { isOfficial } from "@/lib/brand";
 import { useCoin, useCoinElsewhere, useCoinTrades, useHandleChecks, useNow, useTokenInfo } from "@/lib/hooks";
 import { safeUrl } from "@/lib/metadata";
 import { useNetwork, useSwitchNetwork } from "@/lib/network-context";
@@ -108,6 +109,9 @@ export default function TokenPage({ params }: { params: { address: string } }) {
             {/* x-clip: the stamp starts at 1.8x scale, which must not widen the page next to a long ticker. */}
             <div className="mt-3 flex flex-wrap items-center gap-2 overflow-x-clip sm:mt-4">
               <span className="num inline-flex items-center rounded-full border border-line-2 bg-card px-2.5 py-1 text-[12px] font-semibold text-ink">${t.symbol}</span>
+              {isOfficial(t.token) ? (
+                <span className="chip border-lime bg-lime font-semibold text-[var(--lime-ink)]">✓ Official SplitEarn token</span>
+              ) : null}
               {t.creatorTaxBps ? <span className="chip num">{t.creatorTaxBps / 100}% creator tax</span> : null}
               {graduated ? (
                 <span

@@ -8,7 +8,8 @@ import { useNetwork } from "@/lib/network-context";
 import { SIDEBAR_KEY } from "@/lib/theme";
 import { useAdminSession } from "@/lib/useAdmin";
 import { LogoMark, TokenSticker } from "./art";
-import { ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, ShieldIcon, WalletIcon } from "./icons";
+import { ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, ShieldIcon, WalletIcon, XLogo } from "./icons";
+import { X_HANDLE, X_URL } from "@/lib/brand";
 
 export const NAV = [
   { href: "/", label: "Home", Icon: HomeIcon },
@@ -87,7 +88,19 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="mt-auto p-3">
+      <div className="mt-auto space-y-2 p-3">
+        <a
+          href={X_URL}
+          target="_blank"
+          rel="noreferrer"
+          title={`@${X_HANDLE} on X`}
+          className="group/x flex items-center gap-3.5 rounded-2xl px-3 py-2 text-[14px] font-medium text-ink-2 transition hover:bg-card hover:text-ink"
+        >
+          <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full bg-ink text-paper transition-transform duration-300 group-hover/x:-rotate-12">
+            <XLogo size={11} />
+          </span>
+          <span className="sidebar-label truncate">@{X_HANDLE}</span>
+        </a>
         <SidebarAccount />
       </div>
     </aside>
