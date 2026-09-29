@@ -242,7 +242,9 @@ Gotchas:
 - **SplitEarn rename + redesign (2026-09-28).** The project is now SplitEarn (contracts `SplitEarnLauncher`,
   `SplitEarnRouter`, EIP-712 `SplitEarn FeeVault`, salts `splitearn:v1`). The logo is the owner's S drawn as a sticker
   (two halves, lime and green, split by a diagonal; `art/Logo.tsx`; `scripts/render-logo.mjs` renders the static
-  icons). The owner tried a glassmorphism redesign and asked to keep the current interface. The shell follows the owner's
+  icons). The owner tried a glassmorphism redesign and asked to keep the current interface. The hero's split machine keeps the round, diagonally split coin (the owner's choice; the S is only the
+  logo). `art/Doodles.tsx` adds sticker doodles (hero sides, heading stickers, card confetti). The owner's test coins
+  ($MAINNET on mainnet, $TEST on testnet) are hidden via `hidden` in `src/deployment.json`. The shell follows the owner's
   reference: sidebar (`Sidebar.tsx`, folds; `data-sidebar` on `<html>`), top bar with coin search
   (`SearchBox.tsx`), 5-tab bar on phones; home is a centred hero plus bento panels of real chain data
   (`components/home/Bento.tsx`, `usePayouts`, `useTopEarners`); the board moved to `/explore`. The split

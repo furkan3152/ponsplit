@@ -3,8 +3,7 @@
 import { useId } from "react";
 import { useEffect } from "react";
 import { useInView, useReducedMotion } from "../motion";
-import { LogoCoin } from "./Logo";
-import { Avatar, C, type Hair, INK } from "./parts";
+import { Avatar, C, type Hair, INK, splitHalves } from "./parts";
 
 const CX = 280;
 const CY = 214;
@@ -31,6 +30,7 @@ const r2 = (n: number) => Math.round(n * 10) / 10;
  */
 export function SplitMachine({ className, accounts, caption = "CREATOR FEES, EVERY TRADE" }: { className?: string; accounts: MachineAccount[]; caption?: string }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const halves = splitHalves(CX, CY, R, 9);
   const reduced = useReducedMotion();
   // All of this motion repaints the whole drawing every frame, so it only runs while on screen.
   const [ref, onScreen] = useInView<SVGSVGElement>({ once: false, rootMargin: "0px" });
@@ -99,11 +99,12 @@ export function SplitMachine({ className, accounts, caption = "CREATOR FEES, EVE
         </g>
       ))}
 
-      {/* the coin: the brand's happy two-tone coin, bobbing */}
+      {/* the coin: round, split diagonally into a lime and a green half that part and close again */}
       <g className="animate-float" style={{ transformBox: "fill-box", transformOrigin: "center" }}>
-        <g transform={`translate(${r2(CX - 23 * (R / 16.5))} ${r2(CY - 23 * (R / 16.5))}) scale(${r2(R / 16.5)})`}>
-          <LogoCoin />
-        </g>
+        <path d={halves[1]} fill={INK} transform="translate(5 5)" />
+        <path d={halves[0]} fill={C.lime} stroke={INK} strokeWidth={3.2} strokeLinejoin="round" className="split-half-a" />
+        <path d={halves[1]} fill={C.green} stroke={INK} strokeWidth={3.2} strokeLinejoin="round" className="split-half-b" />
+        <path d={`M${CX - 44} ${CY - 30}A54 54 0 0 1 ${CX - 20} ${CY - 50}`} fill="none" stroke="var(--shine)" strokeWidth={3.4} strokeLinecap="round" opacity={0.85} className="split-half-a" />
       </g>
       <text x={CX} y={CY - R - 26} textAnchor="middle" className="fill-[var(--ink-3)] font-mono" fontSize={11} letterSpacing="0.14em">
         {caption}

@@ -19,6 +19,7 @@ import { useNetwork } from "@/lib/network-context";
 import { explorerLink, isLive } from "@/lib/networks";
 import { BPS } from "@/lib/pons";
 import { useServerConfig } from "@/lib/useServerConfig";
+import { HeadingDoodle } from "@/components/art/Doodles";
 
 type Msg = { kind: "ok" | "err"; text: string; tx?: string } | null;
 type SigResponse = { error?: string; xId: string; username: string; deadline: string; signature: Hex; claimable: string };
@@ -842,8 +843,9 @@ function Lookup() {
       <Reveal className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
         <div>
           <div className="eyebrow">Anyone&apos;s vault</div>
-          <h2 className="display mt-1 text-[30px] leading-none sm:text-[36px]">
+          <h2 className="display mt-1 flex items-center gap-2 text-[30px] leading-none sm:text-[36px]">
             <label htmlFor="lookup">Check any X account</label>
+            <HeadingDoodle kind="star" />
           </h2>
         </div>
         <p className="max-w-sm text-[14px] leading-relaxed text-ink-2">See what an account has waiting in the vault, what it has earned, and every coin that pays it.</p>
