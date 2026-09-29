@@ -183,10 +183,14 @@ export function TradePanel({ coin, onTraded, live = true }: { coin: Coin; onTrad
         ]);
         const fresh = curveQuote(side, parsed, { ...terms, quoteReserve, tokenReserve, sellable });
         if (fresh.out < floor || fresh.out === 0n) throw new Error("The price moved since your quote. Check the new amount and try again.");
+        // pons checks a buy by price (tokens per ETH actually spent), measured against all the ETH
+        // sent. When the curve sells out part of it is refunded, so scale the limit up to the price
+        // of the quoted fill; otherwise a smaller, pricier fill would still pass.
+        const buyFloor = quote.refund > 0n && quote.spent > 0n ? (floor * parsed) / quote.spent : floor;
         const receipt =
           side === "buy"
             ? await send("Confirm in your wallet…", () =>
-                writeContractAsync({ address: coin.curve, abi: ponsCurveAbi, chainId: n.chain.id, functionName: "buy", args: [parsed, floor, address], value: parsed })
+                writeContractAsync({ address: coin.curve, abi: ponsCurveAbi, chainId: n.chain.id, functionName: "buy", args: [parsed, buyFloor, address], value: parsed })
               )
             : await send("Confirm in your wallet…", () =>
                 writeContractAsync({ address: coin.curve, abi: ponsCurveAbi, chainId: n.chain.id, functionName: "sell", args: [parsed, floor, address] })
