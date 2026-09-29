@@ -66,7 +66,7 @@ export function SplitCard({ t }: { t: Coin }) {
         </div>
         <div className="shrink-0 text-right">
           <div className="num text-[20px] font-semibold leading-none text-up-ink">
-            <CountUp value={Number(formatEther(t.feesSplit))} format={(v) => ethText(v, 4)} />
+            <CountUp value={Number(formatEther(t.accountsEarned))} format={(v) => ethText(v, 4)} />
           </div>
           <div className="mt-1.5 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
             <span aria-hidden className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" />
@@ -98,7 +98,7 @@ export function SplitCard({ t }: { t: Coin }) {
       <ul className="mt-3 divide-y divide-line">
         {t.handles.map((h, i) => {
           const bps = t.recipients[i]?.bps ?? 0;
-          const fromToken = (t.feesSplit * BigInt(bps)) / BPS;
+          const fromToken = (t.accountsEarned * BigInt(bps)) / BPS;
           const check = checks[i];
           return (
             <li key={`${h}:${i}`} className="flex items-center gap-3 py-3 last:pb-0">

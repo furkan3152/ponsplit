@@ -103,7 +103,7 @@ function CoinCover({ t }: { t: Coin }) {
         <div className="flex items-baseline gap-2 font-mono text-[11px]">
           <span className="font-semibold">{compact(t.marketCap)} Ξ</span>
           <span className="text-white/55">MC</span>
-          <span className="ml-auto font-semibold text-[#9dffb8]">{formatEth(t.feesSplit, 3)}</span>
+          <span className="ml-auto font-semibold text-[#9dffb8]">{formatEth(t.accountsEarned, 3)}</span>
           <span className="text-white/55">split</span>
         </div>
       </div>

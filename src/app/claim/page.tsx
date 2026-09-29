@@ -640,8 +640,8 @@ function ClaimTicket({
               "Reading the vault…"
             ) : (
               <>
-                <Flash value={earned} className="px-0.5 text-ink-2">
-                  {formatEth(earned, 6)} ETH
+                <Flash value={earned + (pending ?? 0n)} className="px-0.5 text-ink-2">
+                  {formatEth(earned + (pending ?? 0n), 6)} ETH
                 </Flash>{" "}
                 earned all-time
               </>
@@ -720,7 +720,7 @@ function StreamsList({ xId, username, level = 3 }: { xId: bigint; username: stri
         .filter((s) => s.i >= 0)
         .map(({ t, i }) => {
           const bps = t.recipients[i]?.bps ?? 0;
-          return { t, i, bps, fromToken: (t.feesSplit * BigInt(bps)) / BPS };
+          return { t, i, bps, fromToken: (t.accountsEarned * BigInt(bps)) / BPS };
         }),
     [tokens, xId]
   );
@@ -729,7 +729,7 @@ function StreamsList({ xId, username, level = 3 }: { xId: bigint; username: stri
     <div>
       <div className="flex items-baseline justify-between gap-3">
         <Heading className="min-w-0 break-words text-[17px] font-semibold">Fee streams for @{username}</Heading>
-        {tokens && streams.length ? <span className="eyebrow shrink-0">Paid so far</span> : null}
+        {tokens && streams.length ? <span className="eyebrow shrink-0">Earned so far</span> : null}
       </div>
       {!tokens ? (
         error ? (
@@ -861,7 +861,7 @@ function Lookup() {
                   </div>
                   <dl className="mt-4 grid grid-cols-2 divide-x divide-[var(--line)] overflow-hidden rounded-2xl border border-line bg-card-2">
                     <Readout label="Claimable" value={total(data)} strong />
-                    <Readout label="Earned all-time" value={data?.earned} />
+                    <Readout label="Earned all-time" value={data ? data.earned + data.pending : undefined} />
                   </dl>
                 </div>
               ) : null}

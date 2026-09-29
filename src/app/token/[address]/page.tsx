@@ -204,7 +204,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
               </Foot>
             }
           >
-            <Flash value={t.feesSplit} className="text-up-ink">{`${formatEth(t.feesSplit, 4)} Ξ`}</Flash>
+            <Flash value={t.accountsEarned} className="text-up-ink">{`${formatEth(t.accountsEarned, 4)} Ξ`}</Flash>
           </Tile>
         </dl>
       </Reveal>
