@@ -136,6 +136,17 @@ export default function TokenPage({ params }: { params: { address: string } }) {
             /
           </span>
           <span className="px-1">{timeAgo(t.createdAt)} ago</span>
+          {/* On mainnet the coin is a pons coin, listed on pons's own launchpad too. */}
+          {n.ponsIsCopy ? null : (
+            <a
+              href={`https://ponsfamily.com/launchpad/${token}`}
+              target="_blank"
+              rel="noreferrer"
+              className="relative inline-flex min-h-[32px] items-center rounded-full border border-line px-2.5 font-sans text-[12.5px] font-medium text-ink transition after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] hover:border-line-2 hover:bg-card-2 sm:px-3"
+            >
+              View on pons ↗
+            </a>
+          )}
           {links.map((l) => (
             <a
               key={l.label}
