@@ -27,6 +27,7 @@ const launcher = new ethers.Contract(
     "function launchesPaused() view returns (bool)",
     "function platformFees() view returns (uint256)",
     "function collectMany(address[]) returns (uint256)",
+    "event PlatformFeesWithdrawn(address indexed to, uint256 amount)",
   ],
   provider
 );
@@ -157,12 +158,20 @@ try {
   const platform = await launcher.platformFees();
   if (platform === 0n) fail("SplitEarn's share didn't arrive");
   step(`fees split: ${ethers.formatEther(split)} ETH to the X accounts (@jack ${ethers.formatEther(jack)}, @x ${ethers.formatEther(x)}), ${ethers.formatEther(platform)} ETH to SplitEarn`);
+  // One more trade leaves fees waiting in the coin: the owner's button collects them first.
+  step(`pool trade: ${await trade(opener, "buy", "0.05", "SPLIT")} (fees left in the coin)`);
   await owner.goto(`${BASE}/setup`);
   await adminSignIn(owner);
-  await owner.getByRole("button", { name: "Withdraw to this wallet" }).click({ timeout: 60_000 });
-  await owner.getByText("Withdraw to this wallet: done.").waitFor({ timeout: 60_000 });
+  await owner.getByRole("button", { name: "Collect & withdraw to this wallet" }).waitFor({ timeout: 60_000 });
+  const fromBlock = await provider.getBlockNumber();
+  await owner.getByRole("button", { name: /withdraw to this wallet/i }).click({ timeout: 60_000 });
+  await owner.getByText("Withdraw to this wallet: done.").waitFor({ timeout: 90_000 });
   if ((await launcher.platformFees()) !== 0n) fail("the withdrawal didn't reach the chain");
-  step("the owner withdrew SplitEarn's share from /setup");
+  const withdrawn = await launcher.queryFilter(launcher.filters.PlatformFeesWithdrawn(), fromBlock);
+  const paidOut = withdrawn.reduce((a, e) => a + e.args.amount, 0n);
+  if (!withdrawn.length || withdrawn.some((e) => !same(e.args.to, OWNER))) fail("SplitEarn's share didn't go to the owner's wallet");
+  if (paidOut <= platform) fail(`withdrew ${paidOut}: the coin's waiting fees weren't collected first (SplitEarn had ${platform} before)`);
+  step(`the owner withdrew SplitEarn's share (${ethers.formatEther(paidOut)} ETH, collected coins included) from /setup to their own wallet`);
 
   // ── 7. The claim page reads an account's vault and makes its proof post ───────────────────
   const claimer = traders[0];

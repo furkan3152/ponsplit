@@ -82,7 +82,7 @@ export default async function TokenOgImage({ params }: { params: { address: stri
           mcap<b style={{ color: "#1d1d1f", marginLeft: 10 }}>{compact(t.marketCap)} ETH</b>
         </div>
         <div style={{ display: "flex" }}>
-          split so far<b style={{ color: "#1d1d1f", marginLeft: 10 }}>{formatEth(t.feesSplit, 4)} ETH</b>
+          split so far<b style={{ color: "#1d1d1f", marginLeft: 10 }}>{formatEth(t.accountsEarned, 4)} ETH</b>
         </div>
         <div style={{ display: "flex" }}>
           {t.graduated ? <b style={{ color: "#12a150" }}>Graduated</b> : <span>{progressText(t.progress)}% bonded</span>}

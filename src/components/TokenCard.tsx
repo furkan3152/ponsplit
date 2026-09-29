@@ -42,7 +42,7 @@ export function TokenCard({ t, description }: { t: Coin; description?: string })
       </div>
       <div className="flex items-center justify-between border-t border-line pt-2.5 font-mono text-[11px] text-ink-3">
         <span>split to X so far</span>
-        <span className="text-up-ink">{formatEth(t.feesSplit, 4)} ETH</span>
+        <span className="text-up-ink">{formatEth(t.accountsEarned, 4)} ETH</span>
       </div>
     </Link>
   );

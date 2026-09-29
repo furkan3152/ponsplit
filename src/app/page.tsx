@@ -48,7 +48,7 @@ export default function Home() {
   // The hero splits the coin that has paid its accounts the most (else the biggest), for real.
   const featured = useMemo(() => {
     const list = [...(coins ?? [])];
-    list.sort((a, b) => (b.feesSplit > a.feesSplit ? 1 : b.feesSplit < a.feesSplit ? -1 : b.marketCap - a.marketCap));
+    list.sort((a, b) => (b.accountsEarned > a.accountsEarned ? 1 : b.accountsEarned < a.accountsEarned ? -1 : b.marketCap - a.marketCap));
     return list[0];
   }, [coins]);
   const machineHandles = featured ? featured.recipients.map((r) => r.handle) : EXAMPLE.map((e) => e.handle);

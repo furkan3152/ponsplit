@@ -82,6 +82,8 @@ export function toCoin(v: LaunchView): Coin {
     progress,
     feesSplit: v.feesSplit,
     feesPending: v.feesPending,
+    accountsEarned: v.feesSplit + toRecipients(v.feesPending, Number(l.platformBps)),
+    platformPending: v.feesPending - toRecipients(v.feesPending, Number(l.platformBps)),
     recipients,
     handles: [...v.handles],
     xIds: [...v.xIds],

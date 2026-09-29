@@ -74,7 +74,7 @@ function Portfolio({ address }: { address: `0x${string}` }) {
   const created = useMemo(() => (newestFirst ?? []).filter((t) => t.creator.toLowerCase() === address.toLowerCase()), [newestFirst, address]);
   const total = holdings.reduce((a, h) => a + h.value, 0);
   const known = !loading && !unavailable;
-  const launchedSplit = created.reduce((a, t) => a + t.feesSplit, 0n);
+  const launchedSplit = created.reduce((a, t) => a + t.accountsEarned, 0n);
 
   return (
     <div className="space-y-14 pt-2 sm:space-y-20 sm:pt-4">
@@ -368,8 +368,8 @@ function LaunchedCard({ t }: { t: Coin }) {
       </div>
       <div className="mt-auto flex items-center justify-between border-t border-line pt-2.5 font-mono text-[11px] text-ink-3">
         <span>split to X</span>
-        <Flash value={t.feesSplit} className="px-0.5 text-up-ink">
-          {formatEth(t.feesSplit, 4)} Ξ
+        <Flash value={t.accountsEarned} className="px-0.5 text-up-ink">
+          {formatEth(t.accountsEarned, 4)} Ξ
         </Flash>
       </div>
     </Link>

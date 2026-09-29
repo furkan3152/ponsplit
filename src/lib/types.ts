@@ -52,6 +52,10 @@ export type Coin = {
   feesSplit: bigint;
   /** Creator fees earned but not split yet, before SplitEarn's share. */
   feesPending: bigint;
+  /** What the X accounts have earned from this coin: split already plus their share of the pending fees. */
+  accountsEarned: bigint;
+  /** SplitEarn's share of the pending fees (not in the launcher until someone collects). */
+  platformPending: bigint;
   recipients: Recipient[];
   handles: string[];
   xIds: bigint[];

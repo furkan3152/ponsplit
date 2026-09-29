@@ -234,7 +234,10 @@ export function useGlobalStats() {
     total === undefined || !hiddenFees || hiddenFees.some((v) => v === undefined)
       ? undefined
       : hiddenFees.reduce<bigint>((left, v) => (left > v! ? left - v! : 0n), total);
-  return { coins: coins ? BigInt(coins.length) : undefined, feesSplit: isLive(n) ? feesSplit : 0n };
+  // Plus the accounts' share of fees still waiting in the coins (collected at the next claim).
+  const pendingToAccounts = coins?.reduce((a, c) => a + (c.accountsEarned - c.feesSplit), 0n);
+  const earned = feesSplit === undefined || pendingToAccounts === undefined ? undefined : feesSplit + pendingToAccounts;
+  return { coins: coins ? BigInt(coins.length) : undefined, feesSplit: isLive(n) ? earned : 0n };
 }
 
 // ------------------------------------------------------------------ logs
@@ -750,7 +753,7 @@ export function useTopEarners(limit = 5) {
       for (const r of c.recipients) {
         const k = r.xId.toString();
         const e = by.get(k) ?? { handle: r.handle, xId: r.xId, earned: 0n, coins: 0 };
-        e.earned += (c.feesSplit * BigInt(r.bps)) / BigInt(total);
+        e.earned += (c.accountsEarned * BigInt(r.bps)) / BigInt(total);
         e.coins += 1;
         by.set(k, e);
       }
