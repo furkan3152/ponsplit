@@ -25,7 +25,8 @@ async function readCoin(n: Network, token: `0x${string}`): Promise<ServerCoin | 
 export async function fetchCoin(address: string, prefer: NetworkId): Promise<ServerCoin | null> {
   if (!isAddress(address)) return null;
   const token = getAddress(address);
-  for (const id of [prefer, otherNetwork(prefer)]) {
+  const other = otherNetwork(prefer);
+  for (const id of other ? [prefer, other] : [prefer]) {
     try {
       const found = await readCoin(NETWORKS[id], token);
       if (found) return found;

@@ -42,6 +42,8 @@ export function Nav() {
 function NetworkSwitch() {
   const n = useNetwork();
   const switchTo = useSwitchNetwork();
+  // Mainnet only (testnet is on just for the fork tests): nothing to switch between.
+  if (NETWORK_IDS.length < 2) return null;
   return (
     <div role="radiogroup" aria-label="Network" className="segmented shrink-0 !p-0.5">
       {NETWORK_IDS.map((id) => {

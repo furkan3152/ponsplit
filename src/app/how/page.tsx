@@ -43,12 +43,8 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     q: "Which network is this?",
     a: (
       <>
-        Both: Robinhood Chain mainnet (chain id {NETWORKS.mainnet.chain.id}) and its testnet (chain id {NETWORKS.testnet.chain.id}). Pick one at the top of any
-        page. pons itself runs on mainnet; on testnet, coins launch on SplitEarn&apos;s own copy of pons&apos;s open-source contracts. Test ETH is free from the{" "}
-        <a className="underline" href={NETWORKS.testnet.faucet} target="_blank" rel="noreferrer">
-          faucet
-        </a>
-        ; testnet coins have no value.
+        Robinhood Chain mainnet (chain id {NETWORKS.mainnet.chain.id}), on the real pons. Coins, trades and payouts are real ETH, so
+        your wallet needs Robinhood Chain added; the Connect button offers it.
       </>
     ),
   },

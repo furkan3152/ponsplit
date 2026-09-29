@@ -11,7 +11,13 @@ import { rpcList } from "./rpc";
  * /setup) against the Uniswap v4 contracts that Robinhood Chain testnet shares with mainnet.
  */
 export type NetworkId = "mainnet" | "testnet";
-export const NETWORK_IDS: readonly NetworkId[] = ["mainnet", "testnet"];
+/**
+ * The public site runs on mainnet only (the owner's call, 2026-09-29): no switch, and `?network=testnet`
+ * or an old cookie lands on mainnet. The testnet code stays for the fork tests, which turn it on with
+ * NEXT_PUBLIC_ENABLE_TESTNET=1 (or by making testnet the default network).
+ */
+export const TESTNET_ENABLED = process.env.NEXT_PUBLIC_ENABLE_TESTNET === "1" || process.env.NEXT_PUBLIC_DEFAULT_NETWORK === "testnet";
+export const NETWORK_IDS: readonly NetworkId[] = TESTNET_ENABLED ? ["mainnet", "testnet"] : ["mainnet"];
 export const NETWORK_COOKIE = "pe-network";
 
 /** The official Pons v2 launch factory on Robinhood Chain mainnet. */
@@ -99,19 +105,16 @@ export const NETWORKS: Record<NetworkId, Network> = {
 /** Whether SplitEarn is live on a network: its contracts are deployed and pinned. */
 export const isLive = (n: Network) => Boolean(n.launcher && n.feeVault);
 
-/** Where visitors land: NEXT_PUBLIC_DEFAULT_NETWORK, else mainnet once it's live, else testnet if it is. */
-export const DEFAULT_NETWORK: NetworkId =
-  process.env.NEXT_PUBLIC_DEFAULT_NETWORK === "mainnet" || process.env.NEXT_PUBLIC_DEFAULT_NETWORK === "testnet"
-    ? process.env.NEXT_PUBLIC_DEFAULT_NETWORK
-    : isLive(NETWORKS.mainnet) || !isLive(NETWORKS.testnet)
-      ? "mainnet"
-      : "testnet";
+/** Where visitors land: NEXT_PUBLIC_DEFAULT_NETWORK when it's enabled, else mainnet. */
+export const DEFAULT_NETWORK: NetworkId = process.env.NEXT_PUBLIC_DEFAULT_NETWORK === "testnet" && TESTNET_ENABLED ? "testnet" : "mainnet";
 
+/** A network id the site serves; anything else (including testnet while it's off) is undefined. */
 export function parseNetwork(value: unknown): NetworkId | undefined {
-  return value === "mainnet" || value === "testnet" ? value : undefined;
+  return typeof value === "string" && (NETWORK_IDS as readonly string[]).includes(value) ? (value as NetworkId) : undefined;
 }
 
-export const otherNetwork = (id: NetworkId): NetworkId => (id === "mainnet" ? "testnet" : "mainnet");
+/** The other network, or null while the site serves only one. */
+export const otherNetwork = (id: NetworkId): NetworkId | null => (TESTNET_ENABLED ? (id === "mainnet" ? "testnet" : "mainnet") : null);
 
 export function networkByChainId(chainId: number | undefined): Network | undefined {
   return NETWORK_IDS.map((id) => NETWORKS[id]).find((n) => n.chain.id === chainId);
