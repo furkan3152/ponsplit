@@ -116,23 +116,21 @@ export function useCoins() {
 export function useCoin(token: Address | undefined) {
   const n = useNetwork();
   const qc = useQueryClient();
-  const queryKey = ["coin", n.id, n.launcher, token];
   return useQuery({
-    queryKey,
+    queryKey: ["coin", n.id, n.launcher, token],
     enabled: Boolean(isLive(n) && token),
     refetchInterval: 5_000,
+    // The coin list (the shared snapshot, a few seconds old) fills the page at once, as a
+    // placeholder only: the live read starts right away and replaces it, since trades are priced
+    // from these reserves.
+    placeholderData: () =>
+      token && !isHidden(n, token)
+        ? qc.getQueryData<Coin[]>(["coins", n.id, n.launcher])?.find((c) => c.token.toLowerCase() === token.toLowerCase())
+        : undefined,
     queryFn: async () => {
       if (isHidden(n, token!)) return null;
-      // Only the very first paint comes from the shared snapshot (a few seconds old at most); once
-      // this coin has been read, it is read live: trades are priced from these reserves.
-      if (qc.getQueryData(queryKey) === undefined) {
-        const shared = await snapshotOf(n).catch(() => null);
-        const hit = shared?.coins.find((c) => c.token.toLowerCase() === token!.toLowerCase());
-        if (hit) return hit;
-      }
       const v = await clientFor(n).readContract({ address: n.launcher!, abi: launcherAbi, functionName: "getLaunch", args: [token!] });
       if (v.launch.token === zeroAddress) return null;
-      if (isHidden(n, token!)) return null;
       return toCoin(v);
     },
   });
