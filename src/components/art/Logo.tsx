@@ -1,50 +1,46 @@
-import { useId } from "react";
 import { C, INK, SHINE, Sparkle } from "./parts";
 
-/** The S of the logo: two rounded bars joined by a bend, one continuous stroke (44×44 box). */
-const S = "M32.4 12.9H17.8a5.4 5.4 0 0 0 0 10.8h8.4a5.4 5.4 0 0 1 0 10.8H11.6";
-/** The diagonal where the S's two halves meet, across its middle bar: x on that line at height y. */
-const cutX = (y: number) => 23 + (y - 23.7) * (4 / 7.8);
+/**
+ * One half of the owner's S, in a 44×44 box: the top bar with its slanted end, the round bowl on
+ * the left and the short middle stub. The other half is the same shape turned half a turn around
+ * the centre (22, 22); the two stubs meet in the middle with a gap, the "split".
+ */
+const HALF =
+  "M15 6H33.9Q35.9 6 34.86 7.7L30.02 15.6Q29.5 16.45 28.5 16.45H24.2A3 3 0 0 0 21.2 19.45V23.8Q21.2 25 20 25H15A8 8 0 0 1 7 17V14A8 8 0 0 1 15 6Z";
+const TURN = "rotate(180 22 22)";
 
 /**
- * SplitEarn brand mark: the S from the owner's logo, drawn as a sticker. Two halves (lime on top,
- * green below) meet at a diagonal ink line, with a chunky outline, a hard shadow, a shine and a
- * sparkle. `public/logo.svg` and `src/app/icon.svg` are rendered from this (scripts/render-logo.mjs).
+ * SplitEarn brand mark: the owner's S drawn flat, as a sticker. Its two halves (lime on top, green
+ * below) have a chunky ink outline, a hard shadow, a shine and a sparkle. `public/logo.svg` and
+ * `src/app/icon.svg` are rendered from this (scripts/render-logo.mjs).
  */
 export function LogoMark({ size = 32, className }: { size?: number; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 44 44" className={className} aria-hidden="true" focusable="false">
       <LogoCoin />
-      <Sparkle x={37.5} y={7.5} s={4.6} color={C.sun} sw={1.8} />
+      <Sparkle x={6.4} y={6.4} s={4.2} color={C.sun} sw={1.6} />
     </svg>
   );
 }
 
 /** The mark's S alone (without the sparkle), in the same 44×44 box, for drawing inside other art. */
 export function LogoCoin() {
-  const id = useId().replace(/[^a-zA-Z0-9]/g, "");
-  const round = { fill: "none", strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-  // The top half: everything above the middle bar, plus the part of it left of the diagonal.
-  const top = `M-5 -5H49V18.3H${cutX(18.3).toFixed(2)}L${cutX(29.1).toFixed(2)} 29.1H-5Z`;
+  const ink = { stroke: INK, strokeWidth: 2.6, strokeLinejoin: "round" as const };
+  const shine = { fill: "none", stroke: SHINE, strokeLinecap: "round" as const };
   return (
     <g>
-      <defs>
-        <clipPath id={`${id}t`}>
-          <path d={top} />
-        </clipPath>
-      </defs>
-      {/* hard shadow, then the ink outline */}
-      <path d={S} {...round} stroke={INK} strokeWidth={10.6} transform="translate(2.2 2.2)" />
-      <path d={S} {...round} stroke={INK} strokeWidth={10.6} />
+      {/* hard shadow */}
+      <g transform="translate(2 2.2)" fill={INK} {...ink}>
+        <path d={HALF} />
+        <path d={HALF} transform={TURN} />
+      </g>
       {/* the two halves */}
-      <path d={S} {...round} stroke={C.green} strokeWidth={6.4} />
-      <path d={S} {...round} stroke={C.lime} strokeWidth={6.4} clipPath={`url(#${id}t)`} />
-      {/* where they meet */}
-      <path d={`M${cutX(19.6).toFixed(2)} 19.6L${cutX(27.8).toFixed(2)} 27.8`} {...round} stroke={INK} strokeWidth={1.9} />
+      <path d={HALF} fill={C.lime} {...ink} />
+      <path d={HALF} transform={TURN} fill={C.green} {...ink} />
       {/* shine */}
-      <path d="M20.6 11.6H28.4" {...round} stroke={SHINE} strokeWidth={1.7} />
-      <path d="M12.4 17.4A4.2 4.2 0 0 1 14.2 14.6" {...round} stroke={SHINE} strokeWidth={1.5} />
-      <path d="M15.6 33.2H21" {...round} stroke={SHINE} strokeWidth={1.5} opacity={0.75} />
+      <path d="M15.6 9.1H30.6" {...shine} strokeWidth={1.7} />
+      <path d="M10.2 15.2A5.4 5.4 0 0 1 11.6 11.3" {...shine} strokeWidth={1.5} />
+      <path d="M26.8 28.4H31.6" {...shine} strokeWidth={1.5} opacity={0.75} />
     </g>
   );
 }
