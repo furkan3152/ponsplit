@@ -145,12 +145,14 @@ export function useCoin(token: Address | undefined) {
  */
 export function useCoinElsewhere(token: Address | undefined, enabled: boolean) {
   const here = useNetwork();
-  const other = NETWORKS[otherNetwork(here.id)];
+  const otherId = otherNetwork(here.id);
+  const other = otherId ? NETWORKS[otherId] : null;
   return useQuery({
-    queryKey: ["coin-elsewhere", other.id, other.launcher, token],
-    enabled: Boolean(enabled && token && isLive(other)),
+    queryKey: ["coin-elsewhere", other?.id, other?.launcher, token],
+    enabled: Boolean(enabled && token && other && isLive(other)),
     staleTime: 60_000,
     queryFn: async (): Promise<NetworkId | null> => {
+      if (!other) return null;
       const v = await clientFor(other).readContract({ address: other.launcher!, abi: launcherAbi, functionName: "getLaunch", args: [token!] });
       return v.launch.token !== zeroAddress && !isHidden(other, token!) ? other.id : null;
     },
@@ -667,6 +669,10 @@ export function useTopEarners(limit = 5) {
         by.set(k, e);
       }
     }
-    return [...by.values()].sort((a, b) => (b.earned > a.earned ? 1 : b.earned < a.earned ? -1 : b.coins - a.coins)).slice(0, limit);
+    // Only accounts that have actually earned something: a coin nobody traded pays no one yet.
+    return [...by.values()]
+      .filter((e) => e.earned > 0n)
+      .sort((a, b) => (b.earned > a.earned ? 1 : b.earned < a.earned ? -1 : b.coins - a.coins))
+      .slice(0, limit);
   }, [coins, limit]);
 }
