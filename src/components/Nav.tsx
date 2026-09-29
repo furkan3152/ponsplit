@@ -62,8 +62,11 @@ function NetworkSwitch() {
               aria-hidden
               className={`h-1.5 w-1.5 shrink-0 rounded-full ${active ? (test ? "bg-sun" : "animate-pulse-dot bg-lime") : "bg-line-2"}`}
             />
-            {test ? "Test" : "Main"}
-            <span className="hidden lg:inline">net</span>
+            {/* one word: the button's flex gap would otherwise split "Main" and "net" */}
+            <span>
+              {test ? "Test" : "Main"}
+              <span className="hidden lg:inline">net</span>
+            </span>
           </button>
         );
       })}
