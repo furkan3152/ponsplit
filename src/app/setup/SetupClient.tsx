@@ -4,7 +4,7 @@ import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { formatEther, type Address, type Hex } from "viem";
+import { formatEther, parseEther, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { useAccount, useBalance, useReadContracts, useSendTransaction, useSwitchChain, useWriteContract } from "wagmi";
 import { GraduatedArt } from "@/components/art";
@@ -111,7 +111,10 @@ export default function SetupClient({ admin }: { admin: Address }) {
 
       <StepCard n={2} title="Deploy from your wallet" state={live ? "done" : signer ? "active" : "todo"}>
         {live ? (
-          <ContractList n={n} />
+          <>
+            <ContractList n={n} />
+            {signer ? <LauncherUpgrade n={n} signer={signer} /> : null}
+          </>
         ) : signer ? (
           <WalletDeploy n={n} signer={signer} />
         ) : (
@@ -141,6 +144,34 @@ function SignOut({ admin }: { admin: Address }) {
       >
         Sign out
       </button>
+    </div>
+  );
+}
+
+/**
+ * A newer launcher than the pinned one (this site's code changed the contract): the owner's wallet
+ * deploys it next to the same FeeVault and wires it in, like the first deployment. The site switches
+ * to it once its address is pinned. Existing coins keep working on the old one.
+ */
+function LauncherUpgrade({ n, signer }: { n: Network; signer: Address }) {
+  const { address } = useAccount();
+  const planned = useQuery({
+    queryKey: ["planned-launcher", n.id, address, signer],
+    enabled: Boolean(address),
+    staleTime: Infinity,
+    queryFn: async () => (await (await import("@/lib/deploy-plan")).planDeploys(n, address!, signer)).addresses,
+  });
+  const a = planned.data;
+  // Only for the wallet that owns this deployment (same FeeVault), and only when the code has a new launcher.
+  if (!a || !n.feeVault || !n.launcher || a.feeVault.toLowerCase() !== n.feeVault.toLowerCase() || a.launcher.toLowerCase() === n.launcher.toLowerCase()) return null;
+  return (
+    <div className="mt-5 space-y-3 border-t border-dashed border-line-2 pt-4">
+      <p className="text-[14px] font-semibold">A new launcher version is ready</p>
+      <p className="text-[13.5px] leading-relaxed text-ink-2">
+        It adds SplitEarn&apos;s own launch fee (about $1 in ETH, paid with pons&apos;s launch fee and added to SplitEarn&apos;s share). Deploy it from this
+        wallet: two transactions, the same FeeVault. The site switches to it once it&apos;s pinned; coins already launched keep working as they are.
+      </p>
+      <WalletDeploy n={n} signer={signer} />
     </div>
   );
 }
@@ -430,6 +461,7 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
       { ...vault, functionName: "signer" },
       { ...vault, functionName: "isLauncher", args: [n.launcher!] },
       { ...launcher, functionName: "totalPlatformFees" },
+      { ...launcher, functionName: "creationFee" },
     ],
     query: { refetchInterval: 20_000 },
   });
@@ -438,6 +470,8 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
   const launchesPaused = v<boolean>(1);
   const fees = v<bigint>(2);
   const share = v<number>(3);
+  // SplitEarn's own launch fee; an older launcher has none (the read fails).
+  const creationFee = v<bigint>(9);
   const vaultOwner = v<Address>(4);
   const claimsPaused = v<boolean>(5);
   const vaultSigner = v<Address>(6);
@@ -531,6 +565,39 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
             }
           : undefined,
     },
+    ...(creationFee !== undefined
+      ? [
+          {
+            label: "SplitEarn launch fee",
+            state: `${formatEther(creationFee)} ETH per launch, charged with pons's fee`,
+            ok: true,
+            action:
+              address && isOwner
+                ? {
+                    text: "Change",
+                    run: () => {
+                      const input = window.prompt("SplitEarn's launch fee in ETH (at most 0.01; 0 for none):", formatEther(creationFee));
+                      if (input === null) return;
+                      let wei: bigint;
+                      try {
+                        wei = parseEther(input.trim());
+                      } catch {
+                        setMsg({ ok: false, text: "That isn't an ETH amount." });
+                        return;
+                      }
+                      if (wei < 0n || wei > parseEther("0.01")) {
+                        setMsg({ ok: false, text: "The launch fee can be at most 0.01 ETH." });
+                        return;
+                      }
+                      void send("Change the launch fee", `Charge ${formatEther(wei)} ETH per launch from now on?`, () =>
+                        writeContractAsync({ ...launcher, functionName: "setCreationFee", args: [wei] })
+                      );
+                    },
+                  }
+                : undefined,
+          },
+        ]
+      : []),
     {
       label: `SplitEarn's share${share !== undefined ? ` (${share / 100}% of the creator fee)` : ""}`,
       state:

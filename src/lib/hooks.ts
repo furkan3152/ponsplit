@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPublicClient, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
+import { createPublicClient, parseAbi, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
 import { useReadContract, useReadContracts } from "wagmi";
 import { feeSplitterAbi, feeVaultAbi, launcherAbi, ponsCurveAbi, ponsFactoryAbi, ponsHookAbi, ponsTokenAbi } from "./abi";
 import { useNetwork } from "./network-context";
@@ -221,6 +221,8 @@ export type LaunchTerms = {
   platformShareBps: number;
   configId: bigint;
   ponsLaunchFee: bigint;
+  /** What a launch costs before its first buy: Pons's launch fee plus SplitEarn's own. */
+  launchFee: bigint;
   economics: Hex;
   maxCreatorTaxBps: number;
   canLaunch: boolean;
@@ -232,14 +234,19 @@ export type LaunchTerms = {
   threshold: bigint;
 };
 
+const launchTermsV1Abi = parseAbi([
+  "function launchTerms() view returns (uint256 version, uint16 platformShare, uint256 configId, uint256 ponsLaunchFee, bytes32 economics, uint256 maxCreatorTaxBps, bool canLaunch, bool paused)",
+]);
+
 /** Reads everything that prices a new launch, together with its version, in one go. */
 export async function readLaunchTerms(n: Network): Promise<LaunchTerms> {
   const c = clientFor(n);
-  const [version, platformShare, configId, ponsLaunchFee, economics, maxCreatorTaxBps, canLaunch, paused] = await c.readContract({
-    address: n.launcher!,
-    abi: launcherAbi,
-    functionName: "launchTerms",
-  });
+  // The first eight fields, which every launcher version returns (later ones append SplitEarn's own
+  // launch fee); that fee is read on its own and is 0 on a launcher without one.
+  const [[version, platformShare, configId, ponsLaunchFee, economics, maxCreatorTaxBps, canLaunch, paused], splitEarnFee] = await Promise.all([
+    c.readContract({ address: n.launcher!, abi: launchTermsV1Abi, functionName: "launchTerms" }),
+    c.readContract({ address: n.launcher!, abi: launcherAbi, functionName: "creationFee" }).catch(() => 0n),
+  ]);
   const factory = await c.readContract({ address: n.launcher!, abi: launcherAbi, functionName: "ponsFactory" });
   const config = await c.readContract({ address: factory, abi: ponsFactoryAbi, functionName: "getLaunchConfig", args: [configId] });
   return {
@@ -247,6 +254,7 @@ export async function readLaunchTerms(n: Network): Promise<LaunchTerms> {
     platformShareBps: Number(platformShare),
     configId,
     ponsLaunchFee,
+    launchFee: ponsLaunchFee + splitEarnFee,
     economics,
     maxCreatorTaxBps: Number(maxCreatorTaxBps),
     canLaunch,

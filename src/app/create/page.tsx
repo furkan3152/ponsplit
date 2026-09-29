@@ -236,7 +236,7 @@ export default function CreatePage() {
       // costing the creator more.
       setStatus("Checking launch terms…");
       const fresh = await readLaunchTerms(n);
-      if (fresh.version !== shownTerms.version || fresh.economics !== shownTerms.economics || fresh.ponsLaunchFee !== shownTerms.ponsLaunchFee) {
+      if (fresh.version !== shownTerms.version || fresh.economics !== shownTerms.economics || fresh.launchFee !== shownTerms.launchFee) {
         await terms.refetch();
         throw new Error("The launch terms just changed. Review the updated numbers and launch again.");
       }
@@ -276,7 +276,7 @@ export default function CreatePage() {
           minTokensOut,
           shownTerms.version,
         ],
-        value: shownTerms.ponsLaunchFee + firstBuy,
+        value: shownTerms.launchFee + firstBuy,
       });
       setStatus("Launching on pons…");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -786,8 +786,8 @@ export default function CreatePage() {
               {shownTerms ? (
                 <dl className="space-y-2 border-t border-dashed border-line-2 pt-4 font-mono text-[12px]">
                   <div className="flex items-baseline justify-between gap-3">
-                    <dt className="text-ink-3">pons launch fee</dt>
-                    <dd className="text-ink">{shownTerms.ponsLaunchFee > 0n ? `${formatEther(shownTerms.ponsLaunchFee)} ETH` : "free"}</dd>
+                    <dt className="text-ink-3">Launch fee</dt>
+                    <dd className="text-ink">{shownTerms.launchFee > 0n ? `${formatEther(shownTerms.launchFee)} ETH` : "free"}</dd>
                   </div>
                   <div className="flex items-baseline justify-between gap-3">
                     <dt className="text-ink-3">First buy</dt>
@@ -797,8 +797,8 @@ export default function CreatePage() {
                     <dt className="text-ink-2">You pay</dt>
                     <dd className="text-right">
                       <span className="text-[14px] font-semibold text-ink">
-                        <Flash value={firstBuyWei === undefined ? undefined : shownTerms.ponsLaunchFee + firstBuyWei}>
-                          {firstBuyWei === undefined ? "–" : `${formatEther(shownTerms.ponsLaunchFee + firstBuyWei)} ETH`}
+                        <Flash value={firstBuyWei === undefined ? undefined : shownTerms.launchFee + firstBuyWei}>
+                          {firstBuyWei === undefined ? "–" : `${formatEther(shownTerms.launchFee + firstBuyWei)} ETH`}
                         </Flash>
                       </span>{" "}
                       <span className="text-ink-3">+ gas</span>

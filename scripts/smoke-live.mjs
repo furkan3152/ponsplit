@@ -5,7 +5,7 @@
 //
 //   SITE=https://... NETWORK=testnet|mainnet LAUNCHER=0x... [HANDLES=jack,x] \
 //     node --experimental-strip-types scripts/smoke-live.mjs
-import { createPublicClient, formatEther, getAddress, http, parseEther, toHex } from "viem";
+import { createPublicClient, formatEther, getAddress, http, parseAbi, parseEther, toHex } from "viem";
 import { feeVaultAbi, launcherAbi, ponsFactoryAbi } from "../src/lib/abi.ts";
 
 const NETWORKS = {
@@ -34,7 +34,12 @@ const att = await res.json().catch(() => ({}));
 if (!res.ok) throw new Error(`/api/attest answered ${res.status}: ${att.error ?? "no error message"}`);
 console.log(`✔ ${site} attested ${att.handles.map((h, i) => `@${h} → ${att.xIds[i]}`).join(", ")} on ${network}`);
 
-const [version, , , launchFee, economics] = await client.readContract({ address: launcher, abi: launcherAbi, functionName: "launchTerms" });
+// The first fields every launcher version returns; SplitEarn's own launch fee (newer launchers) is read on its own.
+const termsV1 = parseAbi(["function launchTerms() view returns (uint256, uint16, uint256, uint256, bytes32, uint256, bool, bool)"]);
+const [version, , , ponsFee, economics] = await client.readContract({ address: launcher, abi: termsV1, functionName: "launchTerms" });
+const splitEarnFee = await client.readContract({ address: launcher, abi: launcherAbi, functionName: "creationFee" }).catch(() => 0n);
+const launchFee = ponsFee + splitEarnFee;
+console.log(`  launch fee ${formatEther(launchFee)} ETH (pons ${formatEther(ponsFee)} + SplitEarn ${formatEther(splitEarnFee)})`);
 // Equal shares that add up to 100%.
 const bps = handles.map((_, i) => Math.floor(10_000 / handles.length) + (i < 10_000 % handles.length ? 1 : 0));
 const split = { xIds: att.xIds.map(BigInt), handles: att.handles, bps, deadline: BigInt(att.deadline), attestation: att.attestation };
