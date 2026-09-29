@@ -261,11 +261,6 @@ export function FeePath({ n, platformPct }: { n: Network; platformPct: number })
     [`${platformPct}%`, "of that to SplitEarn"],
     ["0-10%", "creator tax, 100% to the accounts"],
   ];
-  const contracts: [string, string | undefined][] = [
-    [n.ponsIsCopy ? "pons factory (copy)" : "pons factory", n.ponsFactory],
-    ["launcher", n.launcher],
-    ["fee vault", n.feeVault],
-  ];
   return (
     <div className="p-5 font-mono text-[12px]">
       <table className="w-full">
@@ -278,21 +273,6 @@ export function FeePath({ n, platformPct }: { n: Network; platformPct: number })
           ))}
         </tbody>
       </table>
-      <div className="eyebrow mt-4">Contracts</div>
-      <ul className="mt-1.5 space-y-1">
-        {contracts.map(([label, a]) => (
-          <li key={label} className="flex justify-between gap-2">
-            <span className="text-ink-3">{label}</span>
-            {a ? (
-              <a href={explorerLink(n, "address", a)} target="_blank" rel="noreferrer" className="text-ink-2 underline-offset-2 hover:text-ink hover:underline">
-                {shortAddress(a)}
-              </a>
-            ) : (
-              <span className="text-ink-3">not deployed</span>
-            )}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

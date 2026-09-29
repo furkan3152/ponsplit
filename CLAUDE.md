@@ -159,7 +159,10 @@ Gotchas:
   MAINNET.md has the owner-facing steps.
 - **Launcher v2 upgrade (pending, 2026-09-29).** /setup shows "A new launcher version is ready" to the owner while the pinned
   launcher is v1: two txs (deploy the v2 launcher, `FeeVault.setLauncher`). After the owner runs it, pin the new launcher in
-  `src/deployment.json` (find it via the FeeVault's LauncherSet event or /setup's pin snippet) and run inspect.yml.
+  `src/deployment.json` (find it via the FeeVault's LauncherSet event or /setup's pin snippet), move the old one to
+  `previousLaunchers` (the site reads coins from every launcher: `Network.launchers`, `Coin.launcher`; claims and /setup collect
+  each coin through its own launcher and withdraw SplitEarn's share from all), and run inspect.yml. A real user coin ($BAR,
+  0xbE5f7C99613213997B3a21c32CB6a5EaB2fA5d3d) is on the v1 launcher. The site shows no contract addresses (owner's request).
 - **/setup is owner-only**: `src/lib/admin.ts` + `/api/admin/session`. Admins are `ADMIN_ADDRESSES` plus
   the on-chain owner of each pinned launcher; they sign a one-time message and get a signed, http-only
   session cookie. Everyone else sees only the sign-in screen (e2e checks this).
