@@ -63,3 +63,12 @@ export const SearchIcon = svg(
 export const CollapseIcon = svg(<path d="m11 7-5 5 5 5M18 7l-5 5 5 5" />);
 export const ArrowIcon = svg(<path d="M5 12h14M13 6l6 6-6 6" />);
 export const SparkIcon = svg(<path d="M12 3c.6 4.6 2.4 6.4 7 7-4.6.6-6.4 2.4-7 7-.6-4.6-2.4-6.4-7-7 4.6-.6 6.4-2.4 7-7z" />);
+
+/** The X (Twitter) logo, filled. */
+export function XLogo({ className, size = 18 }: P) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
+}

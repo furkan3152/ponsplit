@@ -7,6 +7,7 @@ import { TokenCard } from "@/components/TokenCard";
 import { CornerConfetti, HeadingDoodle, HeroDoodles } from "@/components/art/Doodles";
 import { SplitMachine, type MachineAccount } from "@/components/art/SplitMachine";
 import { CoinStrip, FeePath, Panel, PayoutFeed, SplitTotal, TopEarners } from "@/components/home/Bento";
+import { OfficialToken } from "@/components/home/Official";
 import { ArrowIcon } from "@/components/icons";
 import { Reveal } from "@/components/motion";
 import { useActivity, useCoins, useDescriptions, useGlobalStats, useLaunchTerms, useNow, usePayouts, useTopEarners, useXProfiles } from "@/lib/hooks";
@@ -90,6 +91,9 @@ export default function Home() {
           <Link href="/how" className="btn-secondary px-6 py-3.5 text-[16px]">
             How it works
           </Link>
+        </Reveal>
+        <Reveal delay={400} className="mt-10 px-0 sm:px-4">
+          <OfficialToken />
         </Reveal>
       </section>
 

@@ -5,7 +5,8 @@
     "deployedAt": "2026-09-28",
     "hidden": [
       "0xD28B1b11937E744f878fd4793b8539e960DB020f"
-    ]
+    ],
+    "officialToken": ""
   },
   "testnet": {
     "launcher": "0x5D95C13c6Ef4874AcDfcd3A68cE62e17E65cFe59",

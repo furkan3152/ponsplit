@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useNetwork } from "@/lib/network-context";
 import { ThemeToggle } from "./ThemeToggle";
 import { Wordmark } from "./art";
+import { FollowX } from "./home/Official";
 
 export function Footer() {
   const n = useNetwork();
@@ -17,10 +18,13 @@ export function Footer() {
               One coin, many X accounts. Coins launch on pons and every trade&apos;s creator fee is split between the accounts a coin names, on the curve and after
               it graduates.
             </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <FollowX />
             <span className="inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-[12px] font-medium text-ink-2">
               <span className={`h-1.5 w-1.5 rounded-full ${n.isTestnet ? "bg-sun" : "animate-pulse-dot bg-lime"}`} aria-hidden />
               {n.chain.name}
             </span>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-[14px] text-ink-2">
             <Link href="/how" className="transition hover:text-ink">
