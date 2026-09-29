@@ -33,7 +33,12 @@ const launcher = new ethers.Contract(
 );
 const vault = new ethers.Contract(
   FEE_VAULT,
-  ["function claimable(uint64) view returns (uint256)", "function tokenFees(address) view returns (uint256)"],
+  [
+    "function claimable(uint64) view returns (uint256)",
+    "function tokenFees(address) view returns (uint256)",
+    "function nonces(uint64) view returns (uint256)",
+    "function claim(uint64 xId, address to, uint256 deadline, bytes signature) returns (uint256)",
+  ],
   provider
 );
 const factoryAbi = [
@@ -185,6 +190,39 @@ try {
   await claimer.getByText(/PE-[0-9A-F]+/).first().waitFor({ timeout: 30_000 });
   await claimer.screenshot({ path: `${OUT}/03-claim-${NETWORK}.png`, fullPage: true });
   step("the claim page shows @jack's balance and a proof post for the connected wallet");
+
+  // ── 7b. A payout, and the home page's payout panels ──────────────────────────────────────
+  // The site signs a claim once the proof post is read on X, which a test can't post as @jack. The
+  // signature is the same one the server would make: this job's throwaway signing key, derived from
+  // the job's own SIGNER_SEED exactly as src/lib/adminKey.ts does (never printed or stored).
+  {
+    const signer = new ethers.Wallet(ethers.keccak256(ethers.toUtf8Bytes(`ponsplit-admin:${process.env.SIGNER_SEED}`)));
+    const { chainId } = await provider.getNetwork();
+    const owed = await vault.claimable(IDS[0]);
+    const deadline = BigInt((await provider.getBlock("latest")).timestamp) + 600n;
+    const signature = await signer.signTypedData(
+      { name: "SplitEarn FeeVault", version: "1", chainId, verifyingContract: FEE_VAULT },
+      { Claim: [{ name: "xId", type: "uint64" }, { name: "to", type: "address" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" }] },
+      { xId: IDS[0], to: B, nonce: await vault.nonces(IDS[0]), deadline }
+    );
+    const before = await provider.getBalance(B);
+    // Sent by another wallet, so B's balance changes by exactly the payout.
+    await (await vault.connect(await provider.getSigner(C)).claim(IDS[0], B, deadline, signature)).wait();
+    const got = (await provider.getBalance(B)) - before;
+    if (got !== owed || owed === 0n) fail(`@jack's payout: expected ${owed}, B received ${got}`);
+    if ((await vault.claimable(IDS[0])) !== 0n) fail("@jack still has a balance after claiming");
+    step(`@jack claimed ${ethers.formatEther(got)} ETH to wallet ${B.slice(0, 8)} (the vault paid exactly the balance)`);
+
+    // The home page shows it: the payout feed and the top accounts ("Paying out").
+    const home = traders[1];
+    await home.goto(`${BASE}/`);
+    const payouts = home.locator("section.card", { has: home.getByText("Payouts", { exact: true }) });
+    await payouts.getByText(/claimed by @jack/).first().waitFor({ timeout: 90_000 });
+    const top = home.locator("section.card", { has: home.getByText("Paying out", { exact: true }) });
+    await top.getByText("@jack").first().waitFor({ timeout: 60_000 });
+    await home.screenshot({ path: `${OUT}/04-payouts-${NETWORK}.png`, fullPage: true });
+    step("the home page's Payouts feed shows @jack's claim, and Paying out lists the earning accounts");
+  }
 
   // ── 8. Networks: the public site is mainnet only; testnet exists only for these fork tests ──
   if (NETWORK === "mainnet") {

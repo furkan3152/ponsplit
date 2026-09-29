@@ -13,7 +13,6 @@ import { useActivity, useCoins, useDescriptions, useGlobalStats, useLaunchTerms,
 import { useNetwork } from "@/lib/network-context";
 import { isLive } from "@/lib/networks";
 import { sortCoins } from "@/lib/sort-coins";
-import { SPLIT_TOTAL_BPS } from "@/lib/split";
 
 /**
  * Before any coin has earned anything, the hero shows how a split looks with real, well-known
@@ -46,21 +45,10 @@ export default function Home() {
     return v;
   }, [activity.data, n]);
 
-  // The hero splits the coin that has paid its accounts the most (else the biggest), for real.
-  const featured = useMemo(() => {
-    const list = [...(coins ?? [])];
-    list.sort((a, b) => (b.accountsEarned > a.accountsEarned ? 1 : b.accountsEarned < a.accountsEarned ? -1 : b.marketCap - a.marketCap));
-    return list[0];
-  }, [coins]);
-  const machineHandles = featured ? featured.recipients.map((r) => r.handle) : EXAMPLE.map((e) => e.handle);
-  const profiles = useXProfiles(machineHandles.slice(0, 5));
-  const machine: MachineAccount[] = featured
-    ? featured.recipients.slice(0, 5).map((r) => {
-        const p = profiles.data?.[r.handle];
-        // A photo only while the username still belongs to the account the coin pays.
-        return { handle: r.handle, pct: (r.bps / SPLIT_TOTAL_BPS) * 100, image: p && p.id === r.xId.toString() ? p.image : undefined };
-      })
-    : EXAMPLE.map((e) => ({ ...e, image: profiles.data?.[e.handle]?.image }));
+  // The split diagram is always the same example set of well-known accounts (the owner's call): no
+  // coin is promoted on the home page. Their real names and photos, clearly labelled as an example.
+  const profiles = useXProfiles(EXAMPLE.map((e) => e.handle));
+  const machine: MachineAccount[] = EXAMPLE.map((e) => ({ ...e, image: profiles.data?.[e.handle]?.image }));
 
   const descriptions = useDescriptions(useMemo(() => trending.slice(0, 6).map((t) => t.token), [trending]));
   const platformPct = (terms.data?.platformShareBps ?? 2000) / 100;
@@ -139,27 +127,18 @@ export default function Home() {
       <section className="card relative grid items-center gap-6 overflow-hidden p-6 md:grid-cols-[1fr_1.2fr] md:p-10">
         <CornerConfetti className="hidden sm:block" />
         <div>
-          <div className="eyebrow">{featured ? "Live split" : "Example split"}</div>
-          <h2 className="display mt-2 text-[36px] leading-[1.02] sm:text-[44px]">
-            {featured ? (
-              <>
-                ${featured.symbol} pays {featured.recipients.length} account{featured.recipients.length === 1 ? "" : "s"}
-              </>
-            ) : (
-              <>One coin, many accounts</>
-            )}
-          </h2>
+          <div className="eyebrow">Example split</div>
+          <h2 className="display mt-2 text-[36px] leading-[1.02] sm:text-[44px]">One coin, many accounts</h2>
           <p className="mt-3 max-w-md text-[15px] leading-relaxed text-ink-2">
-            {featured
-              ? `Every trade of ${featured.name} drops a creator fee that flows to these X accounts in the shares set at launch, on the curve and after it graduates.`
-              : "This is how a split looks: pick any X accounts, set their shares, and each trade's creator fee flows to them. These accounts are only an example; no coin pays them until someone launches one."}
+            This is how a split looks: pick any X accounts, set their shares, and each trade&apos;s creator fee flows to them. These
+            accounts are only an example; no coin pays them unless someone launches one for them.
           </p>
-          <Link href={featured ? `/token/${featured.token}` : "/create"} className="btn-secondary group/l mt-6 px-5 py-3 text-[15px]">
-            {featured ? `Open $${featured.symbol}` : "Launch yours"}
+          <Link href="/create" className="btn-secondary group/l mt-6 px-5 py-3 text-[15px]">
+            Launch yours
             <ArrowIcon size={16} className="transition-transform group-hover/l:translate-x-0.5" />
           </Link>
         </div>
-        <SplitMachine className="mx-auto w-full max-w-[560px]" accounts={machine} caption={featured ? `$${featured.symbol} CREATOR FEES` : "EXAMPLE SPLIT"} />
+        <SplitMachine className="mx-auto w-full max-w-[560px]" accounts={machine} caption="EXAMPLE SPLIT" />
       </section>
 
       {/* Trending */}
