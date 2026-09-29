@@ -39,7 +39,7 @@ export function ponsPoolId(token: Address, hook: Address, tickSpacing = 200, fee
   );
 }
 
-export function toCoin(v: LaunchView): Coin {
+export function toCoin(v: LaunchView, launcher: Address): Coin {
   const l = v.launch;
   const phase = PHASES[v.phase] ?? "curve";
   const price =
@@ -53,6 +53,7 @@ export function toCoin(v: LaunchView): Coin {
   const recipients: Recipient[] = v.xIds.map((xId, i) => ({ xId, handle: v.handles[i] ?? "", bps: Number(v.bps[i] ?? 0) }));
   return {
     token: l.token,
+    launcher,
     curve: l.curve,
     splitter: l.splitter,
     creator: l.creator,

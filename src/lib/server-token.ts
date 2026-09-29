@@ -1,8 +1,8 @@
 import "server-only";
-import { getAddress, isAddress, zeroAddress } from "viem";
-import { launcherAbi, ponsTokenAbi } from "./abi";
+import { getAddress, isAddress } from "viem";
+import { ponsTokenAbi } from "./abi";
+import { readCoin as readChainCoin } from "./chain-reads";
 import { NETWORKS, isHidden, isLive, otherNetwork, type Network, type NetworkId } from "./networks";
-import { toCoin } from "./pons";
 import { serverClient } from "./server-network";
 import type { Coin } from "./types";
 
@@ -11,10 +11,10 @@ export type ServerCoin = { network: Network; coin: Coin; description: string };
 async function readCoin(n: Network, token: `0x${string}`): Promise<ServerCoin | null> {
   if (!isLive(n) || isHidden(n, token)) return null;
   const c = serverClient(n);
-  const v = await c.readContract({ address: n.launcher!, abi: launcherAbi, functionName: "getLaunch", args: [token] });
-  if (v.launch.token === zeroAddress) return null;
+  const coin = await readChainCoin(c, n.launchers, token);
+  if (!coin) return null;
   const description = await c.readContract({ address: token, abi: ponsTokenAbi, functionName: "description" }).catch(() => "");
-  return { network: n, coin: toCoin(v), description };
+  return { network: n, coin, description };
 }
 
 /**

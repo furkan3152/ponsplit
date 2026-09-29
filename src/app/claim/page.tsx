@@ -4,7 +4,7 @@ import { useConnectModal } from "@rainbow-me/rainbowkit";
 import Link from "next/link";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { formatEther, parseEventLogs, type Hex } from "viem";
+import { formatEther, parseEventLogs, type Address, type Hex } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
 import { ClaimArt, EmptyArt } from "@/components/art";
 import { CountUp, Flash, Reveal, celebrate } from "@/components/motion";
@@ -79,8 +79,32 @@ function useClaim(earnings: Earnings | undefined, onDone: () => void) {
       const args = [xId, address, BigInt(data.deadline), data.signature] as const;
       // The signature may be for another account than the one typed in (the post decides): only
       // collect the typed account's coins when it's the same one.
-      const collect = earnings && earnings.xId === xId ? earnings.collect : [];
-      if (collect.length === 0 && BigInt(data.claimable) === 0n) throw new Error(`Nothing to claim for @${data.username} yet.`);
+      const all = earnings && earnings.xId === xId ? earnings.collect : [];
+      if (all.length === 0 && BigInt(data.claimable) === 0n) throw new Error(`Nothing to claim for @${data.username} yet.`);
+      // Coins from the current launcher are collected in the claim itself; coins from an older
+      // launcher (before an upgrade) are collected through it first, one transaction per launcher.
+      const current = n.launcher!.toLowerCase();
+      const collect = all.filter((x) => x.launcher.toLowerCase() === current).map((x) => x.token);
+      const older = new Map<Address, Address[]>();
+      for (const x of all) if (x.launcher.toLowerCase() !== current) older.set(x.launcher, [...(older.get(x.launcher) ?? []), x.token]);
+      for (const [launcher, tokens] of older) {
+        setBusy("Collecting your older coins' fees…");
+        const ok = await publicClient
+          .simulateContract({ account: address, address: launcher, abi: launcherAbi, functionName: "collectMany", args: [tokens] })
+          .then(() => true)
+          .catch(() => false);
+        // One that wouldn't go through (fees still held by pons) is left for a later claim.
+        if (!ok) continue;
+        setBusy("Confirm collecting in your wallet…");
+        const h = await writeContractAsync({ address: launcher, abi: launcherAbi, chainId: n.chain.id, functionName: "collectMany", args: [tokens] });
+        const r = await publicClient.waitForTransactionReceipt({ hash: h });
+        if (r.status !== "success") throw new Error("Collecting the older coins' fees reverted.");
+      }
+      // What the vault holds now, after those collections.
+      const inVault = older.size
+        ? await publicClient.readContract({ address: n.feeVault!, abi: feeVaultAbi, functionName: "claimable", args: [xId] })
+        : BigInt(data.claimable);
+      if (collect.length === 0 && inVault === 0n) throw new Error(`Nothing can be claimed for @${data.username} right now: its fees are still being released by pons. Try again a little later.`);
 
       // Collecting first is the norm; if it wouldn't go through (a coin's fees held by pons, say)
       // but the vault already holds something, claim that alone rather than fail.
@@ -92,7 +116,7 @@ function useClaim(earnings: Earnings | undefined, onDone: () => void) {
           .then(() => true)
           .catch(() => false);
         if (!ok) {
-          if (BigInt(data.claimable) === 0n) throw new Error(`Nothing can be claimed for @${data.username} right now: its fees are still being released by pons. Try again a little later.`);
+          if (inVault === 0n) throw new Error(`Nothing can be claimed for @${data.username} right now: its fees are still being released by pons. Try again a little later.`);
           useCollect = false;
         }
       }

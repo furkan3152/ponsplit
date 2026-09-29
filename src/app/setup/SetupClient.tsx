@@ -483,11 +483,22 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
   const uncollected = coins?.reduce((a, c) => a + c.platformPending, 0n);
   // The coins most worth collecting, a bounded number per transaction (each costs gas; dust in many
   // coins must never make one too big for a block). Pressing again collects the next ones.
-  const toCollect = (coins ?? [])
+  const toCollectCoins = (coins ?? [])
     .filter((c) => c.feesPending > 1_000_000_000_000n)
     .sort((a, b) => (b.feesPending > a.feesPending ? 1 : b.feesPending < a.feesPending ? -1 : 0))
-    .slice(0, 25)
-    .map((c) => c.token);
+    .slice(0, 25);
+  const toCollect = toCollectCoins.map((c) => c.token);
+  // SplitEarn's share still held by older launchers (before an upgrade): withdrawn from each of them.
+  const older = n.launchers.slice(1);
+  const olderFees = useReadContracts({
+    contracts: older.map((address) => ({ address, abi: launcherAbi, chainId: n.chain.id, functionName: "platformFees" }) as const),
+    query: { enabled: older.length > 0, refetchInterval: 20_000 },
+  });
+  const olderReady = older.map((address, i) => ({
+    address,
+    fees: olderFees.data?.[i]?.status === "success" ? (olderFees.data[i].result as bigint) : 0n,
+  }));
+  const olderTotal = olderReady.reduce((a, x) => a + x.fees, 0n);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const lock = useRef(false);
@@ -603,10 +614,10 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
       state:
         fees === undefined || uncollected === undefined
           ? "…"
-          : `${formatEther(fees)} ETH ready${uncollected ? ` + ${formatEther(uncollected)} ETH still in the coins` : ""}${total !== undefined ? ` · ${formatEther(total)} ETH earned in all` : ""}`,
+          : `${formatEther(fees + olderTotal)} ETH ready${uncollected ? ` + ${formatEther(uncollected)} ETH still in the coins` : ""}${total !== undefined ? ` · ${formatEther(total)} ETH earned in all` : ""}`,
       ok: true,
       action:
-        address && isOwner && (fees || uncollected)
+        address && isOwner && (fees || uncollected || olderTotal)
           ? {
               text: toCollect.length ? "Collect & withdraw to this wallet" : "Withdraw to this wallet",
               run: () =>
@@ -614,23 +625,47 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
                   toCollect.length ? "Collect & withdraw to this wallet" : "Withdraw to this wallet",
                   toCollect.length
                     ? `Collect the fees of ${toCollect.length} coin${toCollect.length === 1 ? "" : "s"}, then send all of SplitEarn's share to ${address}? Two transactions.`
-                    : `Send ${formatEther(fees ?? 0n)} ETH to ${address}?`,
+                    : `Send ${formatEther((fees ?? 0n) + olderTotal)} ETH to ${address}?`,
                   async () => {
-                    if (toCollect.length) {
-                      // A collection that wouldn't go through never blocks withdrawing what's ready.
+                    // Each coin is collected through the launcher that launched it; a collection that
+                    // wouldn't go through never blocks withdrawing what's ready.
+                    const byLauncher = new Map<Address, Address[]>();
+                    for (const c of toCollectCoins) byLauncher.set(c.launcher, [...(byLauncher.get(c.launcher) ?? []), c.token]);
+                    let collectedAny = false;
+                    for (const [l, tokens] of byLauncher) {
+                      const target = { address: l, abi: launcherAbi, chainId: n.chain.id } as const;
                       const collectable = await client
-                        .simulateContract({ account: address, ...launcher, functionName: "collectMany", args: [toCollect] })
+                        .simulateContract({ account: address, ...target, functionName: "collectMany", args: [tokens] })
                         .then(() => true)
                         .catch(() => false);
-                      if (collectable) {
-                        const hash = await writeContractAsync({ ...launcher, functionName: "collectMany", args: [toCollect] });
-                        const r = await client.waitForTransactionReceipt({ hash });
-                        if (r.status !== "success") throw new Error("Collecting the coins' fees reverted.");
-                      } else if (!fees) {
-                        throw new Error("The coins' fees can't be collected right now (pons may still be releasing them). Try again later.");
+                      if (!collectable) continue;
+                      const hash = await writeContractAsync({ ...target, functionName: "collectMany", args: [tokens] });
+                      const r = await client.waitForTransactionReceipt({ hash });
+                      if (r.status !== "success") throw new Error("Collecting the coins' fees reverted.");
+                      collectedAny = true;
+                    }
+                    // Withdraw from every launcher that holds something now (the older ones first).
+                    const holders: Address[] = [];
+                    for (const l of [...older, n.launcher!]) {
+                      const held = await client.readContract({ address: l, abi: launcherAbi, functionName: "platformFees" });
+                      if (held > 0n) holders.push(l);
+                    }
+                    if (!holders.length) {
+                      throw new Error(
+                        toCollect.length && !collectedAny
+                          ? "The coins' fees can't be collected right now (pons may still be releasing them). Try again later."
+                          : "Nothing to withdraw yet."
+                      );
+                    }
+                    let last: Hex | undefined;
+                    for (const l of holders) {
+                      last = await writeContractAsync({ address: l, abi: launcherAbi, chainId: n.chain.id, functionName: "withdrawPlatformFees", args: [address] });
+                      if (l !== holders[holders.length - 1]) {
+                        const r = await client.waitForTransactionReceipt({ hash: last });
+                        if (r.status !== "success") throw new Error("A withdrawal reverted.");
                       }
                     }
-                    return writeContractAsync({ ...launcher, functionName: "withdrawPlatformFees", args: [address] });
+                    return last!;
                   }
                 ),
             }

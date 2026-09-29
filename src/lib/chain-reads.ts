@@ -1,4 +1,4 @@
-import { parseAbiItem, type Address, type Hex, type PublicClient } from "viem";
+import { parseAbiItem, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
 import { launcherAbi } from "./abi";
 import type { NetworkId } from "./networks";
 import { BPS, PONS_FEE_BPS, toCoin } from "./pons";
@@ -13,15 +13,30 @@ import type { Coin, Trade } from "./types";
 
 const PAGE = 40;
 
-/** Every coin a launcher has made, newest first (hidden ones included; callers filter). */
-export async function readCoins(c: PublicClient, launcher: Address): Promise<Coin[]> {
-  const total = Number(await c.readContract({ address: launcher, abi: launcherAbi, functionName: "launchCount" }));
-  const pages = await Promise.all(
-    Array.from({ length: Math.ceil(total / PAGE) }, (_, i) =>
-      c.readContract({ address: launcher, abi: launcherAbi, functionName: "getLaunches", args: [BigInt(i * PAGE), BigInt(PAGE)] })
-    )
+/** Every coin the launchers have made, newest first (hidden ones included; callers filter). */
+export async function readCoins(c: PublicClient, launchers: readonly Address[]): Promise<Coin[]> {
+  const perLauncher = await Promise.all(
+    launchers.map(async (launcher) => {
+      const total = Number(await c.readContract({ address: launcher, abi: launcherAbi, functionName: "launchCount" }));
+      const pages = await Promise.all(
+        Array.from({ length: Math.ceil(total / PAGE) }, (_, i) =>
+          c.readContract({ address: launcher, abi: launcherAbi, functionName: "getLaunches", args: [BigInt(i * PAGE), BigInt(PAGE)] })
+        )
+      );
+      return pages.flat().map((v) => toCoin(v, launcher));
+    })
   );
-  return pages.flat().map(toCoin);
+  // Newest first across launchers (each launcher's own list already is).
+  return perLauncher.flat().sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** A coin by address, from whichever of the launchers launched it; null when none did. */
+export async function readCoin(c: PublicClient, launchers: readonly Address[], token: Address): Promise<Coin | null> {
+  for (const launcher of launchers) {
+    const v = await c.readContract({ address: launcher, abi: launcherAbi, functionName: "getLaunch", args: [token] });
+    if (v.launch.token !== zeroAddress) return toCoin(v, launcher);
+  }
+  return null;
 }
 
 export type Wiring = { poolManager: Address; router: Address };

@@ -8,6 +8,7 @@ import { feeSplitterAbi, feeVaultAbi, launcherAbi, ponsCurveAbi, ponsFactoryAbi,
 import { useNetwork } from "./network-context";
 import { NETWORKS, isHidden, isLive, otherNetwork, type Network, type NetworkId } from "./networks";
 import {
+  readCoin,
   readCoins,
   scanActivity,
   scanPayouts,
@@ -23,7 +24,7 @@ import {
   type ScanState,
   type Snapshot,
 } from "./chain-reads";
-import { BPS, toCoin, toRecipients } from "./pons";
+import { BPS, toRecipients } from "./pons";
 import { rpcTransport } from "./rpc";
 import type { Coin, Trade } from "./types";
 import { decode } from "./wire";
@@ -105,7 +106,7 @@ export function useCoins({ includeHidden = false }: { includeHidden?: boolean } 
       try {
         return (await snapshotOf(n)).coins;
       } catch {
-        return readCoins(clientFor(n), n.launcher!);
+        return readCoins(clientFor(n), n.launchers);
       }
     },
   });
@@ -132,9 +133,7 @@ export function useCoin(token: Address | undefined) {
         : undefined,
     queryFn: async () => {
       if (isHidden(n, token!)) return null;
-      const v = await clientFor(n).readContract({ address: n.launcher!, abi: launcherAbi, functionName: "getLaunch", args: [token!] });
-      if (v.launch.token === zeroAddress) return null;
-      return toCoin(v);
+      return readCoin(clientFor(n), n.launchers, token!);
     },
   });
 }
@@ -466,8 +465,11 @@ export type Earnings = {
    * in the coin itself wait for pons's keeper to convert them, pons holds the ETH ones back too.
    */
   waiting: bigint;
-  /** The coins worth collecting for this account, most first (at most MAX_COLLECT per claim). */
-  collect: Address[];
+  /**
+   * The coins worth collecting for this account, most first (at most MAX_COLLECT per claim), each
+   * with the launcher that launched it (collections go through that launcher).
+   */
+  collect: { launcher: Address; token: Address }[];
   coins: Address[];
 };
 
@@ -475,7 +477,7 @@ export type Earnings = {
 export function useEarnings(xId: bigint | undefined) {
   const n = useNetwork();
   return useQuery({
-    queryKey: ["earnings", n.id, n.launcher, xId?.toString()],
+    queryKey: ["earnings", n.id, n.launchers.join(), xId?.toString()],
     enabled: Boolean(isLive(n) && xId !== undefined),
     refetchInterval: 10_000,
     queryFn: async (): Promise<Earnings> => {
@@ -488,14 +490,22 @@ export function useEarnings(xId: bigint | undefined) {
       ]);
       let pending = 0n;
       let waiting = 0n;
-      const collectable: { token: Address; amount: bigint }[] = [];
+      const collectable: { launcher: Address; token: Address; amount: bigint }[] = [];
       const hook = await c.readContract({ address: n.launcher!, abi: launcherAbi, functionName: "ponsHook" });
+      // The coin's record on whichever of the site's launchers launched it.
+      const launchOf = async (token: Address) => {
+        for (const launcher of n.launchers) {
+          const l = await c.readContract({ address: launcher, abi: launcherAbi, functionName: "launchOf", args: [token] });
+          if (l.token !== zeroAddress) return { launcher, l };
+        }
+        return null;
+      };
       await Promise.all(
         coins.map(async (token) => {
-          const [launch, split] = await Promise.all([
-            c.readContract({ address: n.launcher!, abi: launcherAbi, functionName: "launchOf", args: [token] }),
-            c.readContract({ ...vault, functionName: "getSplit", args: [token] }),
-          ]);
+          const [found, split] = await Promise.all([launchOf(token), c.readContract({ ...vault, functionName: "getSplit", args: [token] })]);
+          // Registered by a launcher this site doesn't know: its fees can't be read or collected here.
+          if (!found) return;
+          const launch = found.l;
           const [fees, graduated] = await Promise.all([
             c.readContract({ address: launch.splitter, abi: feeSplitterAbi, functionName: "pendingFees" }),
             c.readContract({ address: launch.curve, abi: ponsCurveAbi, functionName: "graduated" }),
@@ -523,7 +533,7 @@ export function useEarnings(xId: bigint | undefined) {
           const ready = fees - held;
           pending += (toRecipients(ready, Number(launch.platformBps)) * bps) / BPS;
           waiting += (toRecipients(held, Number(launch.platformBps)) * bps) / BPS;
-          if (ready > COLLECT_DUST) collectable.push({ token, amount: ready });
+          if (ready > COLLECT_DUST) collectable.push({ launcher: found.launcher, token, amount: ready });
         })
       );
       // Most first, and a bounded number per claim: every collection costs gas, and dust in many
@@ -531,7 +541,7 @@ export function useEarnings(xId: bigint | undefined) {
       const collect = collectable
         .sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0))
         .slice(0, MAX_COLLECT)
-        .map((x) => x.token);
+        .map(({ launcher, token }) => ({ launcher, token }));
       return { xId: xId!, claimable, earned, pending, waiting, collect, coins: [...coins] };
     },
   });
