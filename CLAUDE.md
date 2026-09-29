@@ -25,7 +25,10 @@ split between up to 10 X (Twitter) accounts. The site is not affiliated with pon
   Trading: curve buy/sell directly on pons's curve, pool trades through `SplitEarnRouter`.
 - **Fees.** pons's 1% fee: 30% pons, 70% creator. Of the creator part 20% goes to SplitEarn
   (`platformShareBps`, max 30%) and 80% to the X accounts; the optional creator tax (0-10%, chosen
-  at launch, default 0) goes 100% to the accounts. Each coin snapshots `platformBps`. FeeVault keys
+  at launch, default 0) goes 100% to the accounts. Each coin snapshots `platformBps`. Launcher v2 (2026-09-29, owner's
+  request) also charges SplitEarn's own `creationFee` per launch (default 0.000365 ETH ≈ $1, owner-set on /setup, max 0.01 ETH),
+  paid with pons's fee and added to `platformFees`; the site shows one "Launch fee" (pons + SplitEarn). Readers take the
+  first 8 `launchTerms` fields and read `creationFee` separately (0 on the v1 launcher), so the site works on both. FeeVault keys
   balances by the permanent numeric X user id. Claims use `collectAndClaim` to collect first.
 - **Signing.** One server key (both networks) signs EIP-712 messages, domain
   `SplitEarn FeeVault` v1 with chainId + vault:
@@ -83,7 +86,7 @@ The owner asked for a UI that doesn't look generated. Keep new work in this lang
 ## Commands
 
 ```bash
-cd contracts && npx hardhat test          # 29 tests on the real pons/Uniswap stack (solc-js 0.8.24 via a compile subtask, viaIR)
+cd contracts && npx hardhat test          # 31 tests on the real pons/Uniswap stack (solc-js 0.8.24 via a compile subtask, viaIR)
 cd contracts && node vendor/build.js      # re-derive vendor/out from the verified sources (CI checks they match)
 cd contracts && node scripts/export-abi.js  # regenerate src/lib/abi.ts + bytecode.ts after any .sol change (CI checks)
 cd contracts && FORK_URL=<rpc> FORK_NETWORK=mainnet|testnet npx hardhat test test/fork/PonsMainnet.fork.test.js
@@ -154,6 +157,9 @@ Gotchas:
   at 256 characters, and a longer one fails every deploy instantly, as 885959f–f2f6c85 did); put `[deploy]` in a commit message to force one (e.g. after
   an env change, since `NEXT_PUBLIC_*` values are baked in at build time). Hobby forbids commercial use, so Pro before launch.
   MAINNET.md has the owner-facing steps.
+- **Launcher v2 upgrade (pending, 2026-09-29).** /setup shows "A new launcher version is ready" to the owner while the pinned
+  launcher is v1: two txs (deploy the v2 launcher, `FeeVault.setLauncher`). After the owner runs it, pin the new launcher in
+  `src/deployment.json` (find it via the FeeVault's LauncherSet event or /setup's pin snippet) and run inspect.yml.
 - **/setup is owner-only**: `src/lib/admin.ts` + `/api/admin/session`. Admins are `ADMIN_ADDRESSES` plus
   the on-chain owner of each pinned launcher; they sign a one-time message and get a signed, http-only
   session cookie. Everyone else sees only the sign-in screen (e2e checks this).
