@@ -110,7 +110,7 @@ Gotchas:
   contracts and the forks need fresh ones.
 - **Load and RPC.** Shared chain reads (coin list, 24h activity, payouts, a coin's trades) come from
   `/api/snapshot` and `/api/trades` (`src/lib/server-snapshot.ts`, logic in `chain-reads.ts`), cached
-  by the CDN for ~4 s, so a crowd costs the RPC one read. Browsers fall back to reading the chain
+  by the CDN for ~10 s (server memo 5 s; raised from 4 s to halve RPC and Vercel usage), so a crowd costs the RPC one read. Browsers fall back to reading the chain
   themselves if the server can't answer. RPCs: `NEXT_PUBLIC_<NET>_RPC_URL` (comma list, public, e.g. a
   domain-restricted paid key) and server-only `<NET>_RPC_URL`, each with the public RPC as a viem
   `fallback` (`src/lib/rpc.ts`; a localhost URL is used alone). `stress.yml` load-tests the live site.
