@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { HowItWorks } from "@/components/HowItWorks";
 import { TokenCard } from "@/components/TokenCard";
+import { CornerConfetti, HeadingDoodle, HeroDoodles } from "@/components/art/Doodles";
 import { SplitMachine, type MachineAccount } from "@/components/art/SplitMachine";
 import { CoinStrip, FeePath, Panel, PayoutFeed, SplitTotal, TopEarners } from "@/components/home/Bento";
 import { ArrowIcon } from "@/components/icons";
@@ -69,6 +70,7 @@ export default function Home() {
       {/* Hero */}
       <section className="relative pt-6 text-center md:pt-12">
         <div aria-hidden className="bg-grid pointer-events-none absolute -inset-x-4 -top-10 -z-10 h-[520px] sm:-inset-x-6" />
+        <HeroDoodles />
         <Reveal>
           <span className="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-2">
             <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" aria-hidden />
@@ -104,7 +106,8 @@ export default function Home() {
       </section>
 
       {/* Bento */}
-      <section className="grid gap-4 lg:grid-cols-12">
+      {/* min-w-0: a loading coin strip must not widen the page on phones */}
+      <section className="grid gap-4 lg:grid-cols-12 [&>*]:min-w-0">
         <Reveal className="lg:col-span-7">
           <Panel label="Explore" href="/explore" className="h-full">
             <CoinStrip coins={trending.slice(0, 8)} loading={isLoading && isLive(n)} />
@@ -133,7 +136,8 @@ export default function Home() {
       </section>
 
       {/* The split, live */}
-      <section className="card grid items-center gap-6 overflow-hidden p-6 md:grid-cols-[1fr_1.2fr] md:p-10">
+      <section className="card relative grid items-center gap-6 overflow-hidden p-6 md:grid-cols-[1fr_1.2fr] md:p-10">
+        <CornerConfetti className="hidden sm:block" />
         <div>
           <div className="eyebrow">{featured ? "Live split" : "Example split"}</div>
           <h2 className="display mt-2 text-[36px] leading-[1.02] sm:text-[44px]">
@@ -164,7 +168,9 @@ export default function Home() {
           <div className="flex items-end justify-between">
             <div>
               <div className="eyebrow">Right now</div>
-              <h2 className="display mt-1 text-[36px] leading-none">Trending</h2>
+              <h2 className="display mt-1 flex items-center gap-2 text-[36px] leading-none">
+                Trending <HeadingDoodle kind="star" />
+              </h2>
             </div>
             <Link href="/explore" className="text-[14px] font-medium text-ink-2 transition hover:text-ink">
               See all →
@@ -184,7 +190,9 @@ export default function Home() {
         <div className="flex items-end justify-between">
           <div>
             <div className="eyebrow">Three steps</div>
-            <h2 className="display mt-1 text-[36px] leading-none">How it works</h2>
+            <h2 className="display mt-1 flex items-center gap-2 text-[36px] leading-none">
+              How it works <HeadingDoodle kind="sparkle" />
+            </h2>
           </div>
           <Link href="/how" className="text-[14px] font-medium text-ink-2 transition hover:text-ink">
             Details →

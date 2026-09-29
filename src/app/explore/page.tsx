@@ -10,6 +10,7 @@ import { TokenCard } from "@/components/TokenCard";
 import { Reveal } from "@/components/motion";
 import { useActivity, useCoins, useDescriptions, useNow } from "@/lib/hooks";
 import { sortCoins, SORTS, type Sort } from "@/lib/sort-coins";
+import { HeadingDoodle } from "@/components/art/Doodles";
 
 export default function ExplorePage() {
   return (
@@ -61,7 +62,9 @@ function Explore() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
         <div>
           <div className="eyebrow">The board</div>
-          <h1 className="display mt-1 text-[44px] leading-none">Explore</h1>
+          <h1 className="display mt-1 flex items-center gap-2 text-[44px] leading-none">
+            Explore <HeadingDoodle kind="coin" />
+          </h1>
         </div>
         <div className="segmented no-scrollbar max-w-full overflow-x-auto sm:ml-6">
           {SORTS.map((s) => (
