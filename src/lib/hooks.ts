@@ -2,13 +2,32 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPublicClient, http, parseAbiItem, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
+import { createPublicClient, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
 import { useReadContract, useReadContracts } from "wagmi";
 import { feeSplitterAbi, feeVaultAbi, launcherAbi, ponsFactoryAbi, ponsTokenAbi } from "./abi";
 import { useNetwork } from "./network-context";
 import { NETWORKS, isHidden, isLive, otherNetwork, type Network, type NetworkId } from "./networks";
-import { BPS, PONS_FEE_BPS, toCoin, toRecipients } from "./pons";
+import {
+  readCoins,
+  scanActivity,
+  scanPayouts,
+  tradesBetween,
+  venueOf,
+  withTimes,
+  FIRST_SPAN,
+  type Activity,
+  type CoinTrades,
+  type Payout,
+  type Payouts,
+  type ScanState,
+  type Snapshot,
+} from "./chain-reads";
+import { BPS, toCoin, toRecipients } from "./pons";
+import { rpcTransport } from "./rpc";
 import type { Coin, Trade } from "./types";
+import { decode } from "./wire";
+
+export type { Activity, Payout } from "./chain-reads";
 
 // ------------------------------------------------------------------ clients
 
@@ -20,19 +39,53 @@ const clients = new Map<string, PublicClient>();
  * requests still share HTTP round trips through JSON-RPC batching.
  */
 export function clientFor(n: Network): PublicClient {
-  const key = `${n.id}:${n.rpcUrl}`;
+  const key = `${n.id}:${n.rpcUrls.join(",")}`;
   let c = clients.get(key);
   if (!c) {
-    c = createPublicClient({ chain: n.chain, transport: http(n.rpcUrl, { batch: { batchSize: 20 }, retryCount: 3, retryDelay: 400 }) }) as PublicClient;
+    c = createPublicClient({ chain: n.chain, transport: rpcTransport(n.rpcUrls, { batch: { batchSize: 20 }, retryCount: 3, retryDelay: 400 }) }) as PublicClient;
     clients.set(key, c);
   }
   return c;
 }
 
-// ------------------------------------------------------------------ coins
 
-// getLaunches reads ~15 Pons values per coin; 40 per call stays well under RPC gas caps.
-const PAGE = 40;
+// ------------------------------------------------------------------ shared snapshots
+
+/**
+ * The server reads what every visitor of a network sees (/api/snapshot, /api/trades) and the CDN
+ * shares each answer for a few seconds, so a crowd doesn't multiply the load on the chain's RPC.
+ * If the server can't answer, the browser reads the chain itself (the code paths below) and tries
+ * the server again a minute later.
+ */
+const SNAPSHOT_TTL = 3_000;
+const SNAPSHOT_RETRY = 60_000;
+const snapshots = new Map<NetworkId, { at: number; promise: Promise<Snapshot> }>();
+const serverDownUntil = new Map<string, number>();
+
+async function fromServer<T>(kind: string, url: string): Promise<T> {
+  if ((serverDownUntil.get(kind) ?? 0) > Date.now()) throw new Error("server snapshot unavailable");
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (res.status === 404) throw Object.assign(new Error("not found"), { notFound: true });
+    if (!res.ok) throw new Error(`snapshot ${res.status}`);
+    return decode<T>(await res.text());
+  } catch (e) {
+    if (!(e as { notFound?: boolean }).notFound) serverDownUntil.set(kind, Date.now() + SNAPSHOT_RETRY);
+    throw e;
+  }
+}
+
+/** The network's snapshot, shared by every hook that asks within a few seconds. */
+function snapshotOf(n: Network): Promise<Snapshot> {
+  const hit = snapshots.get(n.id);
+  if (hit && Date.now() - hit.at < SNAPSHOT_TTL) return hit.promise;
+  const promise = fromServer<Snapshot>(`snapshot:${n.id}`, `/api/snapshot?network=${n.id}`);
+  promise.catch(() => snapshots.delete(n.id));
+  snapshots.set(n.id, { at: Date.now(), promise });
+  return promise;
+}
+
+// ------------------------------------------------------------------ coins
 
 /** Every coin on this network, newest first (hidden ones left out). One stable query. */
 export function useCoins() {
@@ -45,20 +98,18 @@ export function useCoins() {
     ...(live ? {} : { initialData: [] as Coin[] }),
     refetchInterval: 15_000,
     queryFn: async () => {
-      const c = clientFor(n);
-      const total = Number(await c.readContract({ address: n.launcher!, abi: launcherAbi, functionName: "launchCount" }));
-      const pages = await Promise.all(
-        Array.from({ length: Math.ceil(total / PAGE) }, (_, i) =>
-          c.readContract({ address: n.launcher!, abi: launcherAbi, functionName: "getLaunches", args: [BigInt(i * PAGE), BigInt(PAGE)] })
-        )
-      );
-      return pages.flat().map(toCoin);
+      try {
+        return (await snapshotOf(n)).coins;
+      } catch {
+        return readCoins(clientFor(n), n.launcher!);
+      }
     },
   });
   const hidden = useMemo(() => new Set(n.hidden.map((a) => a.toLowerCase())), [n.hidden]);
   const data = useMemo(() => (hidden.size && query.data ? query.data.filter((c) => !hidden.has(c.token.toLowerCase())) : query.data), [query.data, hidden]);
   return { ...query, data };
 }
+
 
 /** One coin with its live Pons state; `null` when it isn't a SplitEarn coin on this network. */
 export function useCoin(token: Address | undefined) {
@@ -240,183 +291,8 @@ export function useGlobalStats() {
   return { coins: coins ? BigInt(coins.length) : undefined, feesSplit: isLive(n) ? earned : 0n };
 }
 
-// ------------------------------------------------------------------ logs
 
-const CURVE_BUY = parseAbiItem("event CurveBuy(address indexed buyer, address indexed recipient, uint256 quoteIn, uint256 tokensOut, uint256 fee, uint256 tax)");
-const CURVE_SELL = parseAbiItem("event CurveSell(address indexed seller, address indexed recipient, uint256 tokensIn, uint256 quoteOut, uint256 fee, uint256 tax)");
-const SWAP = parseAbiItem(
-  "event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)"
-);
-const POOL_TRADE = parseAbiItem(
-  "event PoolTrade(address indexed token, address indexed trader, address indexed recipient, bool isBuy, uint256 ethAmount, uint256 tokenAmount)"
-);
-
-/** Robinhood Chain's public RPC answers log queries over at most 1M blocks with an address filter. */
-const WINDOW = 900_000n;
-/** Addresses / topics per log query (the RPC allows 1000 selectors in all). */
-const CHUNK = 900;
-
-type AnyLog = {
-  blockNumber: bigint | null;
-  logIndex: number | null;
-  transactionHash: Hex | null;
-  address: Address;
-  eventName?: string;
-  args?: unknown;
-};
-
-/** getLogs over [from, to], halving the range whenever the node says the answer is too big. */
-async function logsSplit<T extends AnyLog>(query: (from: bigint, to: bigint) => Promise<T[]>, from: bigint, to: bigint): Promise<T[]> {
-  if (from > to) return [];
-  try {
-    return await query(from, to);
-  } catch (e) {
-    const msg = String((e as Error)?.message ?? e);
-    if (to - from < 2_000n || !/limit|too many|exceed|spans|range|timed? ?out|10000/i.test(msg)) throw e;
-    const mid = from + (to - from) / 2n;
-    const [a, b] = await Promise.all([logsSplit(query, from, mid), logsSplit(query, mid + 1n, to)]);
-    return [...a, ...b];
-  }
-}
-
-/** Runs a log query over any block range in windows the RPC accepts. */
-async function logsOver<T extends AnyLog>(query: (from: bigint, to: bigint) => Promise<T[]>, from: bigint, to: bigint): Promise<T[]> {
-  const out: T[] = [];
-  const windows: [bigint, bigint][] = [];
-  for (let start = from; start <= to; start += WINDOW) windows.push([start, start + WINDOW - 1n < to ? start + WINDOW - 1n : to]);
-  const results = await Promise.all(windows.map(([a, b]) => logsSplit(query, a, b)));
-  results.forEach((r) => out.push(...r));
-  return out;
-}
-
-const blockTimes = new Map<string, number>();
-
-/** Timestamps of the given blocks (cached: a block's time never changes). */
-async function timesOf(n: Network, blocks: bigint[]): Promise<Map<bigint, number>> {
-  const c = clientFor(n);
-  const missing = Array.from(new Set(blocks.filter((b) => !blockTimes.has(`${n.id}:${b}`))));
-  // In parallel, but not all at once: the batching transport sends 20 per HTTP request.
-  for (let i = 0; i < missing.length; i += 100) {
-    const slice = missing.slice(i, i + 100);
-    const got = await Promise.all(slice.map((b) => c.getBlock({ blockNumber: b }).catch(() => null)));
-    got.forEach((blk, j) => blk && blockTimes.set(`${n.id}:${slice[j]}`, Number(blk.timestamp)));
-  }
-  return new Map(blocks.map((b) => [b, blockTimes.get(`${n.id}:${b}`) ?? 0]));
-}
-
-type Venue = { token: Address; curve: Address; poolId: Hex; creatorTaxBps: number };
-
-function fromCurveLog(log: AnyLog, token: Address): Omit<Trade, "timestamp"> | null {
-  const a = log.args as Record<string, bigint | Address>;
-  if (log.blockNumber === null || log.transactionHash === null || log.logIndex === null) return null;
-  const base = { token, venue: "curve" as const, blockNumber: log.blockNumber, logIndex: log.logIndex, txHash: log.transactionHash };
-  if (log.eventName === "CurveBuy") {
-    const quoteIn = a.quoteIn as bigint;
-    const tokensOut = a.tokensOut as bigint;
-    const net = quoteIn - (a.fee as bigint) - (a.tax as bigint);
-    return { ...base, kind: "buy", trader: a.recipient as Address, ethAmount: quoteIn, tokenAmount: tokensOut, price: tokensOut === 0n ? 0 : Number(net) / Number(tokensOut) };
-  }
-  if (log.eventName === "CurveSell") {
-    const quoteOut = a.quoteOut as bigint;
-    const tokensIn = a.tokensIn as bigint;
-    const gross = quoteOut + (a.fee as bigint) + (a.tax as bigint);
-    return { ...base, kind: "sell", trader: a.recipient as Address, ethAmount: quoteOut, tokenAmount: tokensIn, price: tokensIn === 0n ? 0 : Number(gross) / Number(tokensIn) };
-  }
-  return null;
-}
-
-/**
- * A Pons pool swap from the trader's side. The Swap event reports the pool's amounts before the
- * Pons hook takes its fee (1% plus the creator tax) from the output, so that is taken off here.
- */
-function fromSwapLog(log: AnyLog, v: Venue, traders: Map<string, Address>): Omit<Trade, "timestamp"> | null {
-  const a = log.args as { sender: Address; amount0: bigint; amount1: bigint };
-  if (log.blockNumber === null || log.transactionHash === null || log.logIndex === null) return null;
-  const cut = (x: bigint) => x - (x * BigInt(PONS_FEE_BPS)) / BPS - (x * BigInt(v.creatorTaxBps)) / BPS;
-  const buy = a.amount0 < 0n;
-  const ethGross = buy ? -a.amount0 : a.amount0;
-  const tokensGross = buy ? a.amount1 : -a.amount1;
-  if (ethGross <= 0n || tokensGross <= 0n) return null;
-  return {
-    token: v.token,
-    venue: "pool",
-    kind: buy ? "buy" : "sell",
-    trader: traders.get(log.transactionHash.toLowerCase()) ?? a.sender,
-    ethAmount: buy ? ethGross : cut(ethGross),
-    tokenAmount: buy ? cut(tokensGross) : tokensGross,
-    price: Number(ethGross) / Number(tokensGross),
-    blockNumber: log.blockNumber,
-    logIndex: log.logIndex,
-    txHash: log.transactionHash,
-  };
-}
-
-const byChain = (a: Pick<Trade, "blockNumber" | "logIndex">, b: Pick<Trade, "blockNumber" | "logIndex">) =>
-  a.blockNumber === b.blockNumber ? a.logIndex - b.logIndex : a.blockNumber < b.blockNumber ? -1 : 1;
-
-/** Every trade of these coins between two blocks: on their curves and in their Pons pools. */
-async function tradesBetween(
-  n: Network,
-  venues: Venue[],
-  wiring: { poolManager: Address; router: Address },
-  from: bigint,
-  to: bigint
-): Promise<Omit<Trade, "timestamp">[]> {
-  if (!venues.length || from > to) return [];
-  const c = clientFor(n);
-  const byCurve = new Map(venues.map((v) => [v.curve.toLowerCase(), v]));
-  const byPool = new Map(venues.map((v) => [v.poolId.toLowerCase(), v]));
-  const chunks = <T,>(xs: T[]) => Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, (i + 1) * CHUNK));
-
-  const curveLogs = (
-    await Promise.all(
-      chunks(venues.map((v) => v.curve)).map((addresses) =>
-        logsOver((a, b) => c.getLogs({ address: addresses, events: [CURVE_BUY, CURVE_SELL], fromBlock: a, toBlock: b }) as Promise<AnyLog[]>, from, to)
-      )
-    )
-  ).flat();
-  const swapLogs = (
-    await Promise.all(
-      chunks(venues.map((v) => v.poolId)).map((ids) =>
-        logsOver((a, b) => c.getLogs({ address: wiring.poolManager, event: SWAP, args: { id: ids }, fromBlock: a, toBlock: b }) as Promise<AnyLog[]>, from, to)
-      )
-    )
-  ).flat();
-  // Pool trades made through SplitEarn name the trader; other apps' only show their router.
-  const traders = new Map<string, Address>();
-  if (swapLogs.length) {
-    const tagged = await logsOver(
-      (a, b) => c.getLogs({ address: wiring.router, event: POOL_TRADE, fromBlock: a, toBlock: b }) as Promise<AnyLog[]>,
-      from,
-      to
-    );
-    for (const t of tagged) if (t.transactionHash) traders.set(t.transactionHash.toLowerCase(), (t.args as { trader: Address }).trader);
-  }
-
-  const out: Omit<Trade, "timestamp">[] = [];
-  for (const log of curveLogs) {
-    const v = byCurve.get(log.address.toLowerCase());
-    const t = v && fromCurveLog(log, v.token);
-    if (t) out.push(t);
-  }
-  for (const log of swapLogs) {
-    const id = ((log as unknown as { topics?: Hex[] }).topics?.[1] ?? (log.args as { id?: Hex }).id ?? "").toLowerCase();
-    const v = byPool.get(id);
-    const t = v && fromSwapLog(log, v, traders);
-    if (t) out.push(t);
-  }
-  return out.sort(byChain);
-}
-
-async function withTimes(n: Network, trades: Omit<Trade, "timestamp">[]): Promise<Trade[]> {
-  const times = await timesOf(n, trades.map((t) => t.blockNumber));
-  return trades.map((t) => ({ ...t, timestamp: times.get(t.blockNumber) ?? 0 }));
-}
-
-const venueOf = (c: Coin): Venue => ({ token: c.token, curve: c.curve, poolId: c.poolId, creatorTaxBps: c.creatorTaxBps });
-
-/** How far back a coin page reads at first (~2 days of Robinhood Chain blocks); older on request. */
-const FIRST_SPAN = 1_800_000n;
+// ------------------------------------------------------------------ trades
 
 /**
  * A coin's trades, oldest first: the latest ~2 days at first, then everything new every few seconds,
@@ -436,14 +312,29 @@ export function useCoinTrades(coin: Coin | null | undefined) {
   stateRef.current = state;
 
   const tick = useCallback(async () => {
-    if (!venue || !wiring || createdBlock === undefined || busy.current) return;
+    if (!venue || createdBlock === undefined || busy.current) return;
     busy.current = true;
     try {
-      const head = await clientFor(n).getBlockNumber();
+      // The server's shared read of the latest ~2 days first; older trades this page already
+      // loaded stay.
+      const shared = await fromServer<CoinTrades>(`trades:${n.id}`, `/api/trades?network=${n.id}&token=${venue.token}`).catch(() => null);
+      if (shared) {
+        setState((s) => {
+          if (!s || s.key !== key) return { key, trades: shared.trades, from: shared.from, to: shared.to };
+          if (shared.to < s.to) return s;
+          const older = s.trades.filter((t) => t.blockNumber < shared.from);
+          return { key, trades: [...older, ...shared.trades], from: s.from < shared.from ? s.from : shared.from, to: shared.to };
+        });
+        setError(null);
+        return;
+      }
+      if (!wiring) return;
+      const c = clientFor(n);
+      const head = await c.getBlockNumber();
       const current = stateRef.current?.key === key ? stateRef.current : null;
       const from = current ? current.to + 1n : head - FIRST_SPAN > createdBlock ? head - FIRST_SPAN : createdBlock;
       if (from > head) return;
-      const fresh = await withTimes(n, await tradesBetween(n, [venue], wiring, from, head));
+      const fresh = await withTimes(c, n.id, await tradesBetween(c, [venue], wiring, from, head));
       setState((s) =>
         s && s.key === key ? { ...s, trades: [...s.trades, ...fresh], to: head } : { key, trades: fresh, from, to: head }
       );
@@ -466,9 +357,10 @@ export function useCoinTrades(coin: Coin | null | undefined) {
     if (!s || s.key !== key || !venue || !wiring || createdBlock === undefined || s.from <= createdBlock) return;
     setLoadingOlder(true);
     try {
+      const c = clientFor(n);
       const to = s.from - 1n;
       const from = to - FIRST_SPAN > createdBlock ? to - FIRST_SPAN : createdBlock;
-      const older = await withTimes(n, await tradesBetween(n, [venue], wiring, from, to));
+      const older = await withTimes(c, n.id, await tradesBetween(c, [venue], wiring, from, to));
       setState((cur) => (cur && cur.key === key ? { ...cur, trades: [...older, ...cur.trades], from } : cur));
     } catch (e) {
       setError(e as Error);
@@ -488,40 +380,22 @@ export function useCoinTrades(coin: Coin | null | undefined) {
 }
 
 /** Recent activity across every coin (~a day): the ticker, trending order and 24h numbers. */
-const ACTIVITY_SPAN = 864_000n;
-
-export type Activity = { trades: (Trade & { symbol: string })[]; tradesByToken: Map<string, number>; volumeByToken: Map<string, bigint> };
-
 export function useActivity() {
   const n = useNetwork();
   const { data: coins } = useCoins();
   const { data: wiring } = useLauncherInfo();
-  const venues = useMemo(() => (coins ?? []).map(venueOf), [coins]);
-  const symbols = useMemo(() => new Map((coins ?? []).map((c) => [c.token.toLowerCase(), c.symbol])), [coins]);
-  const venueKey = venues.map((v) => v.token).join(",");
-  const cache = useRef<{ key: string; to: bigint; trades: Omit<Trade, "timestamp">[] } | null>(null);
+  const venueKey = (coins ?? []).map((c) => c.token).join(",");
+  const cache = useRef<ScanState<Omit<Trade, "timestamp">>>(null);
   return useQuery({
     queryKey: ["activity", n.id, n.launcher, venueKey],
     enabled: Boolean(wiring && coins),
     refetchInterval: 12_000,
     queryFn: async (): Promise<Activity> => {
-      const head = await clientFor(n).getBlockNumber();
-      const floor = head > ACTIVITY_SPAN ? head - ACTIVITY_SPAN : 0n;
-      const key = `${n.id}:${venueKey}`;
-      const prev = cache.current?.key === key ? cache.current : null;
-      const from = prev ? prev.to + 1n : floor;
-      const fresh = await tradesBetween(n, venues, wiring!, from, head);
-      const trades = [...(prev?.trades ?? []), ...fresh].filter((t) => t.blockNumber >= floor);
-      cache.current = { key, to: head, trades };
-      const tradesByToken = new Map<string, number>();
-      const volumeByToken = new Map<string, bigint>();
-      for (const t of trades) {
-        const k = t.token.toLowerCase();
-        tradesByToken.set(k, (tradesByToken.get(k) ?? 0) + 1);
-        volumeByToken.set(k, (volumeByToken.get(k) ?? 0n) + t.ethAmount);
-      }
-      const latest = await withTimes(n, trades.slice(-30).reverse());
-      return { trades: latest.map((t) => ({ ...t, symbol: symbols.get(t.token.toLowerCase()) ?? "" })), tradesByToken, volumeByToken };
+      const shared = await snapshotOf(n).catch(() => null);
+      if (shared?.activity) return shared.activity;
+      const got = await scanActivity(clientFor(n), n.id, coins!, wiring!, cache.current);
+      cache.current = got.state;
+      return got.activity;
     },
   });
 }
@@ -686,13 +560,8 @@ export function useXProfiles(handles: string[], { recheckMisses = false }: { rec
   });
 }
 
+
 // ------------------------------------------------------------------ payouts
-
-const CLAIMED = parseAbiItem("event Claimed(uint64 indexed xId, address indexed to, uint256 amount)");
-/** How far back the payout feed reads (~a week of Robinhood Chain blocks). */
-const PAYOUT_SPAN = 6_000_000n;
-
-export type Payout = { xId: bigint; handle?: string; to: Address; amount: bigint; txHash: Hex; blockNumber: bigint; timestamp: number };
 
 /**
  * Fee payouts: each time an X account claimed its share (FeeVault's Claimed events), newest
@@ -706,31 +575,17 @@ export function usePayouts() {
     for (const c of coins ?? []) c.recipients.forEach((r) => m.set(r.xId.toString(), r.handle));
     return m;
   }, [coins]);
-  const cache = useRef<{ key: string; to: bigint; logs: Omit<Payout, "timestamp" | "handle">[] } | null>(null);
+  const cache = useRef<ScanState<Omit<Payout, "timestamp" | "handle">>>(null);
   const q = useQuery({
     queryKey: ["payouts", n.id, n.feeVault],
     enabled: isLive(n),
     refetchInterval: 30_000,
-    queryFn: async () => {
-      const c = clientFor(n);
-      const head = await c.getBlockNumber();
-      const floor = head > PAYOUT_SPAN ? head - PAYOUT_SPAN : 0n;
-      const key = `${n.id}:${n.feeVault}`;
-      const prev = cache.current?.key === key ? cache.current : null;
-      const from = prev ? prev.to + 1n : floor;
-      const fresh = (await logsOver(
-        (a, b) => c.getLogs({ address: n.feeVault, event: CLAIMED, fromBlock: a, toBlock: b }) as Promise<AnyLog[]>,
-        from,
-        head
-      )) as unknown as { args: { xId: bigint; to: Address; amount: bigint }; transactionHash: Hex; blockNumber: bigint }[];
-      const logs = [
-        ...(prev?.logs ?? []),
-        ...fresh.map((l) => ({ xId: l.args.xId, to: l.args.to, amount: l.args.amount, txHash: l.transactionHash, blockNumber: l.blockNumber })),
-      ];
-      cache.current = { key, to: head, logs };
-      const latest = logs.slice(-20).reverse();
-      const times = await timesOf(n, latest.map((l) => l.blockNumber));
-      return { latest: latest.map((l) => ({ ...l, timestamp: times.get(l.blockNumber) ?? 0 })), total: logs.reduce((s, l) => s + l.amount, 0n), count: logs.length };
+    queryFn: async (): Promise<Payouts> => {
+      const shared = await snapshotOf(n).catch(() => null);
+      if (shared?.payouts) return shared.payouts;
+      const got = await scanPayouts(clientFor(n), n.id, n.feeVault!, cache.current);
+      cache.current = got.state;
+      return got.payouts;
     },
   });
   const data = useMemo(

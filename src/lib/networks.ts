@@ -2,6 +2,7 @@ import { getAddress, type Address, type Chain } from "viem";
 import deployment from "../deployment.json";
 import { robinhood, robinhoodTestnet } from "./chains";
 import copyTerms from "./pons-copy-terms.json";
+import { rpcList } from "./rpc";
 
 /**
  * SplitEarn runs on both Robinhood Chain networks at once; visitors switch between them at the top
@@ -29,8 +30,11 @@ export type Network = {
   id: NetworkId;
   label: string;
   chain: Chain;
-  /** JSON-RPC endpoint; NEXT_PUBLIC_<NETWORK>_RPC_URL overrides it (tests point it at a fork). */
-  rpcUrl: string;
+  /**
+   * JSON-RPC endpoints, tried in order: NEXT_PUBLIC_<NETWORK>_RPC_URL (a comma list, e.g. a paid
+   * provider's domain-restricted URL; tests point it at a fork) and then the public RPC.
+   */
+  rpcUrls: string[];
   explorer: string;
   /** SplitEarn's contracts, once deployed and pinned (src/deployment.json or NEXT_PUBLIC_* variables). */
   launcher?: Address;
@@ -67,7 +71,7 @@ export const NETWORKS: Record<NetworkId, Network> = {
     id: "mainnet",
     label: "Mainnet",
     chain: robinhood,
-    rpcUrl: process.env.NEXT_PUBLIC_MAINNET_RPC_URL || robinhood.rpcUrls.default.http[0],
+    rpcUrls: rpcList(process.env.NEXT_PUBLIC_MAINNET_RPC_URL, robinhood.rpcUrls.default.http[0]),
     explorer: robinhood.blockExplorers!.default.url,
     launcher: address(process.env.NEXT_PUBLIC_MAINNET_LAUNCHER_ADDRESS || committed.mainnet?.launcher),
     feeVault: address(process.env.NEXT_PUBLIC_MAINNET_FEE_VAULT_ADDRESS || committed.mainnet?.feeVault),
@@ -80,7 +84,7 @@ export const NETWORKS: Record<NetworkId, Network> = {
     id: "testnet",
     label: "Testnet",
     chain: robinhoodTestnet,
-    rpcUrl: process.env.NEXT_PUBLIC_TESTNET_RPC_URL || robinhoodTestnet.rpcUrls.default.http[0],
+    rpcUrls: rpcList(process.env.NEXT_PUBLIC_TESTNET_RPC_URL, robinhoodTestnet.rpcUrls.default.http[0]),
     explorer: robinhoodTestnet.blockExplorers!.default.url,
     launcher: address(process.env.NEXT_PUBLIC_TESTNET_LAUNCHER_ADDRESS || committed.testnet?.launcher),
     feeVault: address(process.env.NEXT_PUBLIC_TESTNET_FEE_VAULT_ADDRESS || committed.testnet?.feeVault),

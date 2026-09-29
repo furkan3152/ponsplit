@@ -1,6 +1,5 @@
-import { readFileSync } from "fs";
-import { join } from "path";
 import { ImageResponse } from "next/og";
+import { LOGO_DATA_URL } from "@/lib/logo-svg";
 import { compact, formatEth, pct, progressText } from "@/lib/format";
 import { safeUrl } from "@/lib/metadata";
 import { fetchImageDataUrl } from "@/lib/safe-image";
@@ -27,7 +26,7 @@ export default async function TokenOgImage({ params }: { params: { address: stri
   // Crawlers carry no cookie: look on the default network first, then the other one.
   const found = await fetchCoin(params.address, DEFAULT_NETWORK);
   const t = found?.coin;
-  const logo = `data:image/svg+xml;base64,${readFileSync(join(process.cwd(), "public", "logo.svg")).toString("base64")}`;
+  const logo = LOGO_DATA_URL;
 
   if (!t) {
     return new ImageResponse(

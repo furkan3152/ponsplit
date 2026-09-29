@@ -71,6 +71,9 @@ results.push(
 results.push(await run("api/config", Math.round(REQUESTS / 2), CONCURRENCY, () => get("/api/config")));
 const handles = ["jack", "x", "naval", "elonmusk", "robinhoodapp", "vitalikbuterin"];
 results.push(await run("api/x/resolve", 60, 10, (i) => get(`/api/x/resolve?handles=${handles[i % handles.length]}`)));
+// The shared chain snapshots every page reads (cached by the CDN for a few seconds).
+results.push(await run("api/snapshot", 200, 40, (i) => get(`/api/snapshot?network=${i % 2 ? "testnet" : "mainnet"}`)));
+if (COIN) results.push(await run("api/trades", 100, 20, () => get(`/api/trades?network=mainnet&token=${COIN}`)));
 // Coin share cards render server-side from the chain.
 if (COIN) results.push(await run("coin share card", 40, 10, () => get(`/token/${COIN}/opengraph-image`)));
 
