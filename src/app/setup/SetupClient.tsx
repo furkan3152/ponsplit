@@ -445,7 +445,7 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
   const total = v<bigint>(8);
   // SplitEarn's share that is still in the coins' splitters: it reaches the launcher when a coin's
   // fees are collected (at every claim, or by the owner here before withdrawing).
-  const { data: coins } = useCoins();
+  const { data: coins } = useCoins({ includeHidden: true });
   const uncollected = coins?.reduce((a, c) => a + c.platformPending, 0n);
   // The coins most worth collecting, a bounded number per transaction (each costs gas; dust in many
   // coins must never make one too big for a block). Pressing again collects the next ones.

@@ -88,8 +88,11 @@ function snapshotOf(n: Network): Promise<Snapshot> {
 
 // ------------------------------------------------------------------ coins
 
-/** Every coin on this network, newest first (hidden ones left out). One stable query. */
-export function useCoins() {
+/**
+ * Every coin on this network, newest first (hidden ones left out, unless `includeHidden`: /setup
+ * still collects SplitEarn's share from them). One stable query.
+ */
+export function useCoins({ includeHidden = false }: { includeHidden?: boolean } = {}) {
   const n = useNetwork();
   const live = isLive(n);
   const query = useQuery({
@@ -106,7 +109,7 @@ export function useCoins() {
       }
     },
   });
-  const hidden = useMemo(() => new Set(n.hidden.map((a) => a.toLowerCase())), [n.hidden]);
+  const hidden = useMemo(() => new Set(includeHidden ? [] : n.hidden.map((a) => a.toLowerCase())), [n.hidden, includeHidden]);
   const data = useMemo(() => (hidden.size && query.data ? query.data.filter((c) => !hidden.has(c.token.toLowerCase())) : query.data), [query.data, hidden]);
   return { ...query, data };
 }
