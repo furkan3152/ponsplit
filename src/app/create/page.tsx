@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { bytesToHex, formatEther, formatUnits, parseEther, parseEventLogs, type Hex } from "viem";
-import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useSendTransaction, useSwitchChain, useWriteContract } from "wagmi";
 import { Progress } from "@/components/Progress";
 import { useRiskGate } from "@/components/RiskNotice";
 import { TokenAvatar } from "@/components/TokenAvatar";
@@ -25,6 +25,30 @@ import { MAX_RECIPIENTS, SPLIT_TOTAL_BPS } from "@/lib/split";
 import { useServerConfig } from "@/lib/useServerConfig";
 
 type Row = { handle: string; percent: string };
+
+/** The launch fee payment a launch hasn't used yet (kept per wallet, in case the launch failed after paying). */
+function remember(key: string, hash: Hex) {
+  try {
+    localStorage.setItem(key, hash);
+  } catch {
+    // storage unavailable: a retry after a failed launch pays again
+  }
+}
+function forget(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // storage unavailable
+  }
+}
+function storedFeeTx(key: string): Hex | undefined {
+  try {
+    const v = localStorage.getItem(key);
+    return v && /^0x[0-9a-fA-F]{64}$/.test(v) ? (v as Hex) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /** "12.5" or "12,5" (comma keypads, e.g. an iPhone set to Turkey) → basis points; NaN if invalid. */
 function toBps(percent: string): number {
@@ -133,6 +157,8 @@ export default function CreatePage() {
   const { switchChainAsync } = useSwitchChain();
   const publicClient = usePublicClient({ chainId: n.chain.id });
   const { writeContractAsync } = useWriteContract();
+  const { sendTransactionAsync } = useSendTransaction();
+  const launchFee = n.launchFee?.wei ?? 0n;
   const server = useServerConfig();
   const terms = useLaunchTerms();
   const shownTerms = terms.data;
@@ -245,13 +271,47 @@ export default function CreatePage() {
       const firstBuy = safeParseEther(devBuy) ?? 0n;
       const minTokensOut = firstBuy > 0n ? (simulateLaunch(firstBuy, shownTerms, taxBps).tokens * (10_000n - FIRST_BUY_SLIPPAGE_BPS)) / 10_000n : 0n;
 
+      type Attest = { error?: string; feeCode?: string; xIds: string[]; handles: string[]; deadline: string; attestation: Hex };
+      const attest = async (feeTx?: Hex) => {
+        const res = await fetch("/api/attest", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ network: n.id, creator: address, handles, feeTx }),
+        });
+        return { res, att: (await res.json()) as Attest };
+      };
+
       setStatus("Verifying X accounts…");
-      const res = await fetch("/api/attest", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ network: n.id, creator: address, handles }),
-      });
-      const att = (await res.json()) as { error?: string; xIds: string[]; handles: string[]; deadline: string; attestation: Hex };
+      // SplitEarn's launch fee is a plain ETH payment the server checks before it signs. An unused
+      // earlier payment (a launch that failed after paying) is used again instead of charging twice.
+      const feeKey = `se-launch-fee:${n.id}:${address.toLowerCase()}`;
+      let feeTx = n.launchFee ? storedFeeTx(feeKey) : undefined;
+      let { res, att } = await attest(feeTx);
+      if (res.status === 402 && att.feeCode === "pending" && feeTx) {
+        setStatus("Waiting for the launch fee payment…");
+        const hash = feeTx;
+        const ok = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 }).then((r) => r.status === "success", () => false);
+        if (ok) ({ res, att } = await attest(feeTx));
+      }
+      if (res.status === 402 && n.launchFee) {
+        forget(feeKey);
+        setStatus("Confirm the SplitEarn launch fee in your wallet…");
+        feeTx = await sendTransactionAsync({ to: n.launchFee!.to, value: n.launchFee!.wei, chainId: n.chain.id });
+        remember(feeKey, feeTx);
+        setStatus("Paying the launch fee…");
+        const paid = await publicClient.waitForTransactionReceipt({ hash: feeTx });
+        if (paid.status !== "success") {
+          forget(feeKey);
+          throw new Error("The launch fee payment failed.");
+        }
+        setStatus("Verifying X accounts…");
+        // The server's node can be a moment behind the wallet's.
+        for (let i = 0; i < 6; i++) {
+          ({ res, att } = await attest(feeTx));
+          if (!(res.status === 402 && att.feeCode === "pending")) break;
+          await new Promise((r) => setTimeout(r, 2_000));
+        }
+      }
       if (!res.ok) throw new Error(att.error || "Could not verify X accounts");
 
       setStatus("Confirm in your wallet…");
@@ -284,6 +344,7 @@ export default function CreatePage() {
       const launched = parseEventLogs({ abi: launcherAbi, eventName: "Launched", logs: receipt.logs }).find(
         (l) => l.address.toLowerCase() === n.launcher!.toLowerCase()
       );
+      forget(`se-launch-fee:${n.id}:${address.toLowerCase()}`);
       router.push(launched ? `/token/${launched.args.token}?launched=1` : "/");
     } catch (e) {
       setError(errorMessage(e));
@@ -789,6 +850,12 @@ export default function CreatePage() {
                     <dt className="text-ink-3">pons launch fee</dt>
                     <dd className="text-ink">{shownTerms.ponsLaunchFee > 0n ? `${formatEther(shownTerms.ponsLaunchFee)} ETH` : "free"}</dd>
                   </div>
+                  {launchFee > 0n ? (
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className="text-ink-3">SplitEarn launch fee</dt>
+                      <dd className="text-ink">{formatEther(launchFee)} ETH</dd>
+                    </div>
+                  ) : null}
                   <div className="flex items-baseline justify-between gap-3">
                     <dt className="text-ink-3">First buy</dt>
                     <dd className="text-ink">{firstBuyWei === undefined ? "–" : `${formatEther(firstBuyWei)} ETH`}</dd>
@@ -797,8 +864,8 @@ export default function CreatePage() {
                     <dt className="text-ink-2">You pay</dt>
                     <dd className="text-right">
                       <span className="text-[14px] font-semibold text-ink">
-                        <Flash value={firstBuyWei === undefined ? undefined : shownTerms.ponsLaunchFee + firstBuyWei}>
-                          {firstBuyWei === undefined ? "–" : `${formatEther(shownTerms.ponsLaunchFee + firstBuyWei)} ETH`}
+                        <Flash value={firstBuyWei === undefined ? undefined : shownTerms.ponsLaunchFee + launchFee + firstBuyWei}>
+                          {firstBuyWei === undefined ? "–" : `${formatEther(shownTerms.ponsLaunchFee + launchFee + firstBuyWei)} ETH`}
                         </Flash>
                       </span>{" "}
                       <span className="text-ink-3">+ gas</span>

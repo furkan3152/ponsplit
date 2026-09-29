@@ -31,6 +31,12 @@ const res = await fetch(`${site}/api/attest`, {
   body: JSON.stringify({ network, creator, handles }),
 });
 const att = await res.json().catch(() => ({}));
+if (res.status === 402 && att.feeCode) {
+  // The site charges SplitEarn's launch fee, which this read-only check can't pay: the server
+  // refusing to sign without it is the expected answer.
+  console.log(`✔ ${site} asks for the launch fee before it signs a launch (${att.feeCode}: ${att.error}); launch simulation skipped`);
+  process.exit(0);
+}
 if (!res.ok) throw new Error(`/api/attest answered ${res.status}: ${att.error ?? "no error message"}`);
 console.log(`✔ ${site} attested ${att.handles.map((h, i) => `@${h} → ${att.xIds[i]}`).join(", ")} on ${network}`);
 

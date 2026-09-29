@@ -2,6 +2,7 @@
 
 import { formatEther } from "viem";
 import { useLaunchTerms } from "@/lib/hooks";
+import { useNetwork } from "@/lib/network-context";
 
 const pct = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 3 })}%`;
 
@@ -70,4 +71,16 @@ export function FeeExample() {
 export function LaunchFee() {
   const { terms } = useShares();
   return <span className="num text-ink">{terms ? `${formatEther(terms.ponsLaunchFee)} ETH` : "a small fee in ETH"}</span>;
+}
+
+/** ", SplitEarn's launch fee (… ETH, paid in a separate transaction just before)", when there is one. */
+export function SplitEarnLaunchFee() {
+  const fee = useNetwork().launchFee;
+  if (!fee) return null;
+  return (
+    <>
+      , SplitEarn&apos;s launch fee (<span className="num text-ink">{formatEther(fee.wei)} ETH</span>, about $2, a separate confirmation just
+      before the launch)
+    </>
+  );
 }
