@@ -23,14 +23,21 @@ export default function ExplorePage() {
 function Explore() {
   const params = useSearchParams();
   const [limit, setLimit] = useState(60);
-  const { data: tokens, isLoading, error } = useCoins();
+  const coins = useCoins();
   const activity = useActivity();
+  // This boundary hydrates after the rest of the page, and the shared snapshot can be back by then:
+  // render what the server did (loading) until hydrated, so the two match.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+  const tokens = hydrated ? coins.data : undefined;
+  const isLoading = !hydrated || coins.isLoading;
+  const error = hydrated ? coins.error : null;
   const [query, setQuery] = useState(params.get("q") ?? "");
   useEffect(() => setQuery(params.get("q") ?? ""), [params]);
   const [sort, setSort] = useState<Sort>("trending");
   useNow(15_000);
 
-  const trades24h = activity.data?.tradesByToken;
+  const trades24h = hydrated ? activity.data?.tradesByToken : undefined;
   const king = useMemo(() => {
     const bonding = (tokens ?? []).filter((t) => t.phase === "curve" && t.raised > 0n);
     return bonding.sort((a, b) => b.progress - a.progress)[0];
