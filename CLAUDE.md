@@ -147,7 +147,8 @@ Gotchas:
   `splitearn-coin-images`, connected by Claude). 2026-09-29: the owner added a paid RPC: `NEXT_PUBLIC_MAINNET_RPC_URL`
   (domain-restricted, browsers) and `MAINNET_RPC_URL` (sensitive, server). The Vercel MCP connection
   lost access to the `akdogan1` scope (403), so a push is how Claude redeploys. `vercel.json` skips
-  builds for commits that don't touch the site; put `[deploy]` in a commit message to force one (e.g. after
+  builds for commits that don't touch the site (logic in `scripts/vercel-ignore.sh`: Vercel caps `ignoreCommand`
+  at 256 characters, and a longer one fails every deploy instantly, as 885959f–f2f6c85 did); put `[deploy]` in a commit message to force one (e.g. after
   an env change, since `NEXT_PUBLIC_*` values are baked in at build time). Hobby forbids commercial use, so Pro before launch.
   MAINNET.md has the owner-facing steps.
 - **/setup is owner-only**: `src/lib/admin.ts` + `/api/admin/session`. Admins are `ADMIN_ADDRESSES` plus
