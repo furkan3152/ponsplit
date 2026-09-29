@@ -251,6 +251,6 @@ Gotchas:
   reference: sidebar (`Sidebar.tsx`, folds; `data-sidebar` on `<html>`), top bar with coin search
   (`SearchBox.tsx`), 5-tab bar on phones; home is a centred hero plus bento panels of real chain data
   (`components/home/Bento.tsx`, `usePayouts`, `useTopEarners`); the board moved to `/explore`. The split
-  animation shows real X accounts with real photos (an example set of well-known accounts, labelled as
-  such, until a coin exists). Coin images upload from files (`/api/upload`: Vercel Blob, else Pinata;
+  animation always shows a fixed example set of well-known accounts with real photos, labelled as an example
+  (the owner asked that no coin be featured there). Coin images upload from files (`/api/upload`: Vercel Blob, else Pinata;
   `shrink-image.ts` shrinks photos in the browser).
