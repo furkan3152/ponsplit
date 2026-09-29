@@ -129,7 +129,8 @@ Gotchas:
   SplitLaunchpad `0xB6404ab2d13808eFA3885ff05900aa9d59964cf3`, owner `0x36b1f70cFcA2DB13aA43B0208f6979c5407099b9`.
   Unused by the site; coins launched there stay there.
 - **Vercel** (the owner's choice for production): project `ponsplit` (team scope `akdogan1`), auto-deploys
-  the branch to production. Env: `SIGNER_PRIVATE_KEY` (owner set it), `ADMIN_ADDRESSES` =
+  the branch to production. Domain **splitearn.app** (bought on Vercel by the owner; `www.` redirects
+  to it); `ponsplit.vercel.app` still works. Env: `SIGNER_PRIVATE_KEY` (owner set it), `ADMIN_ADDRESSES` =
   `0xff3a3cfc42d27e85dba9ea85f0bfec34bd632f9a` (the owner's wallet), `BLOB_READ_WRITE_TOKEN` (Blob store
   `splitearn-coin-images`, connected by Claude). Hobby forbids commercial use, so Pro before launch.
   MAINNET.md has the owner-facing steps.
