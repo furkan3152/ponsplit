@@ -590,4 +590,75 @@ describe("SplitEarnLauncher", () => {
       expect((await fx.launcher.getLaunch(fx.alice.address)).launch.token).to.equal(ethers.ZeroAddress);
     });
   });
+  describe("economics", () => {
+    // Every wei the coins' splitters collect ends up either as SplitEarn's share or as some X
+    // account's balance, the accounts' balances add up to exactly what each coin deposited, and
+    // once everyone has claimed and SplitEarn has withdrawn, nothing is left behind anywhere.
+    it("accounts for every wei across two coins, curve and pool, tax and no tax, down to empty contracts", async () => {
+      const fx = await loadFixture(deploy);
+      const ids = { a: 11n, b: 22n, c: 33n };
+      const three = await split(fx, fx.alice.address, { handles: ["a", "b", "c"], xIds: [ids.a, ids.b, ids.c], bps: [3333, 3333, 3334] });
+      const two = await split(fx, fx.bob.address, { handles: ["b", "c"], xIds: [ids.b, ids.c], bps: [9999, 1] });
+      const c1 = await launch(fx, fx.alice, { split: three, tax: 700, firstBuy: E("0.123456789") });
+      const c2 = await launch(fx, fx.bob, { split: two });
+      const t1 = await c1.token.getAddress();
+      const t2 = await c2.token.getAddress();
+      await pastSnipeWindow();
+
+      // Odd-sized curve trades on both coins, then sells back, collecting in between.
+      for (const [i, amt] of ["0.31", "0.0777", "1.0001", "0.5"].entries()) {
+        await c1.curve.connect(fx.trader).buy(E(amt), 0, fx.trader.address, { value: E(amt) });
+        await c2.curve.connect(fx.carol).buy(E(amt), 0, fx.carol.address, { value: E(amt) });
+        if (i % 2) await fx.launcher.connect(fx.carol).collectMany([t1, t2]);
+      }
+      for (const [c, who] of [[c1, fx.trader], [c2, fx.carol]]) {
+        const bal = await c.token.balanceOf(who.address);
+        await c.token.connect(who).approve(await c.curve.getAddress(), bal / 3n);
+        await c.curve.connect(who).sell(bal / 3n, 0, who.address);
+      }
+
+      // Coin 1 graduates and trades in its pool both ways; Pons's keeper sweeps the coin-side fees.
+      await graduate(fx, c1);
+      await fx.router.connect(fx.trader).buy(t1, 0, fx.trader.address, ethers.MaxUint256, { value: E("0.77") });
+      const bal = await c1.token.balanceOf(fx.trader.address);
+      await c1.token.connect(fx.trader).approve(await fx.router.getAddress(), bal);
+      await fx.router.connect(fx.trader).sell(t1, bal / 2n, 0, fx.trader.address, ethers.MaxUint256);
+      await fx.hook.connect(fx.operator).sweepPoolFees((await fx.launcher.launchOf(t1)).poolId, 1, 0);
+      await fx.launcher.collectMany([t1, t2]);
+
+      // Nothing left to collect, and every collected wei is either SplitEarn's or the accounts'.
+      for (const c of [c1, c2]) expect(await c.splitter.pendingFees()).to.equal(0);
+      const collected = (await c1.splitter.totalCollected()) + (await c2.splitter.totalCollected());
+      const platform = await fx.launcher.platformFees();
+      const f1 = await fx.vault.tokenFees(t1);
+      const f2 = await fx.vault.tokenFees(t2);
+      expect(platform + f1 + f2).to.equal(collected);
+      // SplitEarn's cut is its snapshotted share of each coin's collections (rounded down), no more.
+      const p1 = (await c1.splitter.totalCollected()) - f1;
+      const p2 = (await c2.splitter.totalCollected()) - f2;
+      expect(p2).to.be.closeTo(((await c2.splitter.totalCollected()) * 2000n) / BPS, 10n);
+      expect(p1).to.be.closeTo(((await c1.splitter.totalCollected()) * (await c1.splitter.platformBps())) / BPS, 10n);
+      expect(await c1.splitter.platformBps()).to.be.lt(2000n); // the tax lowers SplitEarn's share of the whole
+
+      // The accounts' balances add up to exactly what the coins deposited: no dust lost or invented.
+      const owed = {};
+      for (const [k, id] of Object.entries(ids)) owed[k] = await fx.vault.claimable(id);
+      expect(owed.a + owed.b + owed.c).to.equal(f1 + f2);
+      expect(await ethers.provider.getBalance(await fx.vault.getAddress())).to.equal(f1 + f2);
+      expect(await ethers.provider.getBalance(await fx.launcher.getAddress())).to.equal(platform);
+
+      // Everyone takes their money out; every contract ends empty.
+      const deadline = BigInt((await time.latest()) + 600);
+      for (const [k, id] of Object.entries(ids)) {
+        const sig = await signClaim(fx.vault, fx.signer, id, fx.carol.address, deadline);
+        expect(await received(fx.carol, () => fx.vault.connect(fx.alice).claim(id, fx.carol.address, deadline, sig))).to.equal(owed[k]);
+      }
+      expect(await received(fx.bob, () => fx.launcher.withdrawPlatformFees(fx.bob.address))).to.equal(platform);
+      expect(await ethers.provider.getBalance(await fx.vault.getAddress())).to.equal(0);
+      expect(await ethers.provider.getBalance(await fx.launcher.getAddress())).to.equal(0);
+      for (const c of [c1, c2]) expect(await ethers.provider.getBalance(await c.splitter.getAddress())).to.equal(0);
+      expect(await ethers.provider.getBalance(await fx.router.getAddress())).to.equal(0);
+      console.log(`      ${ethers.formatEther(collected)} ETH collected: ${ethers.formatEther(platform)} SplitEarn, ${ethers.formatEther(f1 + f2)} X accounts`);
+    });
+  });
 });
