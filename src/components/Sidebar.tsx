@@ -41,7 +41,6 @@ export function Sidebar() {
       // storage unavailable: the choice lasts for this page only
     }
   };
-  const items = NAV;
 
   return (
     <aside
