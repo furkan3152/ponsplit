@@ -10,8 +10,8 @@ on:
         description: Site URL
         default: https://splitearn.app
       coin:
-        description: A coin address for the coin page (optional)
-        default: "0xD28B1b11937E744f878fd4793b8539e960DB020f"
+        description: A listed coin's address for the coin page (optional)
+        default: ""
       rpc:
         description: RPC to burst (the one browsers use)
         default: https://rpc.mainnet.chain.robinhood.com
