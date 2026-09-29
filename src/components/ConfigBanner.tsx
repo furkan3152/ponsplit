@@ -34,7 +34,8 @@ export function ConfigBanner() {
   // Only a successful read of empty code means the pinned contract isn't there.
   const missing = !live || (isSuccess && (!code || code === "0x"));
   if (!missing || pathname === "/setup") return null;
-  const other = NETWORKS[otherNetwork(n.id)];
+  const otherId = otherNetwork(n.id);
+  const other = otherId ? NETWORKS[otherId] : null;
   return (
     <div className="relative overflow-hidden border-b border-line bg-[color-mix(in_oklab,var(--sun)_13%,var(--paper))] px-4 py-2">
       {/* hazard tape at both ends */}
@@ -53,7 +54,7 @@ export function ConfigBanner() {
           <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-sun shadow-[0_0_10px_var(--sun)]" aria-hidden />
           <span>SplitEarn isn&apos;t live on {n.label.toLowerCase()} yet.</span>
         </span>
-        {isLive(other) ? (
+        {other && isLive(other) ? (
           <button
             type="button"
             onClick={() => switchTo(other.id)}

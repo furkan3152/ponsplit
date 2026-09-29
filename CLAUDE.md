@@ -8,7 +8,10 @@ phone and can't edit environments by hand. Keep instructions to taps and copy/pa
 SplitEarn is a launchpad on **pons** (ponsfamily.com, Robinhood Chain) where a coin's creator fees are
 split between up to 10 X (Twitter) accounts. The site is not affiliated with pons, and says so.
 
-- **Two networks at once.** A Main / Test switch at the top of every page picks the network (cookie
+- **Mainnet only on the public site (owner's call, 2026-09-29).** `TESTNET_ENABLED` in `networks.ts` is off unless
+  `NEXT_PUBLIC_ENABLE_TESTNET=1` or `NEXT_PUBLIC_DEFAULT_NETWORK=testnet` (the testnet fork e2e sets the latter): no switch,
+  no testnet chain in wallets, `?network=testnet` stays on mainnet. The two-network code below remains for the tests.
+- **Two networks (code).** A Main / Test switch at the top of every page picks the network (cookie
   `pe-network`, `?network=` links set it via `src/middleware.ts`; `src/lib/networks.ts`,
   `network-context.tsx`). Mainnet chainId 4663, testnet 46630. RPCs:
   `https://rpc.mainnet.chain.robinhood.com`, `https://rpc.testnet.chain.robinhood.com`.

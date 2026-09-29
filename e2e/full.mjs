@@ -186,14 +186,24 @@ try {
   await claimer.screenshot({ path: `${OUT}/03-claim-${NETWORK}.png`, fullPage: true });
   step("the claim page shows @jack's balance and a proof post for the connected wallet");
 
-  // ── 8. The network switch at the top reloads the site on the other network ────────────────
-  const other = NETWORK === "testnet" ? "mainnet" : "testnet";
-  await claimer.goto(`${BASE}/`);
-  await claimer.getByRole("radio", { name: other === "testnet" ? /Test/ : /Main/ }).click();
-  await claimer.getByText(`SplitEarn isn't live on ${other} yet.`).waitFor({ timeout: 60_000 });
-  const cookie = (await claimer.context().cookies()).find((c) => c.name === "pe-network");
-  if (cookie?.value !== other) fail(`the switch left the network cookie at ${cookie?.value}`);
-  step(`the header switch moves the whole site to ${other}`);
+  // ── 8. Networks: the public site is mainnet only; testnet exists only for these fork tests ──
+  if (NETWORK === "mainnet") {
+    // No switch, and neither a testnet link nor a stale cookie can move a visitor off mainnet.
+    await claimer.goto(`${BASE}/?network=testnet`);
+    await claimer.getByRole("heading", { name: /Route coin fees/ }).waitFor({ timeout: 60_000 });
+    if (await claimer.getByRole("radiogroup", { name: "Network" }).count()) fail("the site still offers a network switch");
+    const badge = await claimer.getByText(/on Robinhood Chain/i).first().innerText();
+    if (!/^Live on/i.test(badge.trim())) fail(`a testnet link moved the site off mainnet: "${badge}"`);
+    step("the site is mainnet only: no switch, and ?network=testnet stays on mainnet");
+  } else {
+    // Testnet is on for this run (NEXT_PUBLIC_DEFAULT_NETWORK=testnet): the switch still reloads the site.
+    await claimer.goto(`${BASE}/`);
+    await claimer.getByRole("radio", { name: /Main/ }).click();
+    await claimer.getByText("SplitEarn isn't live on mainnet yet.").waitFor({ timeout: 60_000 });
+    const cookie = (await claimer.context().cookies()).find((c) => c.name === "pe-network");
+    if (cookie?.value !== "mainnet") fail(`the switch left the network cookie at ${cookie?.value}`);
+    step("with testnet on (fork tests only), the header switch moves the whole site to mainnet");
+  }
 
   // ── 9. Every page on desktop, mobile and in the light theme ──────────────────────────────
   const pages = ["/", "/explore", "/create", tokenUrl.replace(BASE, ""), "/claim", "/me", "/how", "/setup", "/does-not-exist"];

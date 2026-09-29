@@ -98,7 +98,8 @@ export function SplitCard({ t }: { t: Coin }) {
       <ul className="mt-3 divide-y divide-line">
         {t.handles.map((h, i) => {
           const bps = t.recipients[i]?.bps ?? 0;
-          const fromToken = (t.accountsEarned * BigInt(bps)) / BPS;
+          // Paid into the vault so far, like the headline; what is still on its way is said above.
+          const fromToken = (t.feesSplit * BigInt(bps)) / BPS;
           const check = checks[i];
           return (
             <li key={`${h}:${i}`} className="flex items-center gap-3 py-3 last:pb-0">

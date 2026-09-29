@@ -7,7 +7,7 @@ import {
   walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets";
 import { robinhood, robinhoodTestnet } from "./chains";
-import { NETWORKS } from "./networks";
+import { NETWORKS, TESTNET_ENABLED } from "./networks";
 import { rpcTransport } from "./rpc";
 
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
@@ -26,7 +26,8 @@ export const wagmiConfig = getDefaultConfig({
   appName: "SplitEarn",
   // A placeholder id still lets browser wallets connect; WalletConnect needs a real one.
   projectId: projectId || "00000000000000000000000000000000",
-  chains: [robinhood, robinhoodTestnet],
+  // Testnet only while it's enabled (the fork tests); the public site offers wallets mainnet alone.
+  chains: TESTNET_ENABLED ? [robinhood, robinhoodTestnet] : [robinhood],
   // Batch concurrent reads into one JSON-RPC request; fall back to the next RPC if one fails.
   transports: {
     [robinhood.id]: rpcTransport(NETWORKS.mainnet.rpcUrls, { batch: { batchSize: 50 } }),
