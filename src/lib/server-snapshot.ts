@@ -28,10 +28,10 @@ import type { Coin, Trade } from "./types";
  * most once per FRESH_MS per server instance (concurrent requests share one read), and log scans
  * continue from where the last one stopped. The CDN in front caches the answers on top of that.
  */
-const FRESH_MS = 2_000;
+const FRESH_MS = 5_000;
 
 /** For the CDN: shared answers are kept a few seconds (browsers themselves don't cache them). */
-export const CDN_CACHE = "public, max-age=0, s-maxage=4, stale-while-revalidate=10";
+export const CDN_CACHE = "public, max-age=0, s-maxage=10, stale-while-revalidate=20";
 
 type Memo<T> = { at: number; value?: T; inflight?: Promise<T> };
 
