@@ -205,10 +205,10 @@ try {
       { Claim: [{ name: "xId", type: "uint64" }, { name: "to", type: "address" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" }] },
       { xId: IDS[0], to: B, nonce: await vault.nonces(IDS[0]), deadline }
     );
-    const before = await provider.getBalance(B);
-    // Sent by another wallet, so B's balance changes by exactly the payout.
-    await (await vault.connect(await provider.getSigner(C)).claim(IDS[0], B, deadline, signature)).wait();
-    const got = (await provider.getBalance(B)) - before;
+    // Sent by another wallet, so B's balance changes by exactly the payout. Read at the blocks around
+    // the claim (ethers briefly caches identical "latest" reads, which would hide the change).
+    const receipt = await (await vault.connect(await provider.getSigner(C)).claim(IDS[0], B, deadline, signature)).wait();
+    const got = (await provider.getBalance(B, receipt.blockNumber)) - (await provider.getBalance(B, receipt.blockNumber - 1));
     if (got !== owed || owed === 0n) fail(`@jack's payout: expected ${owed}, B received ${got}`);
     if ((await vault.claimable(IDS[0])) !== 0n) fail("@jack still has a balance after claiming");
     step(`@jack claimed ${ethers.formatEther(got)} ETH to wallet ${B.slice(0, 8)} (the vault paid exactly the balance)`);
