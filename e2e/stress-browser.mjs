@@ -47,7 +47,10 @@ const visit = async (i) => {
     await page.locator(route.ready()).first().waitFor({ timeout: 60_000 });
     usable = Date.now() - t0;
     // Chain data: the page stops showing loading skeletons (or the coin's numbers appear).
-    await page.waitForFunction(() => document.querySelectorAll(".animate-pulse").length === 0, null, { timeout: 45_000 }).catch(() => {});
+    // (Tiny pulsing marks, like the lookup's text cursor, are decoration, not loading placeholders.)
+    await page
+      .waitForFunction(() => [...document.querySelectorAll(".animate-pulse")].every((el) => el.getBoundingClientRect().width < 12), null, { timeout: 45_000 })
+      .catch(() => {});
     dataMs = Date.now() - t0;
     await page.waitForTimeout(4000);
   } catch (e) {
@@ -55,11 +58,13 @@ const visit = async (i) => {
   }
   const blocked = await page.evaluate(() => Math.round(window.__blocked)).catch(() => -1);
   const overflow = await page.evaluate((w) => document.documentElement.scrollWidth - w, mobile ? 390 : 1440).catch(() => 0);
-  const stillLoading = await page.locator(".animate-pulse").count().catch(() => -1);
+  const stillLoading = await page
+    .evaluate(() => [...document.querySelectorAll(".animate-pulse")].filter((el) => el.getBoundingClientRect().width >= 12).length)
+    .catch(() => -1);
   // Which skeletons never went away (their nearest labelled section), to tell a stuck read from a design choice.
   const stuck = await page
     .evaluate(() =>
-      [...document.querySelectorAll(".animate-pulse")].map((el) => {
+      [...document.querySelectorAll(".animate-pulse")].filter((el) => el.getBoundingClientRect().width >= 12).map((el) => {
         const box = el.closest("section, [aria-label], main > *");
         return `${el.className.split(" ").slice(0, 3).join(".")} in ${box?.getAttribute("aria-label") || box?.querySelector("h1,h2,h3,.eyebrow")?.textContent?.slice(0, 40) || box?.tagName}`;
       })

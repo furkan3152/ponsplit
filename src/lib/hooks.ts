@@ -119,6 +119,11 @@ export function useCoin(token: Address | undefined) {
     enabled: Boolean(isLive(n) && token),
     refetchInterval: 5_000,
     queryFn: async () => {
+      if (isHidden(n, token!)) return null;
+      // The shared snapshot has every coin; one launched a moment ago may not be in it yet.
+      const shared = await snapshotOf(n).catch(() => null);
+      const hit = shared?.coins.find((c) => c.token.toLowerCase() === token!.toLowerCase());
+      if (hit) return hit;
       const v = await clientFor(n).readContract({ address: n.launcher!, abi: launcherAbi, functionName: "getLaunch", args: [token!] });
       if (v.launch.token === zeroAddress) return null;
       if (isHidden(n, token!)) return null;
