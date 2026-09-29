@@ -56,8 +56,17 @@ const visit = async (i) => {
   const blocked = await page.evaluate(() => Math.round(window.__blocked)).catch(() => -1);
   const overflow = await page.evaluate((w) => document.documentElement.scrollWidth - w, mobile ? 390 : 1440).catch(() => 0);
   const stillLoading = await page.locator(".animate-pulse").count().catch(() => -1);
+  // Which skeletons never went away (their nearest labelled section), to tell a stuck read from a design choice.
+  const stuck = await page
+    .evaluate(() =>
+      [...document.querySelectorAll(".animate-pulse")].map((el) => {
+        const box = el.closest("section, [aria-label], main > *");
+        return `${el.className.split(" ").slice(0, 3).join(".")} in ${box?.getAttribute("aria-label") || box?.querySelector("h1,h2,h3,.eyebrow")?.textContent?.slice(0, 40) || box?.tagName}`;
+      })
+    )
+    .catch(() => []);
   await ctx.close();
-  return { i, route: route.path, network, device: mobile ? "phone" : "desktop", usable, dataMs, blocked, overflow, stillLoading, errors, failedRequests };
+  return { i, route: route.path, network, device: mobile ? "phone" : "desktop", usable, dataMs, blocked, overflow, stillLoading, stuck, errors, failedRequests };
 };
 
 const started = Date.now();
@@ -69,6 +78,7 @@ for (const r of results) {
     `${r.errors.length || r.failedRequests.length ? "✘" : "✔"} ${r.device.padEnd(7)} ${r.network.padEnd(7)} ${r.route.padEnd(14).slice(0, 14)} usable ${r.usable ?? "-"} ms · data ${r.dataMs ?? "-"} ms · main thread blocked ${r.blocked} ms · skeletons left ${r.stillLoading}${r.overflow > 0 ? ` · OVERFLOW ${r.overflow}px` : ""}`
   );
   for (const e of r.errors) console.log(`    page error: ${e}`);
+  for (const s of r.stuck) console.log(`    still loading: ${s}`);
   for (const f of r.failedRequests.slice(0, 5)) console.log(`    request: ${f}`);
 }
 const ok = results.filter((r) => r.usable !== null);

@@ -101,6 +101,18 @@ Gotchas:
   selectors; `block.number` in contracts is the parent chain's (L2 number comes from ArbSys).
 - `pkill -f "[h]ardhat node"` kills your own shell if the same command line mentions that text
   again. Run pkill as its own command.
+- The owner's wallet `0xff3a…` is EIP-7702 delegated: it receives ETH on the real chain, but Hardhat
+  forks can't run its code, so transfers to it fail on forks (a fork artifact, not a bug).
+- CI's e2e blanks `src/deployment.json` first ("Unpin the live deployment"), since the repo pins the live
+  contracts and the forks need fresh ones.
+- **Load and RPC.** Shared chain reads (coin list, 24h activity, payouts, a coin's trades) come from
+  `/api/snapshot` and `/api/trades` (`src/lib/server-snapshot.ts`, logic in `chain-reads.ts`), cached
+  by the CDN for ~4 s, so a crowd costs the RPC one read. Browsers fall back to reading the chain
+  themselves if the server can't answer. RPCs: `NEXT_PUBLIC_<NET>_RPC_URL` (comma list, public, e.g. a
+  domain-restricted paid key) and server-only `<NET>_RPC_URL`, each with the public RPC as a viem
+  `fallback` (`src/lib/rpc.ts`; a localhost URL is used alone). `stress.yml` load-tests the live site.
+- Vercel functions don't ship `public/`: server-rendered images take the logo from `src/lib/logo-svg.ts`
+  (written by `scripts/render-logo.mjs`).
 - Cloud containers can often only reach GitHub (and npm). To reach the chain, fxtwitter or any web
   page, run the `chain.yml` (script against a network or a fork), `fetch.yml` (URLs) or `probe.yml`
   workflows and read their logs.
