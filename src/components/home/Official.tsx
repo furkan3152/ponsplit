@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useReadContracts } from "wagmi";
 import { LogoMark } from "@/components/art";
 import { ArrowIcon, XLogo } from "@/components/icons";
 import { TokenAvatar } from "@/components/TokenAvatar";
-import { OFFICIAL_TOKEN, X_HANDLE, X_URL } from "@/lib/brand";
+import { OFFICIAL_TOKEN, X_HANDLE, X_URL, isOfficial } from "@/lib/brand";
 import { safeUrl } from "@/lib/metadata";
-import { useCoin } from "@/lib/hooks";
+import { ponsTokenAbi } from "@/lib/abi";
+import { useCoins } from "@/lib/hooks";
+import { useNetwork } from "@/lib/network-context";
 
 /** Follow SplitEarn on X: a small sticker button. */
 export function FollowX({ className = "" }: { className?: string }) {
@@ -29,10 +32,24 @@ export function FollowX({ className = "" }: { className?: string }) {
 /**
  * The official SplitEarn token on the home page: its contract address (CA) with a copy button once
  * it's launched, "coming soon" until then, and SplitEarn's X account, the one other place that
- * posts it.
+ * posts it. The token may be a SplitEarn coin (traded here) or one launched on pons directly (read
+ * from the token itself, traded on pons).
  */
 export function OfficialToken() {
-  const { data: coin } = useCoin(OFFICIAL_TOKEN);
+  const n = useNetwork();
+  const { data: coins } = useCoins();
+  const coin = coins?.find((c) => isOfficial(c.token));
+  const { data: meta } = useReadContracts({
+    contracts: OFFICIAL_TOKEN
+      ? (["symbol", "logo"] as const).map((functionName) => ({ address: OFFICIAL_TOKEN!, abi: ponsTokenAbi, functionName, chainId: n.chain.id }))
+      : [],
+    allowFailure: true,
+    query: { enabled: Boolean(OFFICIAL_TOKEN) && coins !== undefined && !coin, staleTime: Infinity },
+  });
+  const symbol = coin?.symbol ?? (meta?.[0]?.status === "success" ? String(meta[0].result) : undefined);
+  const logo = coin?.logo ?? (meta?.[1]?.status === "success" ? String(meta[1].result) : undefined);
+  // not a SplitEarn coin: trade it on pons
+  const onPons = Boolean(OFFICIAL_TOKEN) && coins !== undefined && !coin;
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     if (!OFFICIAL_TOKEN) return;
@@ -49,8 +66,8 @@ export function OfficialToken() {
       {/* a lime corner glow, like the stickers' shine */}
       <span aria-hidden className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-lime opacity-[0.08] blur-2xl" />
       <div className="flex flex-wrap items-center gap-3">
-        {coin ? (
-          <TokenAvatar src={safeUrl(coin.logo)} seed={coin.token} size={44} className="rounded-2xl" />
+        {logo && OFFICIAL_TOKEN ? (
+          <TokenAvatar src={safeUrl(logo)} seed={OFFICIAL_TOKEN} size={44} className="rounded-2xl" />
         ) : (
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-card-2">
             <LogoMark size={34} />
@@ -58,7 +75,7 @@ export function OfficialToken() {
         )}
         <div className="min-w-0 flex-1">
           <div className="eyebrow">Official token</div>
-          <div className="display truncate text-[22px] leading-tight">{coin ? `$${coin.symbol}` : "SplitEarn"}</div>
+          <div className="display truncate text-[22px] leading-tight">{symbol ? `$${symbol}` : "SplitEarn"}</div>
         </div>
         <FollowX />
       </div>
@@ -90,7 +107,16 @@ export function OfficialToken() {
         <p className="text-[12.5px] leading-relaxed text-ink-3">
           The only official address is the one shown here and posted by @{X_HANDLE} on X. Anything else is not us.
         </p>
-        {OFFICIAL_TOKEN ? (
+        {onPons ? (
+          <a
+            href={`https://ponsfamily.com/launchpad/${OFFICIAL_TOKEN}`}
+            target="_blank"
+            rel="noreferrer"
+            className="group/l inline-flex shrink-0 items-center gap-1 text-[13px] font-semibold text-ink"
+          >
+            Trade it on pons ↗
+          </a>
+        ) : coin ? (
           <Link href={`/token/${OFFICIAL_TOKEN}`} className="group/l inline-flex shrink-0 items-center gap-1 text-[13px] font-semibold text-ink">
             Trade it
             <ArrowIcon size={14} className="transition-transform group-hover/l:translate-x-0.5" />
