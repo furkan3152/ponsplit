@@ -244,7 +244,7 @@ try {
   }
 
   // ── 9. Every page on desktop, mobile and in the light theme ──────────────────────────────
-  const pages = ["/", "/explore", "/create", tokenUrl.replace(BASE, ""), "/claim", "/me", "/how", "/setup", "/does-not-exist"];
+  const pages = ["/", "/explore", "/create", tokenUrl.replace(BASE, ""), "/claim", "/me", "/how", "/docs", "/setup", "/does-not-exist"];
   for (const [label, opts] of [
     ["desktop", { viewport: { width: 1280, height: 900 } }],
     ["mobile", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }],
