@@ -7,7 +7,7 @@
 //
 // OWNER checks who owns the contracts (the wallet that deployed them from /setup); SIGNER checks
 // the FeeVault trusts the site's signing key (its address is public: /api/config shows it).
-import { createPublicClient, formatEther, getAddress, http, isAddressEqual, parseAbi } from "viem";
+import { createPublicClient, formatEther, getAddress, http, isAddressEqual } from "viem";
 import { feeVaultAbi, launcherAbi, ponsFactoryAbi } from "../src/lib/abi.ts";
 
 const NETWORKS = {
@@ -58,15 +58,11 @@ console.log(`  launcher owner         ${lOwner}${/^0x0+$/.test(lPending) ? "" : 
 if (owner) check(isAddressEqual(vOwner, owner) && isAddressEqual(lOwner, owner), `both are owned by ${owner}`);
 if (!net.pons && owner) check(isAddressEqual(await f("owner"), owner), `the pons copy is owned by ${owner}`);
 
-// The first fields every launcher version returns; SplitEarn's own launch fee (newer launchers) is read on its own.
-const termsV1 = parseAbi(["function launchTerms() view returns (uint256, uint16, uint256, uint256, bytes32, uint256, bool, bool)"]);
-const [version, share, configId, launchFee, , maxTax, canLaunch, paused] = await client.readContract({ address: launcher, abi: termsV1, functionName: "launchTerms" });
-const splitEarnFee = await l("creationFee").catch(() => null);
+const [version, share, configId, launchFee, , maxTax, canLaunch, paused] = await l("launchTerms");
 const [count, platformFees, totalPlatformFees] = await Promise.all([l("launchCount"), l("platformFees"), l("totalPlatformFees")]);
 const [claimsPaused, totalDeposited] = await Promise.all([v("claimsPaused"), v("totalDeposited")]);
 console.log(`  terms                  version ${version}, SplitEarn ${share / 100}% of the creator fee, pons config ${configId}, max creator tax ${Number(maxTax) / 100}%`);
 console.log(`  pons launch fee        ${formatEther(launchFee)} ETH`);
-console.log(`  SplitEarn launch fee   ${splitEarnFee === null ? "none (older launcher)" : `${formatEther(splitEarnFee)} ETH`}`);
 console.log(`  coins                  ${count}`);
 console.log(`  split to X accounts    ${formatEther(totalDeposited)} ETH`);
 console.log(`  SplitEarn's share       ${formatEther(platformFees)} ETH to withdraw, ${formatEther(totalPlatformFees)} ETH in all`);
