@@ -160,6 +160,12 @@ jobs:
           (cd ../e2e && node prepare-fork.mjs)
       - name: Point the site's ${{ matrix.network }} at the fork
         run: echo "NEXT_PUBLIC_$(echo "$NETWORK" | tr a-z A-Z)_RPC_URL=http://127.0.0.1:8545" >> "$GITHUB_ENV"
+      # The repo pins the live deployments; the e2e deploys its own on the fork, so it starts unpinned
+      # (the rebuild below pins the fork's addresses through NEXT_PUBLIC_* variables).
+      - name: Unpin the live deployment
+        run: |
+          node -e 'const f="src/deployment.json";const d=require("./"+f);for(const n of Object.keys(d)){for(const k of ["launcher","feeVault","ponsFactory","deployedAt"]) if(k in d[n]) d[n][k]="";d[n].hidden=[]}require("fs").writeFileSync(f,JSON.stringify(d,null,2)+"\n")'
+          cat src/deployment.json
       - run: npx next build
       - name: Deploy everything from the owner's wallet through /setup
         run: |
