@@ -6,9 +6,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useNetwork } from "@/lib/network-context";
 import { SIDEBAR_KEY } from "@/lib/theme";
-import { useAdminSession } from "@/lib/useAdmin";
 import { LogoMark, TokenSticker } from "./art";
-import { BookIcon, ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, ShieldIcon, WalletIcon, XLogo } from "./icons";
+import { BookIcon, ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, WalletIcon, XLogo } from "./icons";
 import { X_HANDLE, X_URL } from "@/lib/brand";
 
 export const NAV = [
@@ -26,11 +25,9 @@ export const isActive = (pathname: string, href: string) => (href === "/" ? path
 /**
  * The desktop sidebar (lg and up): the brand, the pages, and the connected wallet at the bottom.
  * It folds to icons; the choice is remembered and restored before paint (THEME_SCRIPT).
- * Setup appears only for a signed-in admin.
  */
 export function Sidebar() {
   const pathname = usePathname();
-  const admin = useAdminSession();
   const [folded, setFolded] = useState(false);
   useEffect(() => setFolded(document.documentElement.getAttribute("data-sidebar") === "folded"), []);
   const toggle = () => {
@@ -44,7 +41,7 @@ export function Sidebar() {
       // storage unavailable: the choice lasts for this page only
     }
   };
-  const items = admin?.admin ? [...NAV, { href: "/setup", label: "Setup", Icon: ShieldIcon }] : NAV;
+  const items = NAV;
 
   return (
     <aside
@@ -69,7 +66,7 @@ export function Sidebar() {
       </div>
 
       <nav className="mt-4 flex flex-col gap-1 px-3">
-        {items.map(({ href, label, Icon }) => {
+        {NAV.map(({ href, label, Icon }) => {
           const active = isActive(pathname, href);
           return (
             <Link

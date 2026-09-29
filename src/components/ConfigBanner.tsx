@@ -1,12 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useBytecode } from "wagmi";
 import { useNetwork, useSwitchNetwork } from "@/lib/network-context";
 import { NETWORKS, isLive, otherNetwork } from "@/lib/networks";
 
-/** Nudges to /setup until SplitEarn is live on the network being browsed, and says when its RPC is down. */
+/** Says when SplitEarn isn't live on the network being browsed, and when its RPC is down. */
 export function ConfigBanner() {
   const pathname = usePathname();
   const n = useNetwork();
@@ -63,12 +62,6 @@ export function ConfigBanner() {
             Go to {other.label.toLowerCase()} →
           </button>
         ) : null}
-        <Link
-          href="/setup"
-          className="inline-flex items-center gap-1 rounded-full bg-sun px-2.5 py-0.5 text-[12px] font-semibold text-[var(--lime-ink)] shadow-[inset_0_-1.5px_0_rgba(0,0,0,0.18)] transition-transform duration-300 hover:translate-x-0.5"
-        >
-          Set it up →
-        </Link>
       </span>
     </div>
   );

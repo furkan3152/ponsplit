@@ -836,11 +836,7 @@ export default function CreatePage() {
                 <p className="flex items-start gap-2.5 rounded-2xl bg-card-2 px-4 py-3 text-[13px] text-ink-2">
                   <AlertIcon />
                   <span>
-                    SplitEarn isn&apos;t live on {n.label.toLowerCase()} yet.{" "}
-                    <Link href="/setup" className="font-medium text-ink underline">
-                      Set it up
-                    </Link>{" "}
-                    or switch networks at the top.
+                    SplitEarn isn&apos;t live on {n.label.toLowerCase()} yet.
                   </span>
                 </p>
               ) : null}
