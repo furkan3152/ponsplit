@@ -6,9 +6,9 @@ import {
   rainbowWallet,
   walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets";
-import { http } from "wagmi";
 import { robinhood, robinhoodTestnet } from "./chains";
 import { NETWORKS } from "./networks";
+import { rpcTransport } from "./rpc";
 
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 // On phones RainbowKit's MetaMask option opens the app through the MetaMask SDK, which needs no
@@ -27,10 +27,10 @@ export const wagmiConfig = getDefaultConfig({
   // A placeholder id still lets browser wallets connect; WalletConnect needs a real one.
   projectId: projectId || "00000000000000000000000000000000",
   chains: [robinhood, robinhoodTestnet],
-  // Batch concurrent reads into one JSON-RPC request.
+  // Batch concurrent reads into one JSON-RPC request; fall back to the next RPC if one fails.
   transports: {
-    [robinhood.id]: http(NETWORKS.mainnet.rpcUrl, { batch: { batchSize: 50 } }),
-    [robinhoodTestnet.id]: http(NETWORKS.testnet.rpcUrl, { batch: { batchSize: 50 } }),
+    [robinhood.id]: rpcTransport(NETWORKS.mainnet.rpcUrls, { batch: { batchSize: 50 } }),
+    [robinhoodTestnet.id]: rpcTransport(NETWORKS.testnet.rpcUrls, { batch: { batchSize: 50 } }),
   },
   // Wallets that can add a custom EVM chain such as Robinhood Chain. Without a WalletConnect
   // project id, options that would open a broken QR code or deep link are left out: what remains
