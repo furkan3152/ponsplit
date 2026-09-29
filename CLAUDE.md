@@ -27,7 +27,12 @@ split between up to 10 X (Twitter) accounts. The site is not affiliated with pon
   (`platformShareBps`, max 30%, set by the owner on /setup for new coins; still 20% on 2026-09-29, the owner was weighing 10-30%) and
   the rest to the X accounts; the optional creator tax (0-10%, chosen
   at launch, default 0) goes 100% to the accounts. Each coin snapshots `platformBps`. A SplitEarn launch fee (~$1) was built
-  and then dropped by the owner (2026-09-29): the live v1 contracts stay, no redeploy. FeeVault keys
+  into the contracts and then dropped by the owner (2026-09-29): the live v1 contracts stay, no redeploy.
+  Instead (owner, 2026-09-29, "kontratsız"): a **~$2 launch fee without contracts** (`launchFee` in `src/deployment.json`,
+  0.00073 ETH to the owner's wallet; env `NEXT_PUBLIC_LAUNCH_FEE_ETH`/`_TO` override it, as the e2e does). /create sends it as a
+  plain ETH transfer first; `/api/attest` (`src/lib/launch-fee.ts`) signs only for a successful payment from the creator
+  with no `Launched` by that creator since (one payment per launch; ≤ 900k blocks old). Limit: an attestation lives 30 min,
+  so someone calling the contract directly could launch more than once on one payment within that window. FeeVault keys
   balances by the permanent numeric X user id. Claims use `collectAndClaim` to collect first.
 - **Signing.** One server key (both networks) signs EIP-712 messages, domain
   `SplitEarn FeeVault` v1 with chainId + vault:

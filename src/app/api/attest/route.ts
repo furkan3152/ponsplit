@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAddress, isAddress } from "viem";
 import { readJson } from "@/lib/body";
 import { isValidHandle, normalizeHandle } from "@/lib/handles";
+import { LaunchFeeError, checkLaunchFee } from "@/lib/launch-fee";
 import { isLive } from "@/lib/networks";
 import { clientIp, limitClient } from "@/lib/ratelimit";
 import { requestNetwork, serverClient } from "@/lib/server-network";
@@ -14,9 +15,10 @@ export const dynamic = "force-dynamic";
 const TTL_SECONDS = 30 * 60;
 
 /**
- * POST { network, creator, handles } → the X user ids for those usernames plus the signer's
+ * POST { network, creator, handles, feeTx } → the X user ids for those usernames plus the signer's
  * attestation that FeeVault checks when the coin launches on that network. The ids come from our
- * resolver, never the client.
+ * resolver, never the client. Where the network charges SplitEarn's launch fee, `feeTx` must be the
+ * creator's payment of it, not yet used by a launch (a 402 with `feeCode` says what's wrong).
  */
 export async function POST(req: Request) {
   const ip = clientIp(req);
@@ -25,7 +27,7 @@ export async function POST(req: Request) {
   }
   if (!signerAccount()) return NextResponse.json({ error: "Launches are not configured on this server." }, { status: 500 });
 
-  const body = await readJson<{ network?: string; creator?: string; handles?: string[] }>(req);
+  const body = await readJson<{ network?: string; creator?: string; handles?: string[]; feeTx?: string }>(req);
   const n = requestNetwork(body?.network);
   if (!n) return NextResponse.json({ error: "Unknown network." }, { status: 400 });
   if (!isLive(n)) return NextResponse.json({ error: `SplitEarn isn't live on ${n.label} yet.` }, { status: 400 });
@@ -35,6 +37,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Add 1 to ${MAX_RECIPIENTS} valid X usernames.` }, { status: 400 });
   }
   if (new Set(handles).size !== handles.length) return NextResponse.json({ error: "Each account can only appear once." }, { status: 400 });
+
+  try {
+    await checkLaunchFee(serverClient(n), n, getAddress(body.creator), typeof body.feeTx === "string" ? body.feeTx : undefined);
+  } catch (e) {
+    if (e instanceof LaunchFeeError) return NextResponse.json({ error: e.message, feeCode: e.code }, { status: 402 });
+    return NextResponse.json({ error: "Could not check the launch fee payment. Try again in a moment." }, { status: 502 });
+  }
 
   let profiles;
   try {
