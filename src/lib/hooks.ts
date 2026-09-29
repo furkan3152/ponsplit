@@ -114,16 +114,22 @@ export function useCoins() {
 /** One coin with its live Pons state; `null` when it isn't a SplitEarn coin on this network. */
 export function useCoin(token: Address | undefined) {
   const n = useNetwork();
+  const key = `${n.id}:${token}`;
+  const seeded = useRef<string | null>(null);
   return useQuery({
     queryKey: ["coin", n.id, n.launcher, token],
     enabled: Boolean(isLive(n) && token),
     refetchInterval: 5_000,
     queryFn: async () => {
       if (isHidden(n, token!)) return null;
-      // The shared snapshot has every coin; one launched a moment ago may not be in it yet.
-      const shared = await snapshotOf(n).catch(() => null);
-      const hit = shared?.coins.find((c) => c.token.toLowerCase() === token!.toLowerCase());
-      if (hit) return hit;
+      // The first paint comes from the shared snapshot (a few seconds old at most). After that the
+      // coin is read live: trades are priced from these reserves.
+      if (seeded.current !== key) {
+        seeded.current = key;
+        const shared = await snapshotOf(n).catch(() => null);
+        const hit = shared?.coins.find((c) => c.token.toLowerCase() === token!.toLowerCase());
+        if (hit) return hit;
+      }
       const v = await clientFor(n).readContract({ address: n.launcher!, abi: launcherAbi, functionName: "getLaunch", args: [token!] });
       if (v.launch.token === zeroAddress) return null;
       if (isHidden(n, token!)) return null;
