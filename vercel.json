@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "[ -n \"$VERCEL_GIT_PREVIOUS_SHA\" ] && git cat-file -e \"$VERCEL_GIT_PREVIOUS_SHA\" 2>/dev/null && git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- src public package.json package-lock.json next.config.mjs tailwind.config.ts postcss.config.js tsconfig.json .npmrc .vercelignore vercel.json"
+  "ignoreCommand": "! git log -1 --format=%B | grep -q '\\[deploy\\]' && [ -n \"$VERCEL_GIT_PREVIOUS_SHA\" ] && git cat-file -e \"$VERCEL_GIT_PREVIOUS_SHA\" 2>/dev/null && git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- src public package.json package-lock.json next.config.mjs tailwind.config.ts postcss.config.js tsconfig.json .npmrc .vercelignore vercel.json"
 }
