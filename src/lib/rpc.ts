@@ -25,6 +25,6 @@ export function rpcTransport(urls: readonly string[], config: HttpTransportConfi
   // One retry per endpoint before moving on, so a failing provider doesn't hold a read for long.
   return fallback(
     urls.map((u) => http(u, { ...config, retryCount: Math.min(config.retryCount ?? 3, 1) })),
-    { rank: false, retryCount: 1 }
+    { rank: false, retryCount: 0 }
   );
 }

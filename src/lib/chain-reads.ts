@@ -59,16 +59,33 @@ export type AnyLog = {
   args?: unknown;
 };
 
-/** getLogs over [from, to], halving the range whenever the node says the answer is too big. */
+/** The node's own words about a failed request (not the request body viem appends), and its HTTP status. */
+function describe(e: unknown): { status?: number; text: string } {
+  let status: number | undefined;
+  const parts: string[] = [];
+  for (let err = e as { status?: number; shortMessage?: string; details?: string; cause?: unknown } | undefined, i = 0; err && i < 6; err = err.cause as typeof err, i++) {
+    if (typeof err.status === "number") status ??= err.status;
+    if (err.shortMessage) parts.push(err.shortMessage);
+    if (err.details) parts.push(err.details);
+  }
+  return { status, text: parts.join(" ") };
+}
+
+/**
+ * getLogs over [from, to], halving the range whenever the node says the answer is too big. A rate
+ * limit is passed on as it is: splitting would only multiply the requests the node is refusing.
+ */
 async function logsSplit<T extends AnyLog>(query: (from: bigint, to: bigint) => Promise<T[]>, from: bigint, to: bigint): Promise<T[]> {
   if (from > to) return [];
   try {
     return await query(from, to);
   } catch (e) {
-    const msg = String((e as Error)?.message ?? e);
-    if (to - from < 2_000n || !/limit|too many|exceed|spans|range|timed? ?out|10000/i.test(msg)) throw e;
+    const { status, text } = describe(e);
+    if (status === 429 || /rate.?limit|too many requests|capacity|throughput/i.test(text)) throw e;
+    if (to - from < 2_000n || !/limit|too many|exceed|spans|range|timed? ?out|10000/i.test(text)) throw e;
     const mid = from + (to - from) / 2n;
-    const [a, b] = await Promise.all([logsSplit(query, from, mid), logsSplit(query, mid + 1n, to)]);
+    const a = await logsSplit(query, from, mid);
+    const b = await logsSplit(query, mid + 1n, to);
     return [...a, ...b];
   }
 }
@@ -91,10 +108,13 @@ export async function timesOf(c: PublicClient, net: NetworkId, blocks: bigint[])
   if (blockTimes.size > 200_000) blockTimes.clear();
   const missing = Array.from(new Set(blocks.filter((b) => !blockTimes.has(`${net}:${b}`))));
   // In parallel, but not all at once: the batching transport sends 20 per HTTP request.
-  for (let i = 0; i < missing.length; i += 100) {
-    const slice = missing.slice(i, i + 100);
-    const got = await Promise.all(slice.map((b) => c.getBlock({ blockNumber: b }).catch(() => null)));
-    got.forEach((blk, j) => blk && blockTimes.set(`${net}:${slice[j]}`, Number(blk.timestamp)));
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const todo = missing.filter((b) => !blockTimes.has(`${net}:${b}`));
+    for (let i = 0; i < todo.length; i += 100) {
+      const slice = todo.slice(i, i + 100);
+      const got = await Promise.all(slice.map((b) => c.getBlock({ blockNumber: b }).catch(() => null)));
+      got.forEach((blk, j) => blk && blockTimes.set(`${net}:${slice[j]}`, Number(blk.timestamp)));
+    }
   }
   return new Map(blocks.map((b) => [b, blockTimes.get(`${net}:${b}`) ?? 0]));
 }
@@ -219,8 +239,38 @@ const ACTIVITY_SPAN = 864_000n;
 
 export type Activity = { trades: (Trade & { symbol: string })[]; tradesByToken: Map<string, number>; volumeByToken: Map<string, bigint> };
 
-/** Where an incremental log scan got to, so the next one only reads the new blocks. */
-export type ScanState<T> = { key: string; to: bigint; items: T[] } | null;
+/**
+ * Where an incremental log scan got to, so the next one only reads the new blocks. `venues` are the
+ * coins it covered (a new coin gets its history read once instead of restarting the scan).
+ */
+export type ScanState<T> = { key: string; to: bigint; items: T[]; venues?: string[] } | null;
+
+/**
+ * Each scan re-reads this many blocks before its cursor, and entries are merged by transaction and
+ * log index: an RPC answering from a node a few blocks behind can't make a trade go missing, and
+ * re-read ones aren't counted twice.
+ */
+const OVERLAP = 64n;
+const logKey = (x: { txHash: Hex; logIndex: number }) => `${x.txHash.toLowerCase()}:${x.logIndex}`;
+
+export function mergeLogs<T extends { txHash: Hex; logIndex: number; blockNumber: bigint }>(older: readonly T[], fresh: readonly T[]): T[] {
+  const byKey = new Map<string, T>();
+  for (const x of older) byKey.set(logKey(x), x);
+  for (const x of fresh) byKey.set(logKey(x), x);
+  return [...byKey.values()].sort(byChain);
+}
+
+/** The head to scan up to: never behind the last scan (nodes behind a load balancer can lag). */
+async function headAfter(c: PublicClient, last: { to: bigint } | null): Promise<bigint> {
+  const head = await c.getBlockNumber();
+  return last && last.to > head ? last.to : head;
+}
+
+const rescanFrom = (last: { to: bigint } | null, floor: bigint) => {
+  if (!last) return floor;
+  const from = last.to + 1n > OVERLAP ? last.to + 1n - OVERLAP : 0n;
+  return from > floor ? from : floor;
+};
 
 export async function scanActivity(
   c: PublicClient,
@@ -230,14 +280,23 @@ export async function scanActivity(
   prev: ScanState<Omit<Trade, "timestamp">>
 ): Promise<{ state: NonNullable<ScanState<Omit<Trade, "timestamp">>>; activity: Activity }> {
   const venues = coins.map(venueOf);
+  const tokens = venues.map((v) => v.token.toLowerCase());
+  const covered = new Set(tokens);
   const symbols = new Map(coins.map((x) => [x.token.toLowerCase(), x.symbol]));
-  const key = `${net}:${venues.map((v) => v.token).join(",")}`;
-  const head = await c.getBlockNumber();
-  const floor = head > ACTIVITY_SPAN ? head - ACTIVITY_SPAN : 0n;
+  const key = `${net}:${wiring.poolManager}:${wiring.router}`.toLowerCase();
   const last = prev?.key === key ? prev : null;
-  const from = last ? last.to + 1n : floor;
-  const fresh = await tradesBetween(c, venues, wiring, from, head);
-  const trades = [...(last?.items ?? []), ...fresh].filter((t) => t.blockNumber >= floor);
+  const head = await headAfter(c, last);
+  const floor = head > ACTIVITY_SPAN ? head - ACTIVITY_SPAN : 0n;
+  const known = new Set(last?.venues ?? []);
+  const added = last ? venues.filter((v) => !known.has(v.token.toLowerCase())) : [];
+  const [recent, history] = await Promise.all([
+    tradesBetween(c, venues, wiring, rescanFrom(last, floor), head),
+    // Coins the last scan didn't cover yet: their trades in the part it had already read.
+    added.length && last ? tradesBetween(c, added, wiring, floor, last.to) : Promise.resolve([]),
+  ]);
+  const trades = mergeLogs(last?.items ?? [], [...recent, ...history]).filter(
+    (t) => t.blockNumber >= floor && covered.has(t.token.toLowerCase())
+  );
   const tradesByToken = new Map<string, number>();
   const volumeByToken = new Map<string, bigint>();
   for (const t of trades) {
@@ -247,7 +306,7 @@ export async function scanActivity(
   }
   const latest = await withTimes(c, net, trades.slice(-30).reverse());
   return {
-    state: { key, to: head, items: trades },
+    state: { key, to: head, items: trades, venues: tokens },
     activity: { trades: latest.map((t) => ({ ...t, symbol: symbols.get(t.token.toLowerCase()) ?? "" })), tradesByToken, volumeByToken },
   };
 }
@@ -258,7 +317,7 @@ const CLAIMED = parseAbiItem("event Claimed(uint64 indexed xId, address indexed 
 /** How far back the payout feed reads (~a week of Robinhood Chain blocks). */
 const PAYOUT_SPAN = 6_000_000n;
 
-export type Payout = { xId: bigint; handle?: string; to: Address; amount: bigint; txHash: Hex; blockNumber: bigint; timestamp: number };
+export type Payout = { xId: bigint; handle?: string; to: Address; amount: bigint; txHash: Hex; logIndex: number; blockNumber: bigint; timestamp: number };
 type PayoutLog = Omit<Payout, "timestamp" | "handle">;
 export type Payouts = { latest: Payout[]; total: bigint; count: number };
 
@@ -268,20 +327,19 @@ export async function scanPayouts(
   feeVault: Address,
   prev: ScanState<PayoutLog>
 ): Promise<{ state: NonNullable<ScanState<PayoutLog>>; payouts: Payouts }> {
-  const head = await c.getBlockNumber();
-  const floor = head > PAYOUT_SPAN ? head - PAYOUT_SPAN : 0n;
-  const key = `${net}:${feeVault}`;
+  const key = `${net}:${feeVault}`.toLowerCase();
   const last = prev?.key === key ? prev : null;
-  const from = last ? last.to + 1n : floor;
+  const head = await headAfter(c, last);
+  const floor = head > PAYOUT_SPAN ? head - PAYOUT_SPAN : 0n;
   const fresh = (await logsOver(
     (a, b) => c.getLogs({ address: feeVault, event: CLAIMED, fromBlock: a, toBlock: b }) as Promise<AnyLog[]>,
-    from,
+    rescanFrom(last, floor),
     head
-  )) as unknown as { args: { xId: bigint; to: Address; amount: bigint }; transactionHash: Hex; blockNumber: bigint }[];
-  const logs = [
-    ...(last?.items ?? []),
-    ...fresh.map((l) => ({ xId: l.args.xId, to: l.args.to, amount: l.args.amount, txHash: l.transactionHash, blockNumber: l.blockNumber })),
-  ];
+  )) as unknown as { args: { xId: bigint; to: Address; amount: bigint }; transactionHash: Hex; logIndex: number; blockNumber: bigint }[];
+  const logs = mergeLogs(
+    last?.items ?? [],
+    fresh.map((l) => ({ xId: l.args.xId, to: l.args.to, amount: l.args.amount, txHash: l.transactionHash, logIndex: l.logIndex, blockNumber: l.blockNumber }))
+  ).filter((l) => l.blockNumber >= floor);
   const latest = logs.slice(-20).reverse();
   const times = await timesOf(c, net, latest.map((l) => l.blockNumber));
   return {
@@ -300,3 +358,6 @@ export type Snapshot = { at: number; coins: Coin[]; activity: Activity | null; p
 
 /** A coin's recent trades as the server read them (/api/trades): the window [from, to]. */
 export type CoinTrades = { from: bigint; to: bigint; trades: Trade[] };
+
+/** Whether any entry is still missing its block time (such answers aren't cached by the CDN). */
+export const missingTimes = (items: readonly { timestamp: number }[] | undefined) => Boolean(items?.some((x) => !x.timestamp));
