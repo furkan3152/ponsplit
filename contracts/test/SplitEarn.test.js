@@ -82,7 +82,7 @@ function params(overrides = {}) {
 /** Launches through the launcher and returns handles on the coin, its curve and its splitter. */
 async function launch(fx, from, { firstBuy = 0n, minTokensOut = 0n, tax = 0, split: s, ...opts } = {}) {
   s = s ?? (await split(fx, from.address, opts));
-  const fee = await fx.pons.launchFee();
+  const fee = (await fx.pons.launchFee()) + (await fx.launcher.creationFee());
   const tx = await fx.launcher
     .connect(from)
     .launch(params({ creatorTaxBps: tax, ...opts.params }), s, firstBuy, minTokensOut, await fx.launcher.termsVersion(), { value: fee + firstBuy });
@@ -213,7 +213,7 @@ describe("SplitEarnLauncher", () => {
       const fx = await loadFixture(deploy);
       const { launcher, alice, pons } = fx;
       const s = await split(fx, alice.address);
-      const fee = await pons.launchFee();
+      const fee = (await pons.launchFee()) + (await launcher.creationFee());
       const v = await launcher.termsVersion();
       await expect(launcher.connect(alice).launch(params(), s, E("0.1"), 0, v, { value: fee })).to.be.revertedWithCustomError(launcher, "WrongValue");
       await expect(launcher.connect(alice).launch(params(), s, 0, 0, v + 1n, { value: fee })).to.be.revertedWithCustomError(launcher, "TermsChanged");
@@ -242,7 +242,7 @@ describe("SplitEarnLauncher", () => {
       const fx = await loadFixture(deploy);
       const { launcher, vault, alice, bob, pons } = fx;
       const good = await split(fx, alice.address);
-      const fee = await pons.launchFee();
+      const fee = (await pons.launchFee()) + (await launcher.creationFee());
       const v = await launcher.termsVersion();
       const forged = { ...good, attestation: await attest(vault, alice, alice.address, good.xIds, good.handles, good.deadline) };
       await expect(launcher.connect(alice).launch(params(), forged, 0, 0, v, { value: fee })).to.be.revertedWithCustomError(vault, "BadSignature");
@@ -258,7 +258,7 @@ describe("SplitEarnLauncher", () => {
     it("stops when launches are paused, Pons closes its gate, or the tax is over Pons's cap", async () => {
       const fx = await loadFixture(deploy);
       const { launcher, alice, pons } = fx;
-      const fee = await pons.launchFee();
+      const fee = (await pons.launchFee()) + (await launcher.creationFee());
       await launcher.setLaunchesPaused(true);
       await expect(launcher.connect(alice).launch(params(), await split(fx, alice.address), 0, 0, 1, { value: fee })).to.be.revertedWithCustomError(launcher, "LaunchesPaused");
       await launcher.setLaunchesPaused(false);
@@ -288,6 +288,33 @@ describe("SplitEarnLauncher", () => {
       expect(t.maxCreatorTaxBps).to.equal(1000);
       expect(t.canLaunch).to.equal(true);
       expect(t.paused).to.equal(false);
+      expect(t.splitEarnLaunchFee).to.equal(E("0.000365"));
+    });
+
+    it("charges SplitEarn's launch fee with Pons's, into SplitEarn's share; only the owner changes it, capped", async () => {
+      const fx = await loadFixture(deploy);
+      const { launcher, pons, alice } = fx;
+      const creation = await launcher.creationFee();
+      expect(creation).to.equal(E("0.000365"));
+      const ponsFee = await pons.launchFee();
+      const v = await launcher.termsVersion();
+      // Pons's fee alone is no longer enough.
+      await expect(launcher.connect(alice).launch(params(), await split(fx, alice.address), 0, 0, v, { value: ponsFee })).to.be.revertedWithCustomError(launcher, "WrongValue");
+      const before = await launcher.platformFees();
+      const c = await launch(fx, alice, { firstBuy: E("0.05") });
+      expect((await launcher.platformFees()) - before).to.equal(creation);
+      expect(await ethers.provider.getBalance(await launcher.getAddress())).to.equal(await launcher.platformFees());
+      expect(await c.token.balanceOf(alice.address)).to.equal(c.tokensOut);
+
+      await expect(launcher.connect(alice).setCreationFee(0)).to.be.revertedWithCustomError(launcher, "OwnableUnauthorizedAccount");
+      await expect(launcher.setCreationFee(E("0.01") + 1n)).to.be.revertedWithCustomError(launcher, "FeeTooHigh");
+      await launcher.setCreationFee(E("0.001"));
+      // A launch priced with the old fee (and terms version) is refused.
+      await expect(launcher.connect(alice).launch(params(), await split(fx, alice.address), 0, 0, v, { value: ponsFee + creation })).to.be.revertedWithCustomError(launcher, "TermsChanged");
+      expect(await launcher.termsVersion()).to.equal(v + 1n);
+      await launcher.setCreationFee(0);
+      const free = await launch(fx, alice);
+      expect(free.token).to.not.equal(undefined);
     });
   });
 
@@ -305,7 +332,8 @@ describe("SplitEarnLauncher", () => {
       await c.splitter.connect(fx.carol).collect();
 
       expect(await c.curve.quoteFeeBalance()).to.equal(0);
-      expect(await fx.launcher.platformFees()).to.equal(E("0.0014"));
+      // SplitEarn's launch fee plus its 20% of the creator fee.
+      expect(await fx.launcher.platformFees()).to.equal(E("0.0014") + (await fx.launcher.creationFee()));
       expect(await fx.vault.tokenFees(token)).to.equal(E("0.0056"));
       expect(await fx.vault.claimable(IDS.alice)).to.equal((E("0.0056") * 6000n) / BPS);
       expect(await fx.vault.claimable(IDS.bob)).to.equal(E("0.0056") - (E("0.0056") * 6000n) / BPS);
@@ -324,7 +352,7 @@ describe("SplitEarnLauncher", () => {
       await c.splitter.collect();
       const creator = E("0.007") + E("0.05");
       const platform = (creator * 245n) / BPS;
-      expect(await fx.launcher.platformFees()).to.equal(platform);
+      expect(await fx.launcher.platformFees()).to.equal(platform + (await fx.launcher.creationFee()));
       expect(await fx.vault.tokenFees(await c.token.getAddress())).to.equal(creator - platform);
       // SplitEarn ends up with about 14 bps of the volume, the X accounts with the rest.
       expect(platform).to.be.closeTo(E("0.0014"), E("0.00001"));
@@ -403,7 +431,7 @@ describe("SplitEarnLauncher", () => {
       await pastSnipeWindow();
       for (const c of [a, b]) await c.curve.connect(fx.trader).buy(E("1"), 0, fx.trader.address, { value: E("1") });
       await fx.launcher.collectMany([await a.token.getAddress(), fx.carol.address, await b.token.getAddress()]);
-      expect(await fx.launcher.platformFees()).to.equal(E("0.0028"));
+      expect(await fx.launcher.platformFees()).to.equal(E("0.0028") + 2n * (await fx.launcher.creationFee()));
     });
 
     it("collects in full at the gas the node estimates, also for a graduated coin", async () => {
@@ -632,7 +660,9 @@ describe("SplitEarnLauncher", () => {
       const platform = await fx.launcher.platformFees();
       const f1 = await fx.vault.tokenFees(t1);
       const f2 = await fx.vault.tokenFees(t2);
-      expect(platform + f1 + f2).to.equal(collected);
+      // SplitEarn's balance also holds its launch fee from each of the two launches.
+      const launchFees = 2n * (await fx.launcher.creationFee());
+      expect(platform - launchFees + f1 + f2).to.equal(collected);
       // SplitEarn's cut is its snapshotted share of each coin's collections (rounded down), no more.
       const p1 = (await c1.splitter.totalCollected()) - f1;
       const p2 = (await c2.splitter.totalCollected()) - f2;

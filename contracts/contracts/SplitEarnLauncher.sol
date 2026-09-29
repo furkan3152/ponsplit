@@ -36,6 +36,8 @@ contract SplitEarnLauncher is Ownable2Step, ReentrancyGuard {
     uint256 public constant BPS = 10_000;
     /// @notice SplitEarn never takes more than 30% of the standard creator fee.
     uint16 public constant MAX_PLATFORM_SHARE_BPS = 3_000;
+    /// @notice SplitEarn's own launch fee never exceeds 0.01 ETH.
+    uint256 public constant MAX_CREATION_FEE = 0.01 ether;
     /// @dev Transient slot holding the curve allowed to refund ETH during a launch's first buy.
     bytes32 private constant REFUNDER_SLOT = keccak256("splitearn.launcher.refunder");
 
@@ -104,6 +106,9 @@ contract SplitEarnLauncher is Ownable2Step, ReentrancyGuard {
 
     /// @notice SplitEarn's cut of the standard creator fee, in bps of it (2000 = 20%).
     uint16 public platformShareBps = 2_000;
+    /// @notice SplitEarn's own fee per launch, in wei, paid with Pons's launch fee and added to
+    ///         SplitEarn's share (about $1 at deployment; the owner adjusts it).
+    uint256 public creationFee = 0.000365 ether;
     /// @notice The Pons launch config coins use (0: ETH-paired, graduating at 4.2 ETH).
     uint256 public launchConfigId;
     /// @notice Bumped whenever a term above changes; a launch pins the version it was shown.
@@ -133,11 +138,13 @@ contract SplitEarnLauncher is Ownable2Step, ReentrancyGuard {
     event PlatformShareSet(uint16 bps);
     event LaunchConfigSet(uint256 id);
     event LaunchesPausedSet(bool paused);
+    event CreationFeeSet(uint256 fee);
 
     error LaunchesPaused();
     error TermsChanged();
     error WrongValue(uint256 sent, uint256 expected);
     error ShareTooHigh();
+    error FeeTooHigh();
     error NotSplitter();
     error UnexpectedEth();
     error TransferFailed();
@@ -160,8 +167,9 @@ contract SplitEarnLauncher is Ownable2Step, ReentrancyGuard {
 
     /// @notice Launches a coin on Pons with the X-account split `s`, optionally buying `firstBuy` of it
     ///         for the caller in the same transaction (before anyone else can trade).
-    /// @dev msg.value must be exactly Pons's launch fee plus `firstBuy`, so a changed Pons fee reverts
-    ///      rather than silently shrinking the buy. The caller is exempt from Pons's opening snipe tax.
+    /// @dev msg.value must be exactly Pons's launch fee plus SplitEarn's `creationFee` plus `firstBuy`,
+    ///      so a changed fee reverts rather than silently shrinking the buy. The caller is exempt from
+    ///      Pons's opening snipe tax.
     function launch(
         LaunchParams calldata p,
         SplitParams calldata s,
@@ -172,7 +180,8 @@ contract SplitEarnLauncher is Ownable2Step, ReentrancyGuard {
         if (launchesPaused) revert LaunchesPaused();
         if (expectedTermsVersion != termsVersion) revert TermsChanged();
         uint256 fee = ponsFactory.launchFee();
-        if (msg.value != fee + firstBuy) revert WrongValue(msg.value, fee + firstBuy);
+        uint256 creation = creationFee;
+        if (msg.value != fee + creation + firstBuy) revert WrongValue(msg.value, fee + creation + firstBuy);
 
         splitter = Clones.clone(address(splitterImplementation));
         address[] memory exempt = new address[](1);
@@ -210,6 +219,11 @@ contract SplitEarnLauncher is Ownable2Step, ReentrancyGuard {
         isSplitter[splitter] = true;
 
         if (firstBuy != 0) tokensOut = _firstBuy(curve, firstBuy, minTokensOut);
+        if (creation != 0) {
+            platformFees += creation;
+            totalPlatformFees += creation;
+            emit PlatformFee(token, creation);
+        }
         emit Launched(token, msg.sender, curve, splitter, p.creatorTaxBps, pBps, firstBuy, tokensOut);
     }
 
@@ -341,6 +355,15 @@ contract SplitEarnLauncher is Ownable2Step, ReentrancyGuard {
         emit LaunchConfigSet(id);
     }
 
+    /// @notice SplitEarn's own fee per launch (at most MAX_CREATION_FEE). A launch shown the old fee
+    ///         reverts (TermsChanged) rather than paying a different one.
+    function setCreationFee(uint256 fee) external onlyOwner {
+        if (fee > MAX_CREATION_FEE) revert FeeTooHigh();
+        creationFee = fee;
+        termsVersion++;
+        emit CreationFeeSet(fee);
+    }
+
     function setLaunchesPaused(bool paused) external onlyOwner {
         launchesPaused = paused;
         emit LaunchesPausedSet(paused);
@@ -370,7 +393,8 @@ contract SplitEarnLauncher is Ownable2Step, ReentrancyGuard {
             bytes32 economics,
             uint256 maxCreatorTaxBps,
             bool canLaunch,
-            bool paused
+            bool paused,
+            uint256 splitEarnLaunchFee
         )
     {
         version = termsVersion;
@@ -381,6 +405,7 @@ contract SplitEarnLauncher is Ownable2Step, ReentrancyGuard {
         maxCreatorTaxBps = ponsFactory.maxCreatorTaxBps();
         canLaunch = ponsFactory.canLaunch(address(this));
         paused = launchesPaused;
+        splitEarnLaunchFee = creationFee;
     }
 
     /// @notice Newest-first page of coins with their live Pons state.

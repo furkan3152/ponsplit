@@ -205,7 +205,7 @@ function sameCode(onchain, artifact) {
       firstBuy,
       1n,
       terms.version,
-      { value: terms.ponsLaunchFee + firstBuy }
+      { value: terms.ponsLaunchFee + terms.splitEarnLaunchFee + firstBuy }
     );
     const receipt = await tx.wait();
     console.log(`      launch + first buy gas: ${receipt.gasUsed}`);
@@ -258,7 +258,7 @@ function sameCode(onchain, artifact) {
     await (await splitter.collect()).wait();
     expect(await curve.quoteFeeBalance()).to.equal(0);
     const platform = (pending * (await splitter.platformBps())) / BPS;
-    expect(await launcher.platformFees()).to.equal(platform);
+    expect(await launcher.platformFees()).to.equal(platform + (await launcher.creationFee()));
     expect(await vault.tokenFees(token)).to.equal(pending - platform);
     expect(await vault.claimable(111n)).to.equal(((pending - platform) * 7000n) / BPS);
     console.log(`      split ${ethers.formatEther(pending)} ETH: ${ethers.formatEther(platform)} to SplitEarn`);
