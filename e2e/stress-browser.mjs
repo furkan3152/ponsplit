@@ -1,4 +1,4 @@
-// Many real browsers opening the live site at once (phones and desktops, both networks), as a
+// Many real browsers opening the live site at once (phones and desktops, on mainnet), as a
 // launch-day crowd would. For each visit: time until the page is usable and its chain data shows,
 // how long the main thread was blocked (the page "freezing"), page errors, and horizontal overflow.
 //
@@ -13,12 +13,14 @@ const routes = [
   { path: "/", ready: () => "text=Route coin fees" },
   { path: "/explore", ready: () => "h1:has-text('Explore')" },
   { path: "/claim", ready: () => "text=Claim your" },
-  ...(COIN ? [{ path: `/token/${COIN}`, ready: () => "text=MAINNET" }] : []),
+  // The coin page's stats (or, for an unlisted address, its "not listed" message).
+  ...(COIN ? [{ path: `/token/${COIN}`, ready: () => "text=/Paid to X accounts|isn't listed on SplitEarn|wasn't launched on SplitEarn/" }] : []),
 ];
 
 const browser = await chromium.launch();
 const visit = async (i) => {
   const mobile = i % 2 === 0;
+  // The public site is mainnet only; a third of the visitors carry an old testnet cookie, which must land on mainnet.
   const network = i % 3 === 0 ? "testnet" : "mainnet";
   const route = routes[i % routes.length];
   const ctx = await browser.newContext(
