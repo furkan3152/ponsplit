@@ -2,7 +2,7 @@
 
 import { ColorType, CrosshairMode, LineStyle, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildCandles } from "@/lib/candles";
+import { buildCandles, candleForAll, RANGES } from "@/lib/candles";
 import { formatPrice } from "@/lib/format";
 import type { Trade } from "@/lib/types";
 import { StepTrade } from "./art";
@@ -13,13 +13,6 @@ import { Flash } from "./motion";
 // down, in the room left for the volume bars, get no label (prices are never negative).
 const axisPrice = (n: number) => (n < -1e-18 ? "" : n < 1e-18 ? "0" : formatPrice(n, 4));
 
-const FRAMES = [
-  { label: "1m", sec: 60 },
-  { label: "5m", sec: 300 },
-  { label: "15m", sec: 900 },
-  { label: "1h", sec: 3600 },
-  { label: "4h", sec: 14400 },
-];
 
 function cssVar(name: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -66,12 +59,27 @@ export function PriceChart({
   const series = useRef<ISeriesApi<"Candlestick">>();
   const volumes = useRef<ISeriesApi<"Histogram">>();
   const volumeColors = useRef({ up: "", down: "" });
-  const [frame, setFrame] = useState(300);
+  // A range, as on pons: the last 5 minutes, hour, 6 hours, day, or everything loaded.
+  const [range, setRange] = useState<(typeof RANGES)[number]["label"]>("ALL");
+  // The window ends now and moves with the clock, so a quiet coin's line keeps reaching the present.
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 15_000);
+    return () => clearInterval(id);
+  }, []);
   const [hover, setHover] = useState<Ohlcv | null>(null);
   // Bumped whenever the chart is rebuilt (theme change) so the data effect repaints it.
   const [epoch, setEpoch] = useState(0);
 
-  const candles = useMemo(() => buildCandles(trades ?? [], frame), [trades, frame]);
+  const firstAt = trades?.find((t) => t.timestamp > 0)?.timestamp;
+  const { candles, candle } = useMemo(() => {
+    const r = RANGES.find((x) => x.label === range) ?? RANGES[RANGES.length - 1];
+    const to = Math.max(now, trades?.at(-1)?.timestamp ?? 0);
+    if (!firstAt) return { candles: [], candle: 60 };
+    const size = r.span ? r.candle : candleForAll(firstAt, to);
+    const from = r.span ? to - r.span : firstAt;
+    return { candles: buildCandles(trades ?? [], size, { from, to }), candle: size };
+  }, [trades, range, now, firstAt]);
   const last = candles[candles.length - 1];
   const first = candles[0];
   const change = first && last ? (last.close / first.open - 1) * 100 : 0;
@@ -159,8 +167,9 @@ export function PriceChart({
     series.current.setData(candles.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })));
     const { up, down } = volumeColors.current;
     volumes.current?.setData(candles.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume, color: c.close >= c.open ? up : down })));
+    chart.current?.applyOptions({ timeScale: { secondsVisible: candle < 60 } });
     if (candles.length) chart.current?.timeScale().fitContent();
-  }, [candles, epoch]);
+  }, [candles, candle, epoch]);
 
   // The watermark only once there are candles, so it never sits under the empty-state message;
   // smaller on phones, where the chart is narrow.
@@ -205,10 +214,10 @@ export function PriceChart({
             {first && !hover && partial && trades ? <span className="text-ink-3">over the last {trades.length.toLocaleString("en-US")} trades</span> : null}
           </div>
         </div>
-        <div className="segmented" role="tablist" aria-label="Candle interval">
-          {FRAMES.map((f) => (
-            <button key={f.sec} role="tab" aria-selected={frame === f.sec} data-active={frame === f.sec} onClick={() => setFrame(f.sec)} className="relative after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] !px-3 !py-2 font-mono !text-[11.5px] sm:!py-1.5">
-              {f.label}
+        <div className="segmented" role="tablist" aria-label="Chart range">
+          {RANGES.map((r) => (
+            <button key={r.label} type="button" role="tab" aria-selected={range === r.label} data-active={range === r.label} onClick={() => setRange(r.label)} className="relative after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] !px-3 !py-2 font-mono !text-[11.5px] sm:!py-1.5">
+              {r.label}
             </button>
           ))}
         </div>

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPublicClient, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
 import { useReadContract, useReadContracts } from "wagmi";
-import { feeSplitterAbi, feeVaultAbi, launcherAbi, ponsFactoryAbi, ponsTokenAbi } from "./abi";
+import { feeSplitterAbi, feeVaultAbi, launcherAbi, ponsCurveAbi, ponsFactoryAbi, ponsHookAbi, ponsTokenAbi } from "./abi";
 import { useNetwork } from "./network-context";
 import { NETWORKS, isHidden, isLive, otherNetwork, type Network, type NetworkId } from "./networks";
 import {
@@ -439,13 +439,23 @@ export function useHoldings(owner: Address | undefined) {
   return { holdings, isLoading: Boolean(owner && list.length) && isLoading && !data };
 }
 
+/** Coins collected in one claim at most (each costs roughly 100-250k gas). */
+export const MAX_COLLECT = 25;
+/** Fees below this aren't worth a collection's gas (0.000001 ETH). */
+const COLLECT_DUST = 1_000_000_000_000n;
+
 export type Earnings = {
   xId: bigint;
   claimable: bigint;
   earned: bigint;
   /** This account's share of fees earned but not collected yet; `claim` collects them first. */
   pending: bigint;
-  /** The coins with fees to collect for this account. */
+  /**
+   * Its share of a graduated coin's pool fees that can't be collected yet: while pool fees taken
+   * in the coin itself wait for pons's keeper to convert them, pons holds the ETH ones back too.
+   */
+  waiting: bigint;
+  /** The coins worth collecting for this account, most first (at most MAX_COLLECT per claim). */
   collect: Address[];
   coins: Address[];
 };
@@ -466,21 +476,52 @@ export function useEarnings(xId: bigint | undefined) {
         c.readContract({ ...vault, functionName: "tokensOf", args: [xId!] }),
       ]);
       let pending = 0n;
-      const collect: Address[] = [];
+      let waiting = 0n;
+      const collectable: { token: Address; amount: bigint }[] = [];
+      const hook = await c.readContract({ address: n.launcher!, abi: launcherAbi, functionName: "ponsHook" });
       await Promise.all(
         coins.map(async (token) => {
           const [launch, split] = await Promise.all([
             c.readContract({ address: n.launcher!, abi: launcherAbi, functionName: "launchOf", args: [token] }),
             c.readContract({ ...vault, functionName: "getSplit", args: [token] }),
           ]);
-          const fees = await c.readContract({ address: launch.splitter, abi: feeSplitterAbi, functionName: "pendingFees" });
-          const bps = split.find((r) => r.xId === xId)?.bps ?? 0;
-          const share = (toRecipients(fees, Number(launch.platformBps)) * BigInt(bps)) / BPS;
-          if (fees > 0n) collect.push(token);
-          pending += share;
+          const [fees, graduated] = await Promise.all([
+            c.readContract({ address: launch.splitter, abi: feeSplitterAbi, functionName: "pendingFees" }),
+            c.readContract({ address: launch.curve, abi: ponsCurveAbi, functionName: "graduated" }),
+          ]);
+          // A graduated coin's pool ETH counts only once pons can release it (no coin-side fees
+          // waiting for its keeper); until then it's shown as waiting, not as ready to collect.
+          let held = 0n;
+          if (graduated) {
+            const pool = { address: hook, abi: ponsHookAbi } as const;
+            const [coinFees, coinTax] = await Promise.all([
+              c.readContract({ ...pool, functionName: "pendingFees", args: [launch.poolId, token] }),
+              c.readContract({ ...pool, functionName: "pendingCreatorTax", args: [launch.poolId, token] }),
+            ]);
+            if (coinFees > 0n || coinTax > 0n) {
+              const [ethFees, ethTax, protocolBps] = await Promise.all([
+                c.readContract({ ...pool, functionName: "pendingFees", args: [launch.poolId, zeroAddress] }),
+                c.readContract({ ...pool, functionName: "pendingCreatorTax", args: [launch.poolId, zeroAddress] }),
+                c.readContract({ address: launch.curve, abi: ponsCurveAbi, functionName: "protocolFeeShareBps" }),
+              ]);
+              held = ethFees - (ethFees * BigInt(protocolBps)) / BPS + ethTax;
+              if (held > fees) held = fees;
+            }
+          }
+          const bps = BigInt(split.find((r) => r.xId === xId)?.bps ?? 0);
+          const ready = fees - held;
+          pending += (toRecipients(ready, Number(launch.platformBps)) * bps) / BPS;
+          waiting += (toRecipients(held, Number(launch.platformBps)) * bps) / BPS;
+          if (ready > COLLECT_DUST) collectable.push({ token, amount: ready });
         })
       );
-      return { xId: xId!, claimable, earned, pending, collect, coins: [...coins] };
+      // Most first, and a bounded number per claim: every collection costs gas, and dust in many
+      // coins must never make a claim too big to fit in a block.
+      const collect = collectable
+        .sort((a, b) => (b.amount > a.amount ? 1 : b.amount < a.amount ? -1 : 0))
+        .slice(0, MAX_COLLECT)
+        .map((x) => x.token);
+      return { xId: xId!, claimable, earned, pending, waiting, collect, coins: [...coins] };
     },
   });
 }
