@@ -8,7 +8,7 @@ import { useNetwork } from "@/lib/network-context";
 import { SIDEBAR_KEY } from "@/lib/theme";
 import { useAdminSession } from "@/lib/useAdmin";
 import { LogoMark, TokenSticker } from "./art";
-import { ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, ShieldIcon, WalletIcon, XLogo } from "./icons";
+import { BookIcon, ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, ShieldIcon, WalletIcon, XLogo } from "./icons";
 import { X_HANDLE, X_URL } from "@/lib/brand";
 
 export const NAV = [
@@ -18,6 +18,7 @@ export const NAV = [
   { href: "/claim", label: "Claim", Icon: ClaimIcon },
   { href: "/me", label: "Portfolio", Icon: WalletIcon },
   { href: "/how", label: "How it works", Icon: DocsIcon },
+  { href: "/docs", label: "Docs", Icon: BookIcon },
 ] as const;
 
 export const isActive = (pathname: string, href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));

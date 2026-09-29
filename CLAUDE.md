@@ -158,6 +158,8 @@ Gotchas:
 - **Several launchers.** The site can read coins from more than one launcher (`Network.launchers` = `launcher` plus
   `previousLaunchers` in `src/deployment.json`; `Coin.launcher`; claims and /setup collect each coin through its own launcher),
   for a future upgrade. Today mainnet has one launcher. The site shows no contract addresses (owner's request).
+- **Docs.** `/docs` (sidebar, footer, sitemap): overview, getting started, launching, trading, fees (a live table from
+  `useLaunchTerms`), getting paid, safety. No contract addresses, mainnet only.
 - **Brand.** X account @SplitEarn (`src/lib/brand.ts`: FollowX button in the home card, sidebar, footer). The home page's
   "Official token" card shows the official CA from `mainnet.officialToken` in `src/deployment.json` (empty = "Coming soon");
   set it when the owner launches the official coin, and its coin page gets an "Official SplitEarn token" badge.
