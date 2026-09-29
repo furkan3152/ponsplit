@@ -31,6 +31,10 @@ function checkPins() {
     if (factory) checkAddress(factory, "testnet ponsFactory");
     if (entry.hidden !== undefined && !Array.isArray(entry.hidden)) throw new Error(`src/deployment.json: ${network}.hidden must be a list of coin addresses.`);
     (entry.hidden ?? []).forEach((a, i) => checkAddress(a, `src/deployment.json ${network}.hidden[${i}]`));
+    if (entry.launchFee) {
+      checkAddress(entry.launchFee.to, `src/deployment.json ${network}.launchFee.to`);
+      if (!/^\d+(\.\d{1,18})?$/.test(String(entry.launchFee.eth ?? ""))) throw new Error(`src/deployment.json: ${network}.launchFee.eth must be an ETH amount like "0.00073".`);
+    }
     if (entry.officialToken) checkAddress(entry.officialToken, `src/deployment.json ${network}.officialToken`);
     if (entry.previousLaunchers !== undefined && !Array.isArray(entry.previousLaunchers))
       throw new Error(`src/deployment.json: ${network}.previousLaunchers must be a list of launcher addresses.`);

@@ -5,7 +5,7 @@ import { HeadingDoodle } from "@/components/art/Doodles";
 import { FollowX } from "@/components/home/Official";
 import { Reveal } from "@/components/motion";
 import { NETWORKS } from "@/lib/networks";
-import { FeeExample, FeeTable, LaunchFee } from "./LiveTerms";
+import { FeeExample, FeeTable, LaunchFee, SplitEarnLaunchFee } from "./LiveTerms";
 
 export const metadata: Metadata = {
   title: "Docs",
@@ -135,7 +135,8 @@ export default function DocsPage() {
                   from the opening anti-sniping tax.
                 </>,
                 <>
-                  Confirm in your wallet. You pay pons&apos;s launch fee (<LaunchFee />), your first buy if any, and gas.
+                  Confirm in your wallet. You pay pons&apos;s launch fee (<LaunchFee />)
+                  <SplitEarnLaunchFee />, your first buy if any, and gas.
                 </>,
               ]}
             />
@@ -166,7 +167,7 @@ export default function DocsPage() {
             <FeeTable />
             <FeeExample />
             <p>
-              SplitEarn&apos;s share is fixed for each coin at launch. There are no other fees: SplitEarn takes nothing from the accounts&apos; balances
+              SplitEarn&apos;s share is fixed for each coin at launch. Apart from it and SplitEarn&apos;s small launch fee there are no other fees: SplitEarn takes nothing from the accounts&apos; balances
               and nothing when they claim.
             </p>
           </Section>

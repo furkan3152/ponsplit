@@ -103,6 +103,14 @@ try {
   await creator.getByRole("radio", { name: "1%" }).click();
   await creator.getByLabel("Be the first buyer").fill("0.05");
   await creator.getByText(/^✓ /).first().waitFor({ timeout: 60_000 });
+  // SplitEarn's launch fee: the server won't sign a launch without it.
+  const FEE_TO = ethers.getAddress(process.env.NEXT_PUBLIC_LAUNCH_FEE_TO ?? "");
+  const FEE = ethers.parseEther(process.env.NEXT_PUBLIC_LAUNCH_FEE_ETH ?? "0");
+  const attestBody = (feeTx) => JSON.stringify({ network: NETWORK, creator: A, handles: ["jack"], feeTx });
+  const unpaid = await fetch(`${BASE}/api/attest`, { method: "POST", headers: { "content-type": "application/json" }, body: attestBody() });
+  if (unpaid.status !== 402) fail(`a launch without the launch fee got ${unpaid.status}, expected 402`);
+  const feeBefore = await provider.getBalance(FEE_TO);
+  const blockBefore = await provider.getBlockNumber();
   await creator.getByRole("button", { name: "Launch coin" }).click({ timeout: 60_000 });
   // The coin page drops ?launched=1 from the URL right after it opens, so match the page itself.
   await creator.waitForURL(/\/token\/0x[0-9a-fA-F]{40}/, { timeout: 120_000 });
@@ -117,6 +125,20 @@ try {
   if ((await erc20.balanceOf(A)) === 0n) fail("the first buy didn't reach the creator");
   if ((await erc20.totalSupply()) !== ethers.parseEther("1000000000")) fail("the coin isn't a 1B-supply pons coin");
   step(`launched $SPLIT on ${NETWORK === "mainnet" ? "pons" : "SplitEarn's pons copy"} through the UI → ${token} (1% tax, first buy)`);
+  const feePaid = (await provider.getBalance(FEE_TO)) - feeBefore;
+  if (feePaid !== FEE) fail(`the launch paid ${ethers.formatEther(feePaid)} ETH of launch fee, expected ${ethers.formatEther(FEE)}`);
+  let feeTx;
+  for (let b = blockBefore + 1; b <= (await provider.getBlockNumber()) && !feeTx; b++) {
+    for (const h of (await provider.getBlock(b)).transactions) {
+      const t = await provider.getTransaction(h);
+      if (same(t.from, A) && same(t.to, FEE_TO)) feeTx = h;
+    }
+  }
+  if (!feeTx) fail("couldn't find the launch fee payment");
+  const reused = await fetch(`${BASE}/api/attest`, { method: "POST", headers: { "content-type": "application/json" }, body: attestBody(feeTx) });
+  const reusedBody = await reused.json();
+  if (reused.status !== 402 || reusedBody.feeCode !== "used") fail(`a used launch fee was accepted again: ${reused.status} ${JSON.stringify(reusedBody)}`);
+  step(`the launch fee (${ethers.formatEther(FEE)} ETH) was paid once and can't pay for a second launch; none, no signature`);
   await creator.screenshot({ path: `${OUT}/01-launched-${NETWORK}.png`, fullPage: true });
 
   // ── 4. Several wallets trade on the curve through the UI ─────────────────────────────────

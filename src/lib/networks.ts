@@ -1,4 +1,4 @@
-import { getAddress, type Address, type Chain } from "viem";
+import { getAddress, parseEther, type Address, type Chain } from "viem";
 import deployment from "../deployment.json";
 import { robinhood, robinhoodTestnet } from "./chains";
 import copyTerms from "./pons-copy-terms.json";
@@ -30,7 +30,18 @@ export const UNISWAP = {
   permit2: getAddress(copyTerms.uniswap.permit2),
 } as const;
 
-type Entry = { launcher?: string; previousLaunchers?: string[]; feeVault?: string; ponsFactory?: string; deployedAt?: string; hidden?: string[] };
+type Entry = {
+  launcher?: string;
+  previousLaunchers?: string[];
+  feeVault?: string;
+  ponsFactory?: string;
+  deployedAt?: string;
+  hidden?: string[];
+  launchFee?: { eth?: string; to?: string };
+};
+
+/** SplitEarn's launch fee: a plain ETH transfer to `to` before a launch, checked by /api/attest (no contract involved). */
+export type LaunchFee = { wei: bigint; to: Address };
 
 export type Network = {
   id: NetworkId;
@@ -57,6 +68,8 @@ export type Network = {
   ponsIsCopy: boolean;
   /** Coins the site doesn't list (the owner's tests, spam). */
   hidden: readonly Address[];
+  /** SplitEarn's launch fee on this network, if it charges one. */
+  launchFee: LaunchFee | null;
   faucet?: string;
   isTestnet: boolean;
 };
@@ -81,6 +94,23 @@ function launchersOf(current: Address | undefined, previous: readonly string[] |
   if (!current) return [];
   return [current, ...list(previous).filter((a) => a.toLowerCase() !== current.toLowerCase())];
 }
+/**
+ * The launch fee: NEXT_PUBLIC_LAUNCH_FEE_ETH + NEXT_PUBLIC_LAUNCH_FEE_TO (the fork tests) or the
+ * network's `launchFee` in src/deployment.json. None when either part is missing or zero.
+ */
+function launchFeeOf(entry: Entry | undefined): LaunchFee | null {
+  const env = process.env.NEXT_PUBLIC_LAUNCH_FEE_TO;
+  const to = address(env || entry?.launchFee?.to);
+  const eth = (env ? process.env.NEXT_PUBLIC_LAUNCH_FEE_ETH : entry?.launchFee?.eth)?.trim();
+  if (!to || !eth) return null;
+  try {
+    const wei = parseEther(eth);
+    return wei > 0n ? { wei, to } : null;
+  } catch {
+    return null;
+  }
+}
+
 const mainnetLauncher = address(process.env.NEXT_PUBLIC_MAINNET_LAUNCHER_ADDRESS || committed.mainnet?.launcher);
 const testnetLauncher = address(process.env.NEXT_PUBLIC_TESTNET_LAUNCHER_ADDRESS || committed.testnet?.launcher);
 
@@ -100,6 +130,7 @@ export const NETWORKS: Record<NetworkId, Network> = {
     ponsFactory: PONS_MAINNET_FACTORY,
     ponsIsCopy: false,
     hidden: [...list(committed.mainnet?.hidden), ...list(process.env.NEXT_PUBLIC_MAINNET_HIDDEN_COINS)],
+    launchFee: launchFeeOf(committed.mainnet),
     isTestnet: false,
   },
   testnet: {
@@ -114,6 +145,7 @@ export const NETWORKS: Record<NetworkId, Network> = {
     ponsFactory: address(process.env.NEXT_PUBLIC_TESTNET_PONS_FACTORY || committed.testnet?.ponsFactory),
     ponsIsCopy: true,
     hidden: [...list(committed.testnet?.hidden), ...list(process.env.NEXT_PUBLIC_TESTNET_HIDDEN_COINS)],
+    launchFee: launchFeeOf(committed.testnet),
     faucet: "https://faucet.testnet.chain.robinhood.com",
     isTestnet: true,
   },
