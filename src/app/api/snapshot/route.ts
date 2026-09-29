@@ -1,4 +1,5 @@
 import { NETWORKS, isLive, parseNetwork } from "@/lib/networks";
+import { missingTimes } from "@/lib/chain-reads";
 import { CDN_CACHE, snapshotFor } from "@/lib/server-snapshot";
 import { encode } from "@/lib/wire";
 
@@ -14,7 +15,10 @@ export async function GET(req: Request) {
   const n = id ? NETWORKS[id] : undefined;
   if (!n || !isLive(n)) return Response.json({ error: "Unknown or not deployed network." }, { status: 404 });
   try {
-    return new Response(encode(await snapshotFor(n)), { headers: { "content-type": "application/json", "cache-control": CDN_CACHE } });
+    const snap = await snapshotFor(n);
+    // A part that failed (null) or a block time not read yet: don't let the CDN keep this answer.
+    const partial = !snap.activity || !snap.payouts || missingTimes(snap.activity.trades) || missingTimes(snap.payouts.latest);
+    return new Response(encode(snap), { headers: { "content-type": "application/json", "cache-control": partial ? "no-store" : CDN_CACHE } });
   } catch {
     return Response.json({ error: "The chain could not be read just now." }, { status: 503, headers: { "cache-control": "no-store" } });
   }

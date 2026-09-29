@@ -3,6 +3,7 @@ import { zeroAddress, type Address } from "viem";
 import { launcherAbi } from "./abi";
 import {
   FIRST_SPAN,
+  mergeLogs,
   readCoins,
   readWiring,
   scanActivity,
@@ -17,10 +18,10 @@ import {
   type Venue,
   type Wiring,
 } from "./chain-reads";
-import type { Network, NetworkId } from "./networks";
+import { isHidden, type Network, type NetworkId } from "./networks";
 import { toCoin } from "./pons";
 import { serverClient } from "./server-network";
-import type { Trade } from "./types";
+import type { Coin, Trade } from "./types";
 
 /**
  * The server's side of the shared chain reads. However many visitors ask, each network is read at
@@ -74,8 +75,10 @@ export function snapshotFor(n: Network): Promise<Snapshot> {
   return memo(s.snapshot, async () => {
     const c = serverClient(n);
     const [coins, wiring] = await Promise.all([readCoins(c, n.launcher!), wiringOf(n)]);
+    // Hidden coins stay out of the ticker and the 24h numbers, as everywhere else.
+    const listed = coins.filter((x) => !isHidden(n, x.token));
     const [activity, payouts] = await Promise.all([
-      scanActivity(c, n.id, coins, wiring, s.activity).catch(() => null),
+      scanActivity(c, n.id, listed, wiring, s.activity).catch(() => null),
       scanPayouts(c, n.id, n.feeVault!, s.payouts).catch(() => null),
     ]);
     if (activity) s.activity = activity.state;
@@ -85,35 +88,53 @@ export function snapshotFor(n: Network): Promise<Snapshot> {
 }
 
 type CoinState = { venue: Venue; createdBlock: bigint; scan: { from: bigint; to: bigint; items: TradeLog[] } | null; memo: Memo<CoinTrades> };
-const coinStates = new Map<string, CoinState | null>();
+const coinStates = new Map<string, CoinState>();
 /** Coins followed at once per instance; the least recently added is dropped past this. */
 const MAX_COINS = 500;
+/** Addresses recently found not to be coins, so repeated lookups don't reach the RPC. */
+const misses = new Map<string, number>();
+const MISS_MS = 30_000;
+const RESCAN = 64n;
+
+/** The coin at `token`, from the shared snapshot when it's there, else from the chain. */
+async function findCoin(n: Network, token: Address): Promise<Coin | null> {
+  const k = `${n.id}:${token.toLowerCase()}`;
+  const missedAt = misses.get(k);
+  if (missedAt && Date.now() - missedAt < MISS_MS) return null;
+  const listed = (await snapshotFor(n).catch(() => null))?.coins.find((c) => c.token.toLowerCase() === token.toLowerCase());
+  if (listed) return listed;
+  const v = await serverClient(n).readContract({ address: n.launcher!, abi: launcherAbi, functionName: "getLaunch", args: [token] });
+  if (v.launch.token !== zeroAddress) return toCoin(v);
+  if (misses.size > 5_000) misses.clear();
+  misses.set(k, Date.now());
+  return null;
+}
 
 /**
  * A coin's trades over its latest ~2 days, or null when the address isn't a coin of this
- * launcher. Continues from the last read, like the snapshot.
+ * launcher. Continues from the last read, like the snapshot (re-reading a few blocks, merged by
+ * transaction and log index, never moving its cursor backwards).
  */
 export async function coinTradesFor(n: Network, token: Address): Promise<CoinTrades | null> {
   const k = `${n.id}:${token.toLowerCase()}`;
   let s = coinStates.get(k);
-  if (s === undefined) {
-    const v = await serverClient(n).readContract({ address: n.launcher!, abi: launcherAbi, functionName: "getLaunch", args: [token] });
-    const coin = v.launch.token === zeroAddress ? null : toCoin(v);
-    s = coin ? { venue: venueOf(coin), createdBlock: coin.createdBlock, scan: null, memo: { at: 0 } } : null;
+  if (!s) {
+    const coin = await findCoin(n, token);
+    if (!coin) return null;
+    s = { venue: venueOf(coin), createdBlock: coin.createdBlock, scan: null, memo: { at: 0 } };
     if (coinStates.size >= MAX_COINS) coinStates.delete(coinStates.keys().next().value!);
-    // Not a coin yet may mean launched a moment ago: only coins are remembered.
-    if (s) coinStates.set(k, s);
+    coinStates.set(k, s);
   }
-  if (!s) return null;
   const st = s;
   const wiring = await wiringOf(n);
   return memo(st.memo, async () => {
     const c = serverClient(n);
-    const head = await c.getBlockNumber();
+    const latest = await c.getBlockNumber();
+    const head = st.scan && st.scan.to > latest ? st.scan.to : latest;
     const floor = head - FIRST_SPAN > st.createdBlock ? head - FIRST_SPAN : st.createdBlock;
-    const from = st.scan ? st.scan.to + 1n : floor;
+    const from = st.scan ? (st.scan.to + 1n - RESCAN > floor ? st.scan.to + 1n - RESCAN : floor) : floor;
     const fresh = from > head ? [] : await tradesBetween(c, [st.venue], wiring, from, head);
-    const items = [...(st.scan?.items ?? []), ...fresh].filter((t) => t.blockNumber >= floor);
+    const items = mergeLogs(st.scan?.items ?? [], fresh).filter((t) => t.blockNumber >= floor);
     st.scan = { from: floor, to: head, items };
     return { from: floor, to: head, trades: await withTimes(c, n.id, items) };
   });

@@ -146,7 +146,9 @@ Gotchas:
   `0xff3a3cfc42d27e85dba9ea85f0bfec34bd632f9a` (the owner's wallet), `BLOB_READ_WRITE_TOKEN` (Blob store
   `splitearn-coin-images`, connected by Claude). 2026-09-29: the owner added a paid RPC: `NEXT_PUBLIC_MAINNET_RPC_URL`
   (domain-restricted, browsers) and `MAINNET_RPC_URL` (sensitive, server). The Vercel MCP connection
-  lost access to the `akdogan1` scope (403), so a push is how Claude redeploys. Hobby forbids commercial use, so Pro before launch.
+  lost access to the `akdogan1` scope (403), so a push is how Claude redeploys. `vercel.json` skips
+  builds for commits that don't touch the site; put `[deploy]` in a commit message to force one (e.g. after
+  an env change, since `NEXT_PUBLIC_*` values are baked in at build time). Hobby forbids commercial use, so Pro before launch.
   MAINNET.md has the owner-facing steps.
 - **/setup is owner-only**: `src/lib/admin.ts` + `/api/admin/session`. Admins are `ADMIN_ADDRESSES` plus
   the on-chain owner of each pinned launcher; they sign a one-time message and get a signed, http-only

@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPublicClient, zeroAddress, type Address, type Hex, type PublicClient } from "viem";
 import { useReadContract, useReadContracts } from "wagmi";
@@ -15,6 +15,7 @@ import {
   venueOf,
   withTimes,
   FIRST_SPAN,
+  mergeLogs,
   type Activity,
   type CoinTrades,
   type Payout,
@@ -58,14 +59,14 @@ export function clientFor(n: Network): PublicClient {
  * the server again a minute later.
  */
 const SNAPSHOT_TTL = 3_000;
-const SNAPSHOT_RETRY = 60_000;
+const SNAPSHOT_RETRY = 20_000;
 const snapshots = new Map<NetworkId, { at: number; promise: Promise<Snapshot> }>();
 const serverDownUntil = new Map<string, number>();
 
 async function fromServer<T>(kind: string, url: string): Promise<T> {
   if ((serverDownUntil.get(kind) ?? 0) > Date.now()) throw new Error("server snapshot unavailable");
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
     if (res.status === 404) throw Object.assign(new Error("not found"), { notFound: true });
     if (!res.ok) throw new Error(`snapshot ${res.status}`);
     return decode<T>(await res.text());
@@ -114,18 +115,17 @@ export function useCoins() {
 /** One coin with its live Pons state; `null` when it isn't a SplitEarn coin on this network. */
 export function useCoin(token: Address | undefined) {
   const n = useNetwork();
-  const key = `${n.id}:${token}`;
-  const seeded = useRef<string | null>(null);
+  const qc = useQueryClient();
+  const queryKey = ["coin", n.id, n.launcher, token];
   return useQuery({
-    queryKey: ["coin", n.id, n.launcher, token],
+    queryKey,
     enabled: Boolean(isLive(n) && token),
     refetchInterval: 5_000,
     queryFn: async () => {
       if (isHidden(n, token!)) return null;
-      // The first paint comes from the shared snapshot (a few seconds old at most). After that the
-      // coin is read live: trades are priced from these reserves.
-      if (seeded.current !== key) {
-        seeded.current = key;
+      // Only the very first paint comes from the shared snapshot (a few seconds old at most); once
+      // this coin has been read, it is read live: trades are priced from these reserves.
+      if (qc.getQueryData(queryKey) === undefined) {
         const shared = await snapshotOf(n).catch(() => null);
         const hit = shared?.coins.find((c) => c.token.toLowerCase() === token!.toLowerCase());
         if (hit) return hit;
@@ -334,7 +334,7 @@ export function useCoinTrades(coin: Coin | null | undefined) {
           if (!s || s.key !== key) return { key, trades: shared.trades, from: shared.from, to: shared.to };
           if (shared.to < s.to) return s;
           const older = s.trades.filter((t) => t.blockNumber < shared.from);
-          return { key, trades: [...older, ...shared.trades], from: s.from < shared.from ? s.from : shared.from, to: shared.to };
+          return { key, trades: mergeLogs(older, shared.trades), from: s.from < shared.from ? s.from : shared.from, to: shared.to };
         });
         setError(null);
         return;
@@ -347,7 +347,7 @@ export function useCoinTrades(coin: Coin | null | undefined) {
       if (from > head) return;
       const fresh = await withTimes(c, n.id, await tradesBetween(c, [venue], wiring, from, head));
       setState((s) =>
-        s && s.key === key ? { ...s, trades: [...s.trades, ...fresh], to: head } : { key, trades: fresh, from, to: head }
+        s && s.key === key ? { ...s, trades: mergeLogs(s.trades, fresh), to: head } : { key, trades: fresh, from, to: head }
       );
       setError(null);
     } catch (e) {
@@ -399,11 +399,12 @@ export function useActivity() {
   const cache = useRef<ScanState<Omit<Trade, "timestamp">>>(null);
   return useQuery({
     queryKey: ["activity", n.id, n.launcher, venueKey],
-    enabled: Boolean(wiring && coins),
+    enabled: Boolean(coins),
     refetchInterval: 12_000,
     queryFn: async (): Promise<Activity> => {
       const shared = await snapshotOf(n).catch(() => null);
       if (shared?.activity) return shared.activity;
+      if (!wiring) throw new Error("Activity is not available right now.");
       const got = await scanActivity(clientFor(n), n.id, coins!, wiring!, cache.current);
       cache.current = got.state;
       return got.activity;
