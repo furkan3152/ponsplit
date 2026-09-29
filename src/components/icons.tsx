@@ -61,6 +61,13 @@ export const SearchIcon = svg(
   </>
 );
 export const CollapseIcon = svg(<path d="m11 7-5 5 5 5M18 7l-5 5 5 5" />);
+export const BookIcon = svg(
+  <>
+    <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z" />
+    <path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" />
+    <path d="M8.5 7.5h7M8.5 11h5" />
+  </>
+);
 export const ArrowIcon = svg(<path d="M5 12h14M13 6l6 6-6 6" />);
 export const SparkIcon = svg(<path d="M12 3c.6 4.6 2.4 6.4 7 7-4.6.6-6.4 2.4-7 7-.6-4.6-2.4-6.4-7-7 4.6-.6 6.4-2.4 7-7z" />);
 
