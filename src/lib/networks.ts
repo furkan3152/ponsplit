@@ -30,7 +30,7 @@ export const UNISWAP = {
   permit2: getAddress(copyTerms.uniswap.permit2),
 } as const;
 
-type Entry = { launcher?: string; feeVault?: string; ponsFactory?: string; deployedAt?: string; hidden?: string[] };
+type Entry = { launcher?: string; previousLaunchers?: string[]; feeVault?: string; ponsFactory?: string; deployedAt?: string; hidden?: string[] };
 
 export type Network = {
   id: NetworkId;
@@ -44,6 +44,12 @@ export type Network = {
   explorer: string;
   /** SplitEarn's contracts, once deployed and pinned (src/deployment.json or NEXT_PUBLIC_* variables). */
   launcher?: Address;
+  /**
+   * Every SplitEarn launcher whose coins the site shows, the current one (`launcher`, which new coins
+   * launch on) first. Older launchers stay listed after an upgrade: their coins keep trading and
+   * paying out, and SplitEarn's share in them is still withdrawn from them.
+   */
+  launchers: readonly Address[];
   feeVault?: Address;
   /** The Pons factory coins launch on: Pons's own on mainnet, SplitEarn's copy on testnet. */
   ponsFactory?: Address;
@@ -70,6 +76,14 @@ function list(values: readonly string[] | string | undefined): Address[] {
 
 const committed = deployment as Partial<Record<NetworkId, Entry>>;
 
+/** The current launcher first, then the older ones (never the current one twice). */
+function launchersOf(current: Address | undefined, previous: readonly string[] | undefined): Address[] {
+  if (!current) return [];
+  return [current, ...list(previous).filter((a) => a.toLowerCase() !== current.toLowerCase())];
+}
+const mainnetLauncher = address(process.env.NEXT_PUBLIC_MAINNET_LAUNCHER_ADDRESS || committed.mainnet?.launcher);
+const testnetLauncher = address(process.env.NEXT_PUBLIC_TESTNET_LAUNCHER_ADDRESS || committed.testnet?.launcher);
+
 // NEXT_PUBLIC_* variables must be spelled out literally so Next.js can inline them. next.config.mjs
 // fails the build on a malformed or half-set pin, so what reaches here is either valid or absent.
 export const NETWORKS: Record<NetworkId, Network> = {
@@ -79,7 +93,9 @@ export const NETWORKS: Record<NetworkId, Network> = {
     chain: robinhood,
     rpcUrls: rpcList(process.env.NEXT_PUBLIC_MAINNET_RPC_URL, robinhood.rpcUrls.default.http[0]),
     explorer: robinhood.blockExplorers!.default.url,
-    launcher: address(process.env.NEXT_PUBLIC_MAINNET_LAUNCHER_ADDRESS || committed.mainnet?.launcher),
+    launcher: mainnetLauncher,
+    // An env-pinned launcher (the fork tests) is a separate deployment: the committed older ones don't belong to it.
+    launchers: launchersOf(mainnetLauncher, process.env.NEXT_PUBLIC_MAINNET_LAUNCHER_ADDRESS ? [] : committed.mainnet?.previousLaunchers),
     feeVault: address(process.env.NEXT_PUBLIC_MAINNET_FEE_VAULT_ADDRESS || committed.mainnet?.feeVault),
     ponsFactory: PONS_MAINNET_FACTORY,
     ponsIsCopy: false,
@@ -92,7 +108,8 @@ export const NETWORKS: Record<NetworkId, Network> = {
     chain: robinhoodTestnet,
     rpcUrls: rpcList(process.env.NEXT_PUBLIC_TESTNET_RPC_URL, robinhoodTestnet.rpcUrls.default.http[0]),
     explorer: robinhoodTestnet.blockExplorers!.default.url,
-    launcher: address(process.env.NEXT_PUBLIC_TESTNET_LAUNCHER_ADDRESS || committed.testnet?.launcher),
+    launcher: testnetLauncher,
+    launchers: launchersOf(testnetLauncher, process.env.NEXT_PUBLIC_TESTNET_LAUNCHER_ADDRESS ? [] : committed.testnet?.previousLaunchers),
     feeVault: address(process.env.NEXT_PUBLIC_TESTNET_FEE_VAULT_ADDRESS || committed.testnet?.feeVault),
     ponsFactory: address(process.env.NEXT_PUBLIC_TESTNET_PONS_FACTORY || committed.testnet?.ponsFactory),
     ponsIsCopy: true,

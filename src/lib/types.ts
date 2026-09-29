@@ -12,6 +12,8 @@ export type Recipient = { xId: bigint; handle: string; bps: number };
 /** A SplitEarn coin with the numbers every page shows. */
 export type Coin = {
   token: Address;
+  /** The SplitEarn launcher that launched it (after an upgrade, older coins keep their own). */
+  launcher: Address;
   curve: Address;
   splitter: Address;
   creator: Address;

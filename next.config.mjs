@@ -31,6 +31,9 @@ function checkPins() {
     if (factory) checkAddress(factory, "testnet ponsFactory");
     if (entry.hidden !== undefined && !Array.isArray(entry.hidden)) throw new Error(`src/deployment.json: ${network}.hidden must be a list of coin addresses.`);
     (entry.hidden ?? []).forEach((a, i) => checkAddress(a, `src/deployment.json ${network}.hidden[${i}]`));
+    if (entry.previousLaunchers !== undefined && !Array.isArray(entry.previousLaunchers))
+      throw new Error(`src/deployment.json: ${network}.previousLaunchers must be a list of launcher addresses.`);
+    (entry.previousLaunchers ?? []).forEach((a, i) => checkAddress(a, `src/deployment.json ${network}.previousLaunchers[${i}]`));
     (process.env[`NEXT_PUBLIC_${NET}_HIDDEN_COINS`] || "")
       .split(",")
       .map((a) => a.trim())

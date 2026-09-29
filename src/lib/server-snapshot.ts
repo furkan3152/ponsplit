@@ -1,9 +1,9 @@
 import "server-only";
-import { zeroAddress, type Address } from "viem";
-import { launcherAbi } from "./abi";
+import type { Address } from "viem";
 import {
   FIRST_SPAN,
   mergeLogs,
+  readCoin,
   readCoins,
   readWiring,
   scanActivity,
@@ -19,7 +19,6 @@ import {
   type Wiring,
 } from "./chain-reads";
 import { isHidden, type Network, type NetworkId } from "./networks";
-import { toCoin } from "./pons";
 import { serverClient } from "./server-network";
 import type { Coin, Trade } from "./types";
 
@@ -74,7 +73,7 @@ export function snapshotFor(n: Network): Promise<Snapshot> {
   const s = stateOf(n);
   return memo(s.snapshot, async () => {
     const c = serverClient(n);
-    const [coins, wiring] = await Promise.all([readCoins(c, n.launcher!), wiringOf(n)]);
+    const [coins, wiring] = await Promise.all([readCoins(c, n.launchers), wiringOf(n)]);
     // Hidden coins stay out of the ticker and the 24h numbers, as everywhere else.
     const listed = coins.filter((x) => !isHidden(n, x.token));
     const [activity, payouts] = await Promise.all([
@@ -103,8 +102,8 @@ async function findCoin(n: Network, token: Address): Promise<Coin | null> {
   if (missedAt && Date.now() - missedAt < MISS_MS) return null;
   const listed = (await snapshotFor(n).catch(() => null))?.coins.find((c) => c.token.toLowerCase() === token.toLowerCase());
   if (listed) return listed;
-  const v = await serverClient(n).readContract({ address: n.launcher!, abi: launcherAbi, functionName: "getLaunch", args: [token] });
-  if (v.launch.token !== zeroAddress) return toCoin(v);
+  const found = await readCoin(serverClient(n), n.launchers, token);
+  if (found) return found;
   if (misses.size > 5_000) misses.clear();
   misses.set(k, Date.now());
   return null;
