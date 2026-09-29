@@ -37,7 +37,8 @@ const visit = async (i) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message.slice(0, 120)));
   const failedRequests = [];
-  page.on("requestfailed", (r) => failedRequests.push(`${r.url().slice(0, 60)} ${r.failure()?.errorText}`));
+  // Aborted requests are link prefetches cut off when the visit ends, not failures.
+  page.on("requestfailed", (r) => r.failure()?.errorText !== "net::ERR_ABORTED" && failedRequests.push(`${r.url().slice(0, 60)} ${r.failure()?.errorText}`));
   page.on("response", (r) => r.status() >= 500 && failedRequests.push(`${r.status()} ${r.url().slice(0, 80)}`));
   const t0 = Date.now();
   let usable = null;
