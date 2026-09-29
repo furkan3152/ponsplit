@@ -447,7 +447,13 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
   // fees are collected (at every claim, or by the owner here before withdrawing).
   const { data: coins } = useCoins();
   const uncollected = coins?.reduce((a, c) => a + c.platformPending, 0n);
-  const toCollect = (coins ?? []).filter((c) => c.feesPending > 0n).map((c) => c.token);
+  // The coins most worth collecting, a bounded number per transaction (each costs gas; dust in many
+  // coins must never make one too big for a block). Pressing again collects the next ones.
+  const toCollect = (coins ?? [])
+    .filter((c) => c.feesPending > 1_000_000_000_000n)
+    .sort((a, b) => (b.feesPending > a.feesPending ? 1 : b.feesPending < a.feesPending ? -1 : 0))
+    .slice(0, 25)
+    .map((c) => c.token);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const lock = useRef(false);
@@ -538,15 +544,24 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
               text: toCollect.length ? "Collect & withdraw to this wallet" : "Withdraw to this wallet",
               run: () =>
                 send(
-                  "Withdraw to this wallet",
+                  toCollect.length ? "Collect & withdraw to this wallet" : "Withdraw to this wallet",
                   toCollect.length
                     ? `Collect the fees of ${toCollect.length} coin${toCollect.length === 1 ? "" : "s"}, then send all of SplitEarn's share to ${address}? Two transactions.`
                     : `Send ${formatEther(fees ?? 0n)} ETH to ${address}?`,
                   async () => {
                     if (toCollect.length) {
-                      const hash = await writeContractAsync({ ...launcher, functionName: "collectMany", args: [toCollect] });
-                      const r = await client.waitForTransactionReceipt({ hash });
-                      if (r.status !== "success") throw new Error("Collecting the coins' fees reverted.");
+                      // A collection that wouldn't go through never blocks withdrawing what's ready.
+                      const collectable = await client
+                        .simulateContract({ account: address, ...launcher, functionName: "collectMany", args: [toCollect] })
+                        .then(() => true)
+                        .catch(() => false);
+                      if (collectable) {
+                        const hash = await writeContractAsync({ ...launcher, functionName: "collectMany", args: [toCollect] });
+                        const r = await client.waitForTransactionReceipt({ hash });
+                        if (r.status !== "success") throw new Error("Collecting the coins' fees reverted.");
+                      } else if (!fees) {
+                        throw new Error("The coins' fees can't be collected right now (pons may still be releasing them). Try again later.");
+                      }
                     }
                     return writeContractAsync({ ...launcher, functionName: "withdrawPlatformFees", args: [address] });
                   }

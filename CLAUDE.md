@@ -239,8 +239,9 @@ Gotchas:
   Claude to deploy testnet from the old admin wallet `0x36b1f7…`; a key-signing deploy workflow was
   refused by the permission system, so testnet too is deployed by the owner on /setup.
 - **SplitEarn rename + redesign (2026-09-28).** The project is now SplitEarn (contracts `SplitEarnLauncher`,
-  `SplitEarnRouter`, EIP-712 `SplitEarn FeeVault`, salts `splitearn:v1`). New cute two-tone coin logo
-  (`art/Logo.tsx`; `scripts/render-logo.mjs` renders the static icons). The shell follows the owner's
+  `SplitEarnRouter`, EIP-712 `SplitEarn FeeVault`, salts `splitearn:v1`). The logo is the owner's S drawn as a sticker
+  (two halves, lime and green, split by a diagonal; `art/Logo.tsx`; `scripts/render-logo.mjs` renders the static
+  icons). The owner tried a glassmorphism redesign and asked to keep the current interface. The shell follows the owner's
   reference: sidebar (`Sidebar.tsx`, folds; `data-sidebar` on `<html>`), top bar with coin search
   (`SearchBox.tsx`), 5-tab bar on phones; home is a centred hero plus bento panels of real chain data
   (`components/home/Bento.tsx`, `usePayouts`, `useTopEarners`); the board moved to `/explore`. The split
