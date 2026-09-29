@@ -28,11 +28,6 @@ export const launcherAbi = [
     "type": "error"
   },
   {
-    "inputs": [],
-    "name": "FeeTooHigh",
-    "type": "error"
-  },
-  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -135,19 +130,6 @@ export const launcherAbi = [
     "inputs": [],
     "name": "ZeroAddress",
     "type": "error"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "fee",
-        "type": "uint256"
-      }
-    ],
-    "name": "CreationFeeSet",
-    "type": "event"
   },
   {
     "anonymous": false,
@@ -334,19 +316,6 @@ export const launcherAbi = [
   },
   {
     "inputs": [],
-    "name": "MAX_CREATION_FEE",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
     "name": "MAX_PLATFORM_SHARE_BPS",
     "outputs": [
       {
@@ -421,19 +390,6 @@ export const launcherAbi = [
       }
     ],
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "creationFee",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -1094,11 +1050,6 @@ export const launcherAbi = [
         "internalType": "bool",
         "name": "paused",
         "type": "bool"
-      },
-      {
-        "internalType": "uint256",
-        "name": "splitEarnLaunchFee",
-        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -1281,19 +1232,6 @@ export const launcherAbi = [
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "fee",
-        "type": "uint256"
-      }
-    ],
-    "name": "setCreationFee",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
