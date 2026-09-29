@@ -28,7 +28,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   // A hidden coin (src/deployment.json) isn't read at all; the page says it isn't listed.
   const hidden = Boolean(parsed && isHidden(n, parsed));
   const token = hidden ? undefined : parsed;
-  const { data: t, isLoading, isError, refetch } = useCoin(token);
+  const { data: t, isLoading, isError, refetch, isPlaceholderData } = useCoin(token);
   const elsewhere = useCoinElsewhere(token, t === null);
   const trades = useCoinTrades(t);
   const info = useTokenInfo(t ? t.token : undefined);
@@ -238,7 +238,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
         </div>
 
         <aside className="order-first min-w-0 space-y-5 lg:sticky lg:top-20 lg:order-none lg:space-y-6 lg:self-start">
-          <TradePanel coin={t} onTraded={() => refetch()} />
+          <TradePanel coin={t} live={!isPlaceholderData} onTraded={() => refetch()} />
           <Reveal delay={120}>{graduated ? <GraduatedCard t={t} /> : <CurveCard t={t} />}</Reveal>
           <Reveal delay={180}>
             <SplitCard t={t} />

@@ -35,7 +35,8 @@ type Quote = { out: bigint; spent: bigint; refund: bigint };
  * crossing buy and the pool's creation) in its pons Uniswap v4 pool through SplitEarn's router. In
  * between, anyone can push the graduation along; pons's own keeper usually does it first.
  */
-export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => void }) {
+/** `live`: the coin's reserves were just read from the chain (not a placeholder); trades wait for that. */
+export function TradePanel({ coin, onTraded, live = true }: { coin: Coin; onTraded: () => void; live?: boolean }) {
   const n = useNetwork();
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState("");
@@ -159,7 +160,7 @@ export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => voi
   async function trade() {
     setMsg(null);
     if (!isConnected || !address) return openConnectModal?.();
-    if (!parsed || !quote || !quote.out || lock.current) return;
+    if (!live || !parsed || !quote || !quote.out || lock.current) return;
     lock.current = true;
     // The quote on screen when the button was pressed is what the slippage setting protects.
     const floor = minOut(quote.out, slippage);
@@ -398,7 +399,7 @@ export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => voi
 
       <button
         className={`w-full !py-4 text-[16px] ${!isConnected ? "btn-neon" : buying ? "btn-buy" : "btn-sell"}`}
-        disabled={isConnected && (Boolean(busy) || !parsed || !quote?.out || insufficient || noGasLeft)}
+        disabled={isConnected && (Boolean(busy) || !live || !parsed || !quote?.out || insufficient || noGasLeft)}
         onClick={() => guard(trade)}
       >
         {busy ? <Spinner /> : null}
