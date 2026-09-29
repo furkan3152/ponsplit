@@ -3,13 +3,17 @@
     "launcher": "0x71e139e09eF72A7F580f6704AAa4508D2b195ffb",
     "feeVault": "0x5ad954cd8F5c681a2C3FC2a399868a37e3611aB7",
     "deployedAt": "2026-09-28",
-    "hidden": []
+    "hidden": [
+      "0xD28B1b11937E744f878fd4793b8539e960DB020f"
+    ]
   },
   "testnet": {
     "launcher": "0x5D95C13c6Ef4874AcDfcd3A68cE62e17E65cFe59",
     "feeVault": "0x5ad954cd8F5c681a2C3FC2a399868a37e3611aB7",
     "ponsFactory": "0xF2531ee1d731653d3C4F3CE24B98dB5bDFa78c88",
     "deployedAt": "2026-09-28",
-    "hidden": []
+    "hidden": [
+      "0xf932491D5a61A7912971fDE122B41D11f967628F"
+    ]
   }
 }

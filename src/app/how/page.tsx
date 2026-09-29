@@ -6,6 +6,7 @@ import { StepLaunch } from "@/components/art";
 import { Avatar, C, type FaceKind, type Hair } from "@/components/art/parts";
 import { Reveal } from "@/components/motion";
 import { NETWORKS } from "@/lib/networks";
+import { HeadingDoodle } from "@/components/art/Doodles";
 
 export const metadata: Metadata = { title: "How it works" };
 
@@ -159,7 +160,9 @@ export default function HowPage() {
         <div className="grid gap-8 border-t border-line pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.75fr)] lg:gap-14">
           <Reveal className="lg:sticky lg:top-24 lg:self-start">
             <Kicker n="03">Questions</Kicker>
-            <h2 className="display mt-3 text-[36px] leading-[0.95] sm:text-[48px]">Good questions</h2>
+            <h2 className="display mt-3 flex items-center gap-2 text-[36px] leading-[0.95] sm:text-[48px]">
+              Good questions <HeadingDoodle kind="sparkle" />
+            </h2>
             <p className="mt-4 max-w-sm text-[15px] leading-relaxed text-ink-2">The short answers to what people ask first. Tap one to open it.</p>
           </Reveal>
           <div className="card divide-y divide-[var(--line)] overflow-hidden">
