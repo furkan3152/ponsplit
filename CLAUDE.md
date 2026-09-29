@@ -165,7 +165,7 @@ Gotchas:
 - **Brand.** X account @SplitEarn (`src/lib/brand.ts`: FollowX button in the home card, sidebar, footer). The home page's
   "Official token" card shows the official CA from `mainnet.officialToken` in `src/deployment.json` (empty = "Coming soon");
   set it when the owner launches the official coin, and its coin page gets an "Official SplitEarn token" badge.
-- **/setup is owner-only**: `src/lib/admin.ts` + `/api/admin/session`. Admins are `ADMIN_ADDRESSES` plus
+- **/setup is owner-only** and linked from nowhere on the site (owner's request, 2026-09-29; open splitearn.app/setup directly): `src/lib/admin.ts` + `/api/admin/session`. Admins are `ADMIN_ADDRESSES` plus
   the on-chain owner of each pinned launcher; they sign a one-time message and get a signed, http-only
   session cookie. Everyone else sees only the sign-in screen (e2e checks this).
 
