@@ -543,6 +543,32 @@ function Live({ n, server }: { n: Network; server: ServerConfig | undefined }) {
           : undefined,
     },
     {
+      label: "SplitEarn's cut of new coins' creator fee",
+      state: share === undefined ? "…" : `${share / 100}% (X accounts get ${100 - share / 100}%). Coins already launched keep theirs.`,
+      ok: true,
+      action:
+        address && isOwner && share !== undefined
+          ? {
+              text: "Change",
+              run: () => {
+                const input = window.prompt("SplitEarn's cut of the creator fee for coins launched from now on, in % (0 to 30):", String(share / 100));
+                if (input === null) return;
+                const pct = Number(input.trim().replace("%", "").replace(",", "."));
+                if (!Number.isFinite(pct) || pct < 0 || pct > 30) {
+                  setMsg({ ok: false, text: "Enter a percentage from 0 to 30." });
+                  return;
+                }
+                const bps = Math.round(pct * 100);
+                void send(
+                  "Change SplitEarn's cut",
+                  `Take ${bps / 100}% of the creator fee (the X accounts get ${100 - bps / 100}%) on coins launched from now on? Existing coins don't change.`,
+                  () => writeContractAsync({ ...launcher, functionName: "setPlatformShareBps", args: [bps] })
+                );
+              },
+            }
+          : undefined,
+    },
+    {
       label: `SplitEarn's share${share !== undefined ? ` (${share / 100}% of the creator fee)` : ""}`,
       state:
         fees === undefined || uncollected === undefined

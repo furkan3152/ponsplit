@@ -5,19 +5,21 @@ import { HowItWorks } from "@/components/HowItWorks";
 import { StepLaunch } from "@/components/art";
 import { Avatar, C, type FaceKind, type Hair } from "@/components/art/parts";
 import { Reveal } from "@/components/motion";
+import { launcherAbi } from "@/lib/abi";
 import { NETWORKS } from "@/lib/networks";
+import { serverClient } from "@/lib/server-network";
 import { HeadingDoodle } from "@/components/art/Doodles";
 
 export const metadata: Metadata = { title: "How it works" };
 
-const FAQ: { q: string; a: React.ReactNode }[] = [
+const faq = (splitEarnPct: number): { q: string; a: React.ReactNode }[] => [
   {
     q: "Where does the coin live?",
     a: "On pons. SplitEarn launches it through pons's own factory, so it is a regular pons coin: pons mints it, runs its bonding curve and graduates it into a Uniswap v4 pool with locked liquidity. The only difference is who receives its creator fees: a per-coin splitter that pays the X accounts.",
   },
   {
     q: "Where do the fees come from?",
-    a: "Every buy and sell pays pons's 1% fee: 30% of it goes to pons and 70% is the creator's. Of the creator's part, 80% goes to the coin's X accounts by the shares set at launch and 20% to SplitEarn. A coin can also carry a creator tax of up to 10%, chosen at launch; all of it goes to the X accounts. The split never changes after launch.",
+    a: `Every buy and sell pays pons's 1% fee: 30% of it goes to pons and 70% is the creator's. Of the creator's part, ${100 - splitEarnPct}% goes to the coin's X accounts by the shares set at launch and ${splitEarnPct}% to SplitEarn (for coins launched now; every coin keeps the split it launched with). A coin can also carry a creator tax of up to 10%, chosen at launch; all of it goes to the X accounts. The split never changes after launch.`,
   },
   {
     q: "What happens when the curve sells out?",
@@ -67,12 +69,12 @@ const ACCOUNTS: Account[] = [
   { handle: "sol", share: 10, color: C.orange, hair: 4, hairColor: C.sky, face: "happy" },
 ];
 
-// The same numbers the FAQ states: pons's 1% fee on every trade, 70% of it the creator's, and 80% of
-// that to the accounts (20% to SplitEarn). A coin's optional creator tax comes on top, all to the accounts.
+// The same numbers the FAQ states: pons's 1% fee on every trade, 70% of it the creator's, and the
+// accounts' part of that (the rest is SplitEarn's, read live from the launcher). A coin's optional
+// creator tax comes on top, all to the accounts.
 const TRADE_ETH = 1;
 const FEE_PCT = 1;
 const CREATOR_PCT = 70;
-const ACCOUNTS_PCT = 80;
 const eth = (n: number) => `${n.toFixed(4)} ETH`;
 
 /*
@@ -90,7 +92,25 @@ const RISE =
 const ACCORDION =
   "group [interpolate-size:allow-keywords] [&::details-content]:h-0 [&::details-content]:overflow-hidden [&::details-content]:transition-[height,content-visibility] [&::details-content]:duration-500 [&::details-content]:ease-[cubic-bezier(0.2,0.8,0.2,1)] [&::details-content]:[transition-behavior:allow-discrete] [&[open]::details-content]:h-auto motion-reduce:[&::details-content]:transition-none";
 
-export default function HowPage() {
+// Re-read SplitEarn's current share every few minutes (the owner can change it for new coins).
+export const revalidate = 300;
+
+/** SplitEarn's cut of the creator fee for coins launched now, in %: from the launcher, else 20. */
+async function splitEarnPct(): Promise<number> {
+  const n = NETWORKS.mainnet;
+  if (!n.launcher) return 20;
+  try {
+    const bps = await serverClient(n).readContract({ address: n.launcher, abi: launcherAbi, functionName: "platformShareBps" });
+    return Number(bps) / 100;
+  } catch {
+    return 20;
+  }
+}
+
+export default async function HowPage() {
+  const splitPct = await splitEarnPct();
+  const ACCOUNTS_PCT = 100 - splitPct;
+  const FAQ = faq(splitPct);
   return (
     <div className="space-y-20 sm:space-y-28">
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
@@ -148,7 +168,7 @@ export default function HowPage() {
         <ChapterHead n="02" kicker="The money" title="Where the fee goes">
           Every buy and every sell pays pons&apos;s 1% fee, on the bonding curve and in the Uniswap v4 pool after graduation. Here is one trade&apos;s fee, followed all the way down.
         </ChapterHead>
-        <FeeFlow />
+        <FeeFlow accountsPct={ACCOUNTS_PCT} />
       </section>
 
       {/* ── 03 · Questions ───────────────────────────────────────────────── */}
@@ -241,10 +261,10 @@ function ChapterHead({ n, kicker, title, children }: { n: string; kicker: string
 
 /**
  * Where one trade's fee goes, zooming in three times: 1 square in 100 is pons's fee, 70% of the fee
- * is the creator's, 80% of that goes to the X accounts, and the accounts' part splits by their
+ * is the creator's, the accounts' part of that goes to the X accounts, and it splits by their
  * shares. The receipt beside it runs the same numbers for a 1 ETH trade.
  */
-function FeeFlow() {
+function FeeFlow({ accountsPct: ACCOUNTS_PCT }: { accountsPct: number }) {
   const fee = (TRADE_ETH * FEE_PCT) / 100;
   const creator = (fee * CREATOR_PCT) / 100;
   const toPons = fee - creator;
@@ -306,7 +326,7 @@ function FeeFlow() {
           </div>
         </div>
 
-        <Receipt fee={fee} toPons={toPons} creator={creator} toPlatform={toPlatform} toAccounts={toAccounts} />
+        <Receipt fee={fee} toPons={toPons} creator={creator} toPlatform={toPlatform} toAccounts={toAccounts} accountsPct={ACCOUNTS_PCT} />
       </div>
       <figcaption className="mt-7 border-t border-line pt-4 text-[13px] leading-relaxed text-ink-3">
         Shares are set at launch and never change. A coin&apos;s creator tax (0–10%, chosen at launch) comes on top of the fee and goes entirely to its X accounts.
@@ -381,7 +401,7 @@ function AccountFace({ a, className }: { a: Account; className?: string }) {
 }
 
 /** The same split as a till receipt, for a 1 ETH trade. */
-function Receipt({ fee, toPons, creator, toPlatform, toAccounts }: { fee: number; toPons: number; creator: number; toPlatform: number; toAccounts: number }) {
+function Receipt({ fee, toPons, creator, toPlatform, toAccounts, accountsPct: ACCOUNTS_PCT }: { fee: number; toPons: number; creator: number; toPlatform: number; toAccounts: number; accountsPct: number }) {
   const accountsPct = (FEE_PCT * CREATOR_PCT * ACCOUNTS_PCT) / 10_000;
   return (
     <div className="flex min-w-0 flex-col rounded-2xl border border-line bg-card-2 font-mono text-[12px]">

@@ -24,7 +24,8 @@ split between up to 10 X (Twitter) accounts. The site is not affiliated with pon
   Uniswap v4 pool (`createGraduatedPool`, permissionless; the coin page has a button for it).
   Trading: curve buy/sell directly on pons's curve, pool trades through `SplitEarnRouter`.
 - **Fees.** pons's 1% fee: 30% pons, 70% creator. Of the creator part 20% goes to SplitEarn
-  (`platformShareBps`, max 30%) and 80% to the X accounts; the optional creator tax (0-10%, chosen
+  (`platformShareBps`, max 30%; the owner chose to raise it to 30% for new coins on 2026-09-29 via the /setup control) and
+  the rest to the X accounts; the optional creator tax (0-10%, chosen
   at launch, default 0) goes 100% to the accounts. Each coin snapshots `platformBps`. A SplitEarn launch fee (~$1) was built
   and then dropped by the owner (2026-09-29): the live v1 contracts stay, no redeploy. FeeVault keys
   balances by the permanent numeric X user id. Claims use `collectAndClaim` to collect first.
