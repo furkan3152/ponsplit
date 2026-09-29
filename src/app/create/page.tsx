@@ -180,11 +180,14 @@ export default function CreatePage() {
     const add = (step: Issue["step"], text: string) => p.push({ step, text });
     if (!name.trim()) add(1, "Give your coin a name.");
     else if (byteLength(name.trim()) > MAX_NAME_BYTES) add(1, `The name is too long (${MAX_NAME_BYTES} bytes max; emoji and accented letters count double or more).`);
-    if (!symbol.trim() || symbol.trim().length > 10) add(1, "Add a ticker (up to 10 letters or digits).");
+    if (!symbol.trim() || symbol.trim().length > 10 || byteLength(symbol.trim().toUpperCase()) > 16) add(1, "Add a ticker (up to 10 letters or digits).");
+    // pons's own limits (PonsV2LaunchDeployer): a longer logo link or social link reverts the launch.
+    if (byteLength(image.trim()) > 512) add(1, "The image link is too long (512 characters max). Upload the file instead.");
     if (description.length > MAX_DESCRIPTION) add(1, `Keep the description under ${MAX_DESCRIPTION} characters.`);
     if (image.trim() && !imageUrl) add(1, "Image must be an https:// or ipfs:// link.");
     for (const [label, v] of [["Website", website], ["Telegram", telegram], ["X link", twitter], ["Discord", discord]] as const) {
       if (v.trim() && !safeUrl(v.trim())) add(1, `${label} must be an https:// link.`);
+      else if (byteLength(v.trim()) > 256) add(1, `${label} link is too long (256 characters max).`);
     }
     handles.forEach((h, i) => {
       if (!isValidHandle(h)) add(2, `Account ${i + 1}: enter an X username.`);

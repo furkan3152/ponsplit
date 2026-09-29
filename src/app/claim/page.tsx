@@ -81,8 +81,23 @@ function useClaim(earnings: Earnings | undefined, onDone: () => void) {
       const collect = earnings && earnings.xId === xId ? earnings.collect : [];
       if (collect.length === 0 && BigInt(data.claimable) === 0n) throw new Error(`Nothing to claim for @${data.username} yet.`);
 
+      // Collecting first is the norm; if it wouldn't go through (a coin's fees held by pons, say)
+      // but the vault already holds something, claim that alone rather than fail.
+      let useCollect = collect.length > 0;
+      if (useCollect) {
+        setBusy("Checking the claim…");
+        const ok = await publicClient
+          .simulateContract({ account: address, address: n.launcher!, abi: launcherAbi, functionName: "collectAndClaim", args: [collect, ...args] })
+          .then(() => true)
+          .catch(() => false);
+        if (!ok) {
+          if (BigInt(data.claimable) === 0n) throw new Error(`Nothing can be claimed for @${data.username} right now: its fees are still being released by pons. Try again a little later.`);
+          useCollect = false;
+        }
+      }
+
       setBusy("Confirm in your wallet…");
-      const hash = collect.length
+      const hash = useCollect
         ? await writeContractAsync({ address: n.launcher!, abi: launcherAbi, chainId: n.chain.id, functionName: "collectAndClaim", args: [collect, ...args] })
         : await writeContractAsync({ address: n.feeVault!, abi: feeVaultAbi, chainId: n.chain.id, functionName: "claim", args });
       setBusy("Claiming…");
@@ -426,6 +441,7 @@ function ProofClaim() {
           known={Boolean(prof)}
           claimable={prof ? claimable : undefined}
           pending={prof ? earnings.data?.pending : undefined}
+          waiting={prof ? earnings.data?.waiting : undefined}
           earned={prof ? earnings.data?.earned : undefined}
           account={prof ? `@${handle}` : undefined}
           wallet={isConnected ? address : undefined}
@@ -548,6 +564,7 @@ function SessionClaim({ x }: { x: { id: string; username: string; name?: string;
           known
           claimable={claimable}
           pending={earnings.data?.pending}
+          waiting={earnings.data?.waiting}
           earned={earnings.data?.earned}
           account={`@${x.username}`}
           wallet={isConnected ? address : undefined}
@@ -582,6 +599,7 @@ function ClaimTicket({
   known,
   claimable,
   pending,
+  waiting,
   earned,
   account,
   wallet,
@@ -595,6 +613,8 @@ function ClaimTicket({
   claimable?: bigint;
   /** The part of `claimable` still held by the coins (collected by the claim itself). */
   pending?: bigint;
+  /** Earned in a graduated coin's pool but held by pons until its keeper converts the coin-side fees. */
+  waiting?: bigint;
   earned?: bigint;
   account?: string;
   wallet?: string;
@@ -640,8 +660,8 @@ function ClaimTicket({
               "Reading the vault…"
             ) : (
               <>
-                <Flash value={earned + (pending ?? 0n)} className="px-0.5 text-ink-2">
-                  {formatEth(earned + (pending ?? 0n), 6)} ETH
+                <Flash value={earned + (pending ?? 0n) + (waiting ?? 0n)} className="px-0.5 text-ink-2">
+                  {formatEth(earned + (pending ?? 0n) + (waiting ?? 0n), 6)} ETH
                 </Flash>{" "}
                 earned all-time
               </>
@@ -650,6 +670,11 @@ function ClaimTicket({
           {pending ? (
             <p className="mt-1.5 font-mono text-[12px] text-ink-3">
               incl. <span className="text-ink-2">{formatEth(pending, 6)} ETH</span> still in its coins, collected when you claim
+            </p>
+          ) : null}
+          {waiting ? (
+            <p className="mt-1.5 font-mono text-[12px] text-ink-3">
+              + <span className="text-ink-2">{formatEth(waiting, 6)} ETH</span> being released by pons (claimable once it is)
             </p>
           ) : null}
         </>
@@ -861,7 +886,7 @@ function Lookup() {
                   </div>
                   <dl className="mt-4 grid grid-cols-2 divide-x divide-[var(--line)] overflow-hidden rounded-2xl border border-line bg-card-2">
                     <Readout label="Claimable" value={total(data)} strong />
-                    <Readout label="Earned all-time" value={data ? data.earned + data.pending : undefined} />
+                    <Readout label="Earned all-time" value={data ? data.earned + data.pending + data.waiting : undefined} />
                   </dl>
                 </div>
               ) : null}
