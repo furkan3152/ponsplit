@@ -101,7 +101,7 @@ export function SplitMachine({ className, accounts, caption = "CREATOR FEES, EVE
 
       {/* the coin: the brand's happy two-tone coin, bobbing */}
       <g className="animate-float" style={{ transformBox: "fill-box", transformOrigin: "center" }}>
-        <g transform={`translate(${r2(CX - 21 * (R / 16.5))} ${r2(CY - 23.5 * (R / 16.5))}) scale(${r2(R / 16.5)})`}>
+        <g transform={`translate(${r2(CX - 23 * (R / 16.5))} ${r2(CY - 23 * (R / 16.5))}) scale(${r2(R / 16.5)})`}>
           <LogoCoin />
         </g>
       </g>
