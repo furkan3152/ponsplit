@@ -1,38 +1,27 @@
 "use client";
 
-import { useId } from "react";
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { useInView, useReducedMotion } from "../motion";
-import { Avatar, C, type Hair, INK, splitHalves } from "./parts";
-
-const CX = 280;
-const CY = 214;
-const R = 76;
-
-/** Where the five accounts sit around the coin, and how their streams bend. */
-const SLOTS: { x: number; y: number; color: string; hair: Hair; hairColor: string; bend: number; face: "happy" | "joy" }[] = [
-  { x: 92, y: 96, color: C.sky, hair: 0, hairColor: C.sun, bend: -46, face: "happy" },
-  { x: 470, y: 84, color: C.pink, hair: 3, hairColor: C.lilac, bend: 44, face: "joy" },
-  { x: 498, y: 292, color: C.sun, hair: 1, hairColor: C.green, bend: -40, face: "happy" },
-  { x: 318, y: 390, color: C.lilac, hair: 2, hairColor: C.orange, bend: 34, face: "joy" },
-  { x: 72, y: 318, color: C.orange, hair: 4, hairColor: C.sky, bend: 38, face: "happy" },
-];
+import { Bug } from "./Bug";
+import { C, INK } from "./parts";
 
 /** A real GitHub developer the coin pays: its username, share, and profile photo when known. */
 export type MachineAccount = { handle: string; pct: number; image?: string };
 
-const r2 = (n: number) => Math.round(n * 10) / 10;
+const COLORS = [C.sky, C.pink, C.sun, C.lilac, C.orange, C.green, C.red, C.lime, C.sky];
+const BUG = { x: 280, y: 108, size: 178 };
+const FORK_Y = 240; // where the trunk forks into one branch per developer
+const AV_Y = 350;
 
 /**
- * The home hero: a coin that keeps splitting. Every trade's fee leaves the coin as a stream of
- * drops, one stream per developer, sized by its share. Pure SVG; motion stops for visitors who
- * ask for less of it.
+ * The home hero: Bitbug opens its split shell and every trade's creator fee runs out as a git graph,
+ * one branch per developer, a drop per fee. Pure SVG; motion runs only on screen and stops for
+ * visitors who ask for less of it.
  */
-export function SplitMachine({ className, accounts, caption = "CREATOR FEES, EVERY TRADE" }: { className?: string; accounts: MachineAccount[]; caption?: string }) {
+export function SplitMachine({ className, accounts, caption = "creator fees, every trade" }: { className?: string; accounts: MachineAccount[]; caption?: string }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
-  const halves = splitHalves(CX, CY, R, 9);
   const reduced = useReducedMotion();
-  // All of this motion repaints the whole drawing every frame, so it only runs while on screen.
+  // The motion repaints the whole drawing every frame, so it only runs while on screen.
   const [ref, onScreen] = useInView<SVGSVGElement>({ once: false, rootMargin: "0px" });
   useEffect(() => {
     const svg = ref.current;
@@ -40,101 +29,98 @@ export function SplitMachine({ className, accounts, caption = "CREATOR FEES, EVE
     if (onScreen) svg.unpauseAnimations();
     else svg.pauseAnimations();
   }, [onScreen, ref]);
-  const NODES = accounts.slice(0, SLOTS.length).map((a, i) => ({ ...SLOTS[i], handle: `@${a.handle}`, pct: `${+a.pct.toFixed(1)}%`, weight: a.pct, image: a.image }));
-  const streams = NODES.map((n, i) => {
-    const dx = n.x - CX;
-    const dy = n.y - CY;
-    const len = Math.hypot(dx, dy);
-    const ux = dx / len;
-    const uy = dy / len;
-    const x0 = CX + ux * (R + 12);
-    const y0 = CY + uy * (R + 12);
-    const x3 = n.x - ux * 38;
-    const y3 = n.y - uy * 38;
-    const mx = (x0 + x3) / 2 - uy * n.bend;
-    const my = (y0 + y3) / 2 + ux * n.bend;
-    return { id: `${uid}s${i}`, d: `M${r2(x0)} ${r2(y0)}Q${r2(mx)} ${r2(my)} ${r2(x3)} ${r2(y3)}`, n, weight: n.weight };
+
+  const list = accounts.slice(0, 5);
+  const n = list.length;
+  const span = n > 1 ? Math.min(420, (n - 1) * 105) : 0;
+  const nodes = list.map((a, i) => {
+    const x = Math.round(280 - span / 2 + (n > 1 ? (span / (n - 1)) * i : 0));
+    // trunk out of the bug, a commit where it forks, then an S-curve down to the developer
+    const d = x === 280 ? `M280 196V${AV_Y - 30}` : `M280 196V${FORK_Y}C280 ${FORK_Y + 30} ${x} ${FORK_Y + 22} ${x} ${FORK_Y + 56}V${AV_Y - 30}`;
+    return { ...a, x, d, color: COLORS[i % COLORS.length], id: `${uid}b${i}`, handle: `@${a.handle}`, pctText: `${+a.pct.toFixed(1)}%` };
   });
 
   return (
     <svg
       ref={ref}
-      viewBox="0 0 560 450"
+      viewBox="0 0 560 420"
       className={`${className ?? ""} ${onScreen ? "" : "motion-paused"}`}
       role="img"
-      aria-label={`A coin splitting its trading fees between ${NODES.map((n) => `${n.handle} (${n.pct})`).join(", ")}`}
+      aria-label={`Bitbug splitting a coin's trading fees between ${nodes.map((v) => `${v.handle} (${v.pctText})`).join(", ")}`}
     >
       <defs>
         <radialGradient id={`${uid}glow`}>
-          <stop offset="0%" stopColor="var(--lime)" stopOpacity="0.38" />
-          <stop offset="60%" stopColor="var(--lime)" stopOpacity="0.06" />
+          <stop offset="0%" stopColor="var(--lime)" stopOpacity="0.34" />
+          <stop offset="65%" stopColor="var(--lime)" stopOpacity="0.05" />
           <stop offset="100%" stopColor="var(--lime)" stopOpacity="0" />
         </radialGradient>
-        {streams.map((s) => (
-          <path key={s.id} id={s.id} d={s.d} />
+        {nodes.map((v) => (
+          <path key={v.id} id={v.id} d={v.d} />
         ))}
       </defs>
 
-      {/* orbits */}
-      <g className="origin-center animate-spin-slow" style={{ transformBox: "fill-box" }}>
-        <circle cx={CX} cy={CY} r={128} fill="none" stroke="var(--line-2)" strokeWidth={1.2} strokeDasharray="2 9" />
-      </g>
-      <circle cx={CX} cy={CY} r={186} fill="none" stroke="var(--line)" strokeWidth={1} strokeDasharray="1 7" />
-      <circle cx={CX} cy={CY} r={150} fill={`url(#${uid}glow)`} />
-
-      {/* fee streams: dashed rails plus drops travelling down each one */}
-      {streams.map((s, i) => (
-        <g key={s.id}>
-          <use href={`#${s.id}`} fill="none" stroke={s.n.color} strokeOpacity={0.28} strokeWidth={2 + s.weight / 10} strokeLinecap="round" />
-          <use href={`#${s.id}`} fill="none" stroke={s.n.color} strokeWidth={2} strokeLinecap="round" strokeDasharray="4 12" className="animate-flow" style={{ animationDuration: `${1.2 + i * 0.15}s` }} />
-          {reduced
-            ? null
-            : [0, 1].map((k) => (
-                <circle key={k} r={4.5} fill={s.n.color} stroke={INK} strokeWidth={1.5}>
-                  <animateMotion dur={`${2.2 + i * 0.25}s`} repeatCount="indefinite" begin={`${-(k * (1.1 + i * 0.12) + i * 0.3)}s`} rotate="auto">
-                    <mpath href={`#${s.id}`} />
-                  </animateMotion>
-                </circle>
-              ))}
-        </g>
-      ))}
-
-      {/* the coin: round, split diagonally into a lime and a green half that part and close again */}
-      <g className="animate-float" style={{ transformBox: "fill-box", transformOrigin: "center" }}>
-        <path d={halves[1]} fill={INK} transform="translate(5 5)" />
-        <path d={halves[0]} fill={C.lime} stroke={INK} strokeWidth={3.2} strokeLinejoin="round" className="split-half-a" />
-        <path d={halves[1]} fill={C.green} stroke={INK} strokeWidth={3.2} strokeLinejoin="round" className="split-half-b" />
-        <path d={`M${CX - 44} ${CY - 30}A54 54 0 0 1 ${CX - 20} ${CY - 50}`} fill="none" stroke="var(--shine)" strokeWidth={3.4} strokeLinecap="round" opacity={0.85} className="split-half-a" />
-      </g>
-      <text x={CX} y={CY - R - 26} textAnchor="middle" className="fill-[var(--ink-3)] font-mono" fontSize={11} letterSpacing="0.14em">
+      <text x={14} y={20} className="fill-[var(--ink-3)] font-mono" fontSize={11}>
+        <tspan fill="var(--lime)">{"// "}</tspan>
         {caption}
       </text>
 
-      {/* the accounts */}
-      {NODES.map((n, i) => (
-        <g key={n.handle} className="animate-float" style={{ animationDelay: `${-i * 1.1}s`, transformBox: "fill-box", transformOrigin: "center" }}>
-          {n.image ? (
-            <g>
-              <clipPath id={`${uid}c${i}`}>
-                <circle cx={n.x} cy={n.y} r={25} />
-              </clipPath>
-              <circle cx={n.x + 3} cy={n.y + 3} r={27} fill={INK} />
-              <circle cx={n.x} cy={n.y} r={27} fill={n.color} stroke={INK} strokeWidth={2.8} />
-              <image href={n.image} x={n.x - 25} y={n.y - 25} width={50} height={50} clipPath={`url(#${uid}c${i})`} preserveAspectRatio="xMidYMid slice" />
-            </g>
+      {/* glow and an orbit behind the bug */}
+      <circle cx={BUG.x} cy={BUG.y} r={130} fill={`url(#${uid}glow)`} />
+      <g className="origin-center animate-spin-slow" style={{ transformBox: "fill-box" }}>
+        <circle cx={BUG.x} cy={BUG.y} r={112} fill="none" stroke="var(--line-2)" strokeWidth={1.2} strokeDasharray="2 9" />
+      </g>
+
+      {/* the git graph: a soft rail, a dashed flow on top, drops riding down each branch */}
+      {nodes.map((v, i) => (
+        <g key={v.id}>
+          <use href={`#${v.id}`} fill="none" stroke={v.color} strokeOpacity={0.22} strokeWidth={3 + v.pct / 8} strokeLinecap="round" />
+          <use href={`#${v.id}`} fill="none" stroke={v.color} strokeWidth={2} strokeLinecap="round" strokeDasharray="3 10" className="animate-flow" style={{ animationDuration: `${1.1 + i * 0.14}s` }} />
+          {reduced
+            ? null
+            : [0, 1].map((k) => (
+                <circle key={k} r={4.6} fill={v.color} stroke={INK} strokeWidth={1.5}>
+                  <animateMotion dur={`${2.4 + i * 0.2}s`} repeatCount="indefinite" begin={`${-(k * (1.2 + i * 0.1) + i * 0.35)}s`}>
+                    <mpath href={`#${v.id}`} />
+                  </animateMotion>
+                </circle>
+              ))}
+          {/* a commit on each branch, with the developer's share */}
+          <circle cx={v.x} cy={FORK_Y + 56} r={6} fill="var(--card)" stroke={v.color} strokeWidth={3} />
+        </g>
+      ))}
+      {/* the fork commit */}
+      <circle cx={280} cy={FORK_Y} r={8} fill="var(--lime)" stroke={INK} strokeWidth={2.4} />
+      <text x={294} y={FORK_Y + 4} className="fill-[var(--ink-3)] font-mono" fontSize={10}>
+        split()
+      </text>
+
+      {/* Bitbug, opening its shell */}
+      <g className="animate-float" style={{ transformBox: "fill-box", transformOrigin: "center" }}>
+        <Bug x={BUG.x} y={BUG.y} size={BUG.size} face="joy" flap />
+      </g>
+
+      {/* the developers */}
+      {nodes.map((v, i) => (
+        <g key={v.handle} className="animate-float" style={{ animationDelay: `${-i * 1.1}s`, transformBox: "fill-box", transformOrigin: "center" }}>
+          <clipPath id={`${uid}c${i}`}>
+            <circle cx={v.x} cy={AV_Y} r={24} />
+          </clipPath>
+          <circle cx={v.x} cy={AV_Y} r={28} fill={v.color} stroke={INK} strokeWidth={2.6} />
+          {v.image ? (
+            <image href={v.image} x={v.x - 24} y={AV_Y - 24} width={48} height={48} clipPath={`url(#${uid}c${i})`} preserveAspectRatio="xMidYMid slice" />
           ) : (
-            <Avatar cx={n.x} cy={n.y} r={26} color={n.color} hair={n.hair} hairColor={n.hairColor} sw={2.8} face={n.face} shadow={3} />
+            <circle cx={v.x} cy={AV_Y} r={24} fill="var(--card-2)" />
           )}
-          <g transform={`translate(${n.x} ${n.y + 44})`}>
-            <rect x={-62} y={-12} width={124} height={24} rx={12} fill="var(--card)" stroke="var(--line-2)" />
-            <text x={-52} y={4} className="fill-[var(--ink)] font-mono" fontSize={11}>
-              {n.handle.length > 12 ? `${n.handle.slice(0, 11)}…` : n.handle}
-            </text>
-            {/* The pastel reads on the dark pill; on the paper edition's white pill the share is ink. */}
-            <text x={54} y={4} textAnchor="end" className="font-mono [[data-theme=light]_&]:fill-[var(--ink)]" fill={n.color} fontSize={11} fontWeight={600}>
-              {n.pct}
+          {/* share badge on the avatar's shoulder */}
+          <g transform={`translate(${v.x + 16} ${AV_Y - 26})`}>
+            <rect x={-4} y={-10} width={40} height={20} rx={10} fill={v.color} stroke={INK} strokeWidth={2} />
+            <text x={16} y={4} textAnchor="middle" className="font-mono" fill={INK} fontSize={10.5} fontWeight={700}>
+              {v.pctText}
             </text>
           </g>
+          <text x={v.x} y={AV_Y + 46} textAnchor="middle" className="fill-[var(--ink-2)] font-mono" fontSize={11}>
+            {v.handle.length > 13 ? `${v.handle.slice(0, 12)}…` : v.handle}
+          </text>
         </g>
       ))}
     </svg>

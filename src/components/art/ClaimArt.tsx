@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { Bug } from "./Bug";
 import { Avatar, C, INK, InkLine, MiniCoin, Sparkle } from "./parts";
 
 const SW = 2.8;
@@ -6,7 +7,7 @@ const SW = 2.8;
 /** Loose pieces move on their own clocks, each around its own center (CSS only, so reduced motion stops it). */
 const own = (delay: number): CSSProperties => ({ animationDelay: `${delay}s`, transformBox: "fill-box", transformOrigin: "center" });
 
-/** Happy avatar catching a stack of coins, for the claim page. The loose coins drift, the sparkles rock. */
+/** A happy developer catching a stack of coins Bitbug delivered, for the claim page. The loose coins drift, the sparkles rock. */
 export function ClaimArt({ className }: { className?: string }) {
   const lo = { stroke: INK, strokeWidth: SW, strokeLinejoin: "round" as const };
   const coins = [0, 1, 2, 3].map((i) => {
@@ -40,7 +41,10 @@ export function ClaimArt({ className }: { className?: string }) {
         <MiniCoin cx={166} cy={26} r={8} sw={SW * 0.85} />
       </g>
       <g className="animate-float" style={own(-4.1)}>
-        <MiniCoin cx={160} cy={84} r={7} sw={SW * 0.85} color={C.lime} />
+        <MiniCoin cx={40} cy={74} r={7} sw={SW * 0.85} color={C.lime} />
+      </g>
+      <g transform="rotate(10 166 116)">
+        <Bug x={166} y={116} size={50} face="wink" sw={3.2} />
       </g>
       <g className="animate-wiggle" style={own(-0.8)}>
         <Sparkle x={42} y={96} s={7} sw={SW * 0.75} color={C.pink} />

@@ -25,10 +25,10 @@ export default function NotFound() {
         </span>
       </Reveal>
       <Reveal as="h1" delay={60} className="display mt-5 text-[48px] leading-[0.92] sm:text-[72px]">
-        Lost the <span className="accent text-neon pr-1.5">map</span>
+        Nothing to <span className="accent text-neon pr-1.5">debug</span>
       </Reveal>
       <Reveal delay={120}>
-        <p className="mt-4 text-[16px] leading-relaxed text-ink-2 sm:text-[17px]">This page doesn&apos;t exist. Maybe it split.</p>
+        <p className="mt-4 text-[16px] leading-relaxed text-ink-2 sm:text-[17px]">Bitbug looked under every leaf: this page doesn&apos;t exist.</p>
       </Reveal>
       <Reveal delay={180} className="mt-8 flex flex-wrap justify-center gap-3">
         <Link href="/" className="btn-neon group/cta px-6 py-3 text-[15px]">

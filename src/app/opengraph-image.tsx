@@ -7,24 +7,33 @@ export const alt = "Splidev: pump.fun coins that pay GitHub developers";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
+/** The share card: the night paper, the wordmark, the line, and a big Bitbug. */
 export default function OgImage() {
-  const hero = readFileSync(join(process.cwd(), "public", "hero.svg"));
-  const logo = readFileSync(join(process.cwd(), "public", "logo.svg"));
-  const src = (buf: Buffer) => `data:image/svg+xml;base64,${buf.toString("base64")}`;
+  const logo = `data:image/svg+xml;base64,${readFileSync(join(process.cwd(), "public", "logo.svg")).toString("base64")}`;
   return new ImageResponse(
     (
-      <div style={{ width: "100%", height: "100%", display: "flex", background: "#f5f5f7", padding: 64, alignItems: "center" }}>
-        <div style={{ display: "flex", flexDirection: "column", width: 560 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={src(logo)} width={64} height={64} alt="" />
-            <span style={{ fontSize: 40, fontWeight: 700, color: "#1d1d1f" }}>Splidev</span>
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          backgroundColor: "#0d0a1a",
+          backgroundImage: "radial-gradient(circle at 12% 0%, #3a1d1c 0%, #0d0a1a 46%)",
+          padding: 72,
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", width: 640 }}>
+          <div style={{ display: "flex", fontSize: 44, fontWeight: 700, color: "#f6f1ff", letterSpacing: -2 }}>
+            spli<span style={{ color: "#ff7a3d" }}>dev</span>
+            <span style={{ color: "#ff7a3d" }}>_</span>
           </div>
-          <div style={{ fontSize: 68, fontWeight: 800, color: "#1d1d1f", lineHeight: 1.05, marginTop: 36, letterSpacing: -2 }}>Coins that pay GitHub devs.</div>
-          <div style={{ fontSize: 28, color: "#6e6e73", marginTop: 24 }}>Launch on pump.fun · Solana</div>
+          <div style={{ fontSize: 76, fontWeight: 800, color: "#f6f1ff", lineHeight: 1.02, marginTop: 40, letterSpacing: -3 }}>Coins that pay GitHub devs.</div>
+          <div style={{ fontSize: 28, color: "#b6acd2", marginTop: 28, fontFamily: "monospace" }}>{"// launch on pump.fun · solana"}</div>
         </div>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src(hero)} width={560} height={360} alt="" />
+        <img src={logo} width={400} height={436} alt="" />
       </div>
     ),
     size

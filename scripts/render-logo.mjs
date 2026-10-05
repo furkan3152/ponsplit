@@ -9,7 +9,7 @@ import { transform } from "sucrase";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "node_modules", ".cache", "logo");
 mkdirSync(out, { recursive: true });
-for (const f of ["parts", "Logo"]) {
+for (const f of ["parts", "Bug", "Logo"]) {
   const src = readFileSync(join(root, "src/components/art", `${f}.tsx`), "utf8");
   const { code } = transform(src, { transforms: ["typescript", "jsx", "imports"], jsxRuntime: "automatic", production: true });
   writeFileSync(join(out, `${f}.cjs`), code.replace(/require\(['"]\.\/(\w+)['"]\)/g, 'require("./$1.cjs")'));
@@ -20,10 +20,10 @@ const React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");
 const { LogoMark } = require(join(out, "Logo.cjs"));
 
-// The dark theme's values (globals.css); the outline is the stickers' ink.
-const colors = { lime: "#ccff00", green: "#3ee07f", sun: "#ffd84d", pink: "#ff93c9", outline: "#0b0b0d", shine: "#ffffff" };
+// The dark theme's values (globals.css); the outline is the stickers' ink, the limbs a mid violet that shows on any tab.
+const colors = { lime: "#ff7a3d", green: "#3ddc97", sun: "#ffd45c", pink: "#ff8ccf", lilac: "#a98dff", sky: "#66c7ff", outline: "#130d26", shine: "#ffffff", "bug-limb": "#8d82b8" };
 let svg = renderToStaticMarkup(React.createElement(LogoMark, { size: 64 }));
-svg = svg.replace(/var\(--(\w+)(?:,\s*[^)]+)?\)/g, (m, name) => colors[name] ?? m);
+svg = svg.replace(/var\(--([\w-]+)(?:,\s*[^)]+)?\)/g, (m, name) => colors[name] ?? m);
 if (svg.includes("var(")) throw new Error(`unresolved color in ${svg}`);
 svg = svg.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ').replace(/ aria-hidden="true"| focusable="false"/g, "");
 writeFileSync(join(root, "public/logo.svg"), svg + "\n");

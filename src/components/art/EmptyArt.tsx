@@ -1,24 +1,24 @@
-import { C, INK, SplitCoin } from "./parts";
+import { Bug } from "./Bug";
+import { C, INK } from "./parts";
 
-const SW = 2.8;
 const Z = ({ x, y, s }: { x: number; y: number; s: number }) => (
-  <path d={`M${x} ${y}h${s}l${-s} ${s}h${s}`} fill="none" stroke="var(--ink-2)" strokeWidth={SW * 0.9} strokeLinecap="round" strokeLinejoin="round" />
+  <path d={`M${x} ${y}h${s}l${-s} ${s}h${s}`} fill="none" stroke="var(--ink-3)" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
 );
 
-/** Sleepy coin napping on a pillow, for empty lists. */
+/** Bitbug napping on a leaf, for empty lists. */
 export function EmptyArt({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 160 120" className={className} aria-hidden="true" focusable="false">
-      <ellipse cx={80} cy={110} rx={52} ry={5} fill={INK} opacity={0.08} />
-      <path d="M30 96Q26 82 44 82H116Q134 82 130 96Q134 108 116 106H44Q26 108 30 96Z" fill={INK} transform="translate(2.5 2.5)" />
-      <path d="M30 96Q26 82 44 82H116Q134 82 130 96Q134 108 116 106H44Q26 108 30 96Z" fill={C.lilac} stroke={INK} strokeWidth={SW} strokeLinejoin="round" />
-      <path d="M46 88H70" stroke="var(--shine, #fff)" strokeWidth={SW} strokeLinecap="round" opacity={0.7} />
-      <g transform="rotate(-14 74 60)">
-        <SplitCoin cx={74} cy={60} r={30} sw={SW} shadow={3} face="sleepy" />
+      <ellipse cx={80} cy={112} rx={54} ry={5} fill={INK} opacity={0.12} />
+      {/* leaf */}
+      <path d="M22 98Q60 70 136 92Q100 116 22 98Z" fill={C.green} stroke={INK} strokeWidth={2.6} strokeLinejoin="round" />
+      <path d="M30 97Q80 88 128 92" fill="none" stroke={INK} strokeWidth={2} strokeLinecap="round" opacity={0.5} />
+      <g transform="rotate(-78 74 66)">
+        <Bug x={74} y={66} size={66} face="sleepy" shadow={false} sw={3} />
       </g>
-      <Z x={110} y={34} s={9} />
-      <Z x={124} y={18} s={12} />
-      <Z x={142} y={6} s={7} />
+      <Z x={112} y={36} s={9} />
+      <Z x={126} y={20} s={12} />
+      <Z x={144} y={8} s={7} />
     </svg>
   );
 }
