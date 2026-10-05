@@ -1,37 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { formatEth, shortAddress, timeAgo } from "@/lib/format";
-import { useActivity, useNow } from "@/lib/hooks";
-import { TokenSticker } from "./art";
+import { coinImage } from "@/lib/coin-ui";
+import { compact, progressText } from "@/lib/format";
+import { useCoins } from "@/lib/hooks";
+import { TokenAvatar } from "./TokenAvatar";
 
-/** A live tape of the latest trades across every coin, like the ticker on a trading floor. */
+/** A live tape of every Splidev coin's market cap and curve progress, like a trading floor's ticker. */
 export function Ticker() {
-  const { data } = useActivity();
-  useNow(15_000);
-  const trades = data?.trades.slice(0, 24);
-  if (!trades || trades.length === 0) return null;
+  const { data } = useCoins();
+  const coins = data ? [...data].sort((a, b) => b.marketCap - a.marketCap).slice(0, 24) : undefined;
+  if (!coins || coins.length === 0) return null;
 
   // Rendered twice so the marquee loops seamlessly.
-  const items = [...trades, ...trades];
+  const items = [...coins, ...coins];
   return (
     <div className="group relative overflow-hidden border-b border-line bg-[var(--glass)] backdrop-blur-xl">
       <div className="mask-fade-x">
         <div className="flex w-max animate-marquee items-center py-2 group-hover:[animation-play-state:paused] motion-reduce:animate-none">
           {items.map((t, i) => (
             <Link
-              key={`${t.txHash}-${t.logIndex}-${i}`}
+              key={`${t.token}-${i}`}
               href={`/token/${t.token}`}
-              aria-hidden={i >= trades.length}
-              tabIndex={i >= trades.length ? -1 : undefined}
+              aria-hidden={i >= coins.length}
+              tabIndex={i >= coins.length ? -1 : undefined}
               className="flex shrink-0 items-center gap-2 px-4 font-mono text-[11.5px] transition hover:opacity-80"
             >
-              <TokenSticker seed={t.token} size={16} />
-              <span className="text-ink-3">{shortAddress(t.trader)}</span>
-              <span className={`font-semibold ${t.kind === "buy" ? "text-up-ink" : "text-down-ink"}`}>{t.kind === "buy" ? "▲ bought" : "▼ sold"}</span>
-              <span className="text-ink">{formatEth(t.ethAmount, 3)} ETH</span>
-              <span className="text-ink-2">of ${t.symbol}</span>
-              {t.timestamp ? <span className="text-ink-3">{timeAgo(t.timestamp)}</span> : null}
+              <TokenAvatar src={coinImage(t)} seed={t.token} size={16} />
+              <span className="font-semibold text-ink">${t.symbol}</span>
+              <span className="text-ink-2">{compact(t.marketCap)} SOL</span>
+              <span className={t.graduated ? "text-up-ink" : "text-ink-3"}>{t.graduated ? "graduated" : `${progressText(t.progress)}%`}</span>
               <span className="pl-2 text-ink-3" aria-hidden>
                 /
               </span>

@@ -1,24 +1,19 @@
 import { safeUrl } from "./metadata";
 import type { Coin } from "./types";
 
-/** The coin's logo as launched on pons, when it's a link the site may render (https or ipfs). */
-export const coinImage = (c: Pick<Coin, "logo">) => safeUrl(c.logo);
+/** The coin's picture from its metadata, when it's a link the site may render (https or ipfs). */
+export const coinImage = (c: Pick<Coin, "image">) => safeUrl(c.image);
 
 /** Where a coin trades, in a word or two. */
-export function venueLabel(c: Pick<Coin, "phase">): string {
-  switch (c.phase) {
-    case "curve":
-      return "bonding curve";
-    case "graduating":
-      return "graduating";
-    case "pool":
-      return "Uniswap v4";
-    case "rescued":
-      return "rescued";
-  }
-}
+export const venueLabel = (c: Pick<Coin, "graduated">) => (c.graduated ? "pump.fun pool" : "bonding curve");
 
 /** The short tag next to a coin's progress bar. */
-export function progressTag(c: Pick<Coin, "phase">, pctText: string): string {
-  return c.phase === "curve" ? `${pctText}%` : c.phase === "pool" ? "Uniswap" : c.phase === "graduating" ? "graduating" : "rescued";
-}
+export const progressTag = (c: Pick<Coin, "graduated">, pctText: string) => (c.graduated ? "graduated" : `${pctText}%`);
+
+/** GitHub usernames of a coin's recipients (the id when GitHub didn't answer). */
+export const recipientNames = (c: Pick<Coin, "recipients">) => c.recipients.map((r) => r.login ?? `#${r.githubId}`);
+
+/** The coin on pump.fun's own site. */
+export const pumpUrl = (mint: string) => `https://pump.fun/coin/${mint}`;
+/** A Solana explorer link. */
+export const explorerUrl = (kind: "tx" | "account" | "token", id: string) => `https://solscan.io/${kind}/${id}`;
