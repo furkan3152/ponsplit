@@ -1,7 +1,7 @@
 name: Solana script
 
 # Diagnostic: runs a JavaScript (ESM) snippet on the runner against Solana mainnet (read-only, no keys).
-# @solana/web3.js and bs58 are installed in the job; process.env.RPC is the RPC URL.
+# @solana/web3.js, bs58, bn.js, @solana/spl-token and the pump.fun SDKs are installed in the job; process.env.RPC is the RPC URL.
 on:
   workflow_dispatch:
     inputs:
@@ -25,6 +25,6 @@ jobs:
           SCRIPT: ${{ inputs.script }}
           RPC: ${{ inputs.rpc }}
         run: |
-          mkdir s && cd s && npm init -y >/dev/null && npm i -s @solana/web3.js@1 bs58 >/dev/null 2>&1
+          mkdir s && cd s && npm init -y >/dev/null && npm i -s @solana/web3.js@1 bs58 @pump-fun/pump-sdk@2 @pump-fun/pump-swap-sdk @solana/spl-token bn.js >/dev/null 2>&1
           printf '%s' "$SCRIPT" > run.mjs
           node run.mjs
