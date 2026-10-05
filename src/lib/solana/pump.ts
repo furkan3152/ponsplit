@@ -14,6 +14,7 @@ import {
 import { NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import BN from "bn.js";
 import { OnlinePumpSdk, PUMP_SDK, Platform, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, socialFeePda } from "@pump-fun/pump-sdk";
+import { OnlinePumpAmmSdk, PUMP_AMM_SDK, buyQuoteInput, canonicalPumpPoolPda, sellBaseInput } from "@pump-fun/pump-swap-sdk";
 import { LAUNCH_FEE_LAMPORTS, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
 
 export { Platform, socialFeePda };
@@ -126,15 +127,39 @@ export async function launchTransactions(c: Connection, input: LaunchInput): Pro
 /** Token decimals of every pump.fun coin. */
 export const TOKEN_DECIMALS = 6;
 
+/** pump.fun's pool for a coin that has left the curve. */
+export const poolOf = (mint: PublicKey) => canonicalPumpPoolPda(mint);
+
+async function poolSwapState(c: Connection, user: PublicKey, mint: PublicKey) {
+  return new OnlinePumpAmmSdk(c).swapSolanaState(poolOf(mint), user);
+}
+
 /**
- * A curve buy: spend `lamports` (pump.fun's fees included), accepting at worst `slippageBps` fewer
- * tokens than quoted now. Returns the transaction and the quoted token amount (raw).
+ * A buy: spend `lamports` (fees included) on the curve, or on pump.fun's pool once the coin has
+ * graduated, accepting at worst `slippageBps` fewer tokens than quoted now. Returns the
+ * transaction and the quoted token amount (raw, 6 decimals).
  */
 export async function buyTransaction(c: Connection, user: PublicKey, mint: PublicKey, lamports: bigint, slippageBps = 200) {
   const sdk = new OnlinePumpSdk(c);
   const [global, feeConfig, state] = await Promise.all([sdk.fetchGlobal(), sdk.fetchFeeConfig().catch(() => null), sdk.fetchBuyState(mint, user, TOKEN_2022_PROGRAM_ID)]);
-  if (state.bondingCurve.complete) throw new Error("This coin has left the curve; trade it on pump.fun's pool.");
   const solAmount = new BN(lamports.toString());
+  if (state.bondingCurve.complete) {
+    const swap = await poolSwapState(c, user, mint);
+    const q = buyQuoteInput({
+      quote: solAmount,
+      slippage: slippageBps / 100,
+      baseReserve: swap.poolBaseAmount,
+      quoteReserve: swap.poolQuoteAmount,
+      globalConfig: swap.globalConfig,
+      baseMintAccount: swap.baseMintAccount,
+      baseMint: swap.baseMint,
+      coinCreator: swap.pool.coinCreator,
+      creator: swap.pool.creator,
+      feeConfig: swap.feeConfig,
+    });
+    const ixs = await PUMP_AMM_SDK.buyQuoteInput(swap, solAmount, slippageBps / 100);
+    return { tx: await v0(c, user, [...budget(300_000), ...ixs]), tokens: BigInt(q.base.toString()) };
+  }
   const tokens = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: state.bondingCurve.tokenTotalSupply, bondingCurve: state.bondingCurve, amount: solAmount, quoteMint: NATIVE_MINT });
   const ixs = await PUMP_SDK.buyInstructions({
     global,
@@ -151,12 +176,28 @@ export async function buyTransaction(c: Connection, user: PublicKey, mint: Publi
   return { tx: await v0(c, user, [...budget(300_000), ...ixs]), tokens: BigInt(tokens.toString()) };
 }
 
-/** A curve sell of `tokens` (raw), accepting at worst `slippageBps` less SOL than quoted now. */
+/** A sell of `tokens` (raw) on the curve or the pool, accepting at worst `slippageBps` less SOL than quoted now. */
 export async function sellTransaction(c: Connection, user: PublicKey, mint: PublicKey, tokens: bigint, slippageBps = 200) {
   const sdk = new OnlinePumpSdk(c);
   const [global, feeConfig, state] = await Promise.all([sdk.fetchGlobal(), sdk.fetchFeeConfig().catch(() => null), sdk.fetchSellState(mint, user, TOKEN_2022_PROGRAM_ID)]);
-  if (state.bondingCurve.complete) throw new Error("This coin has left the curve; trade it on pump.fun's pool.");
   const amount = new BN(tokens.toString());
+  if (state.bondingCurve.complete) {
+    const swap = await poolSwapState(c, user, mint);
+    const q = sellBaseInput({
+      base: amount,
+      slippage: slippageBps / 100,
+      baseReserve: swap.poolBaseAmount,
+      quoteReserve: swap.poolQuoteAmount,
+      globalConfig: swap.globalConfig,
+      baseMintAccount: swap.baseMintAccount,
+      baseMint: swap.baseMint,
+      coinCreator: swap.pool.coinCreator,
+      creator: swap.pool.creator,
+      feeConfig: swap.feeConfig,
+    });
+    const ixs = await PUMP_AMM_SDK.sellBaseInput(swap, amount, slippageBps / 100);
+    return { tx: await v0(c, user, [...budget(300_000), ...ixs]), lamports: BigInt(q.uiQuote.toString()) };
+  }
   const sol = getSellSolAmountFromTokenAmount({ global, feeConfig, mintSupply: state.bondingCurve.tokenTotalSupply, bondingCurve: state.bondingCurve, amount });
   const ixs = await PUMP_SDK.sellInstructions({
     global,
