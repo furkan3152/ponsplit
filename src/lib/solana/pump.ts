@@ -146,6 +146,20 @@ async function poolSwapState(c: Connection, user: PublicKey, mint: PublicKey) {
   return new OnlinePumpAmmSdk(c).swapSolanaState(poolOf(mint), user);
 }
 
+/** The pool's pricing inputs, exactly as pump.fun's SDK passes them when it builds the swap. */
+function poolTerms(swap: Awaited<ReturnType<typeof poolSwapState>>) {
+  const { pool } = swap;
+  return {
+    virtualQuoteReserves: pool.virtualQuoteReserves,
+    coinCreator: pool.coinCreator,
+    creator: pool.creator,
+    feeConfig: swap.feeConfig,
+    quoteMint: pool.quoteMint,
+    isMayhemMode: pool.isMayhemMode,
+    creatorFeeBps: pool.creatorFeeBps,
+  };
+}
+
 /**
  * A buy: spend `lamports` (fees included) on the curve, or on pump.fun's pool once the coin has
  * graduated, accepting at worst `slippageBps` fewer tokens than quoted now. Returns the
@@ -165,9 +179,7 @@ export async function buyTransaction(c: Connection, user: PublicKey, mint: Publi
       globalConfig: swap.globalConfig,
       baseMintAccount: swap.baseMintAccount,
       baseMint: swap.baseMint,
-      coinCreator: swap.pool.coinCreator,
-      creator: swap.pool.creator,
-      feeConfig: swap.feeConfig,
+      ...poolTerms(swap),
     });
     const ixs = await PUMP_AMM_SDK.buyQuoteInput(swap, solAmount, slippageBps / 100);
     return { tx: await v0(c, user, [...budget(300_000), ...ixs]), tokens: BigInt(q.base.toString()) };
@@ -203,9 +215,7 @@ export async function sellTransaction(c: Connection, user: PublicKey, mint: Publ
       globalConfig: swap.globalConfig,
       baseMintAccount: swap.baseMintAccount,
       baseMint: swap.baseMint,
-      coinCreator: swap.pool.coinCreator,
-      creator: swap.pool.creator,
-      feeConfig: swap.feeConfig,
+      ...poolTerms(swap),
     });
     const ixs = await PUMP_AMM_SDK.sellBaseInput(swap, amount, slippageBps / 100);
     return { tx: await v0(c, user, [...budget(300_000), ...ixs]), lamports: BigInt(q.uiQuote.toString()) };
