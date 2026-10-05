@@ -1,12 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Instrument_Sans, Instrument_Serif, Martian_Mono } from "next/font/google";
-import { ConfigBanner } from "@/components/ConfigBanner";
 import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
 import { Sidebar } from "@/components/Sidebar";
 import { TabBar } from "@/components/TabBar";
 import { Ticker } from "@/components/Ticker";
-import { visitorNetworkId } from "@/lib/server-network";
 import { THEME_SCRIPT } from "@/lib/theme";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -18,16 +16,16 @@ const mono = Martian_Mono({ subsets: ["latin"], variable: "--font-mono", axes: [
 
 /** The public URL, for absolute links in share cards: explicit, else the host's production URL. */
 function siteUrl(): string {
-  if (process.env.NEXTAUTH_URL) return process.env.NEXTAUTH_URL;
+  if (process.env.SITE_URL) return process.env.SITE_URL;
   if (process.env.VERCEL_ENV === "production" && process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
+  return "http://localhost:3000";
 }
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
-  title: { default: "SplitEarn · One coin, many X accounts", template: "%s · SplitEarn" },
-  description: "Launch a coin on Robinhood Chain and split its trading fees across any set of X accounts.",
+  title: { default: "Splidev · Coins that pay GitHub devs", template: "%s · Splidev" },
+  description: "Launch a pump.fun coin on Solana whose trading fees go, for good, to the GitHub accounts you choose.",
 };
 
 // No themeColor here: Next re-renders its own theme-color tag on every navigation, which would
@@ -35,8 +33,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // The network the visitor picked at the top of the page (a cookie; `?network=` links set it).
-  const network = visitorNetworkId();
   return (
     <html
       lang="en"
@@ -48,12 +44,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body className="min-h-screen">
-        <Providers network={network}>
+        <Providers>
           <Sidebar />
           <div className="shell">
             <Nav />
             <Ticker />
-            <ConfigBanner />
             <main className="mx-auto w-full max-w-[1240px] px-4 pb-28 pt-6 sm:px-6 lg:pb-16">{children}</main>
             <Footer />
           </div>

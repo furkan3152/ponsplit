@@ -15,7 +15,6 @@
   "dependencies": {
     "@pump-fun/pump-sdk": "^2.0.0",
     "@pump-fun/pump-swap-sdk": "^1.20.0",
-    "@rainbow-me/rainbowkit": "^2.2.11",
     "@solana/spl-token": "^0.4.15",
     "@solana/spl-token-metadata": "^0.1.6",
     "@solana/wallet-adapter-base": "^0.9.28",
@@ -29,12 +28,9 @@
     "canvas-confetti": "^1.9.4",
     "lightweight-charts": "^4.2.3",
     "next": "^14.2.35",
-    "next-auth": "^4.24.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "server-only": "^0.0.1",
-    "viem": "^2.56.9",
-    "wagmi": "^2.19.5"
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@types/bn.js": "^5.2.0",

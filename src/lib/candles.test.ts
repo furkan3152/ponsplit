@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCandles, candleForAll } from "./candles.ts";
-import type { Trade } from "./types.ts";
+import type { Trade } from "./solana/trades.ts";
 
 // Block times are real unix seconds; 0 means "not read yet" and is skipped, so tests start at B.
 const B = 1_800_000_000;
 const trade = (at: number, price: number, eth = 1n): Trade =>
-  ({ timestamp: B + at, price, ethAmount: eth * 10n ** 18n, blockNumber: BigInt(at), logIndex: 0 }) as unknown as Trade;
+  ({ timestamp: B + at, price, sol: eth * 10n ** 9n, slot: at }) as unknown as Trade;
 
 test("without a window, only buckets with trades get candles", () => {
   const c = buildCandles([trade(0, 1), trade(130, 2)], 60);

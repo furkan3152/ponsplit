@@ -1,5 +1,0 @@
-{
-  "filter_paths": "node_modules|contracts/test",
-  "detectors_to_exclude": "timestamp,calls-loop,naming-convention,solc-version,pragma,low-level-calls,assembly",
-  "hardhat_ignore_compile": false
-}
