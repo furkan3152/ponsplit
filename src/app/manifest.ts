@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "SplitEarn",
-    short_name: "SplitEarn",
-    description: "One coin, many X accounts. Trading fees split automatically on Robinhood Chain.",
+    name: "Splidev",
+    short_name: "Splidev",
+    description: "pump.fun coins whose trading fees pay GitHub developers, on Solana.",
     start_url: "/",
     display: "standalone",
     background_color: "#f5f5f7",

@@ -5,50 +5,45 @@ import { HowItWorks } from "@/components/HowItWorks";
 import { StepLaunch } from "@/components/art";
 import { Avatar, C, type FaceKind, type Hair } from "@/components/art/parts";
 import { Reveal } from "@/components/motion";
-import { launcherAbi } from "@/lib/abi";
-import { NETWORKS } from "@/lib/networks";
-import { serverClient } from "@/lib/server-network";
+import { MAX_RECIPIENTS, PLATFORM_BPS } from "@/lib/solana/config";
 import { HeadingDoodle } from "@/components/art/Doodles";
 
 export const metadata: Metadata = { title: "How it works" };
 
-const faq = (splitEarnPct: number): { q: string; a: React.ReactNode }[] => [
+const SPLIDEV_PCT = PLATFORM_BPS / 100;
+
+const FAQ: { q: string; a: React.ReactNode }[] = [
   {
     q: "Where does the coin live?",
-    a: "On pons. SplitEarn launches it through pons's own factory, so it is a regular pons coin: pons mints it, runs its bonding curve and graduates it into a Uniswap v4 pool with locked liquidity. The only difference is who receives its creator fees: a per-coin splitter that pays the X accounts.",
+    a: "On pump.fun, on Solana. Splidev builds the launch with pump.fun's own instructions, so it is a regular pump.fun coin: pump.fun mints it, runs its bonding curve and moves it to its pool when the curve sells out. It trades on pump.fun too. The only difference is who receives its creator fees.",
   },
   {
     q: "Where do the fees come from?",
-    a: `Every buy and sell pays pons's 1% fee: 30% of it goes to pons and 70% is the creator's. Of the creator's part, ${100 - splitEarnPct}% goes to the coin's X accounts by the shares set at launch and ${splitEarnPct}% to SplitEarn (for coins launched now; every coin keeps the split it launched with). A coin can also carry a creator tax of up to 10%, chosen at launch; all of it goes to the X accounts. The split never changes after launch.`,
+    a: `Every trade pays pump.fun's fee. On the bonding curve that is 1.25%: 0.95% to pump.fun and 0.30% to the coin's creator. After graduation pump.fun's pool sets the creator's part by market cap (from 0.95% down to 0.05% for the largest coins). Of the creator's part, ${100 - SPLIDEV_PCT}% goes to the coin's GitHub developers by the shares set at launch and ${SPLIDEV_PCT}% to Splidev.`,
   },
   {
-    q: "What happens when the curve sells out?",
-    a: "The coin graduates the pons way: at 4.2 ETH the curve closes, and its ETH plus the reserved coins seed a Uniswap v4 pool whose liquidity is locked. Trading continues right on the coin page, and the pool's fees keep paying the same accounts.",
+    q: "Can anyone change the split later?",
+    a: "No. The split is pump.fun's own fee sharing, set once at launch, after which pump.fun revokes the right to change it. Not the creator, not Splidev, nobody can move a coin's fees afterwards.",
   },
   {
-    q: "How do X accounts get paid?",
-    a: "Fees are held by the FeeVault contract under each account's permanent X user id, so renaming an account never loses its earnings. On the Claim page the owner proves the account is theirs by posting a one-time code (or signing in with X), then sends everything to any wallet; the latest fees are collected in the same transaction.",
+    q: "How do GitHub developers get paid?",
+    a: "Each developer's share lands in pump.fun's fee account for their GitHub account, keyed by the permanent GitHub user id, so a rename never loses it. They sign in with GitHub on pump.fun and claim it to any Solana wallet. Splidev never holds the money.",
   },
   {
-    q: "Can someone claim fees for an account they don't own?",
-    a: "A claim needs a signature that is only issued after that account itself posts one exact sentence naming the destination wallet in full, plus a one-time code (or signs in with X). Replies, quotes and reposts never count, and a code that only appears inside some other post is ignored. Copying someone’s post gets you nothing: it names their wallet, not yours. Never post a proof text someone else sends you.",
+    q: "Why do I see “waiting to split”?",
+    a: "pump.fun keeps a coin's creator fees in its vault until someone distributes them. Anyone can send that out from the coin page or the Claim page for the network fee alone, and pump.fun's own crank does it too.",
   },
   {
-    q: "Do the X accounts need to do anything to be added?",
-    a: "No. Any public X account can be added. Their earnings wait in the vault until they choose to claim.",
+    q: "Do the developers need to do anything to be added?",
+    a: `No. Any personal GitHub account can be added, up to ${MAX_RECIPIENTS} per coin. Their earnings wait in pump.fun until they choose to claim. Being listed doesn't mean they endorse the coin.`,
   },
   {
-    q: "Is SplitEarn part of pons?",
-    a: "No. SplitEarn is an independent app built on pons's public contracts. It is not affiliated with, endorsed by or operated by pons.",
+    q: "Is Splidev part of pump.fun or GitHub?",
+    a: "No. Splidev is an independent app built on pump.fun's public programs. It is not affiliated with, endorsed by or operated by pump.fun or GitHub.",
   },
   {
     q: "Which network is this?",
-    a: (
-      <>
-        Robinhood Chain mainnet (chain id {NETWORKS.mainnet.chain.id}), on the real pons. Coins, trades and payouts are real ETH, so
-        your wallet needs Robinhood Chain added; the Connect button offers it.
-      </>
-    ),
+    a: "Solana mainnet. Any Solana wallet works (Phantom, Solflare, Backpack and others); everything is paid in SOL.",
   },
 ];
 
@@ -60,7 +55,7 @@ const CHAPTERS = [
 
 type Account = { handle: string; share: number; color: string; hair: Hair; hairColor: string; face: FaceKind };
 
-/** The example coin pays the same five accounts as the split machine on the home page. */
+/** An example coin's five developers (illustrations, not real accounts). */
 const ACCOUNTS: Account[] = [
   { handle: "ada", share: 40, color: C.sky, hair: 0, hairColor: C.sun, face: "happy" },
   { handle: "kofi", share: 25, color: C.pink, hair: 3, hairColor: C.lilac, face: "joy" },
@@ -69,13 +64,12 @@ const ACCOUNTS: Account[] = [
   { handle: "sol", share: 10, color: C.orange, hair: 4, hairColor: C.sky, face: "happy" },
 ];
 
-// The same numbers the FAQ states: pons's 1% fee on every trade, 70% of it the creator's, and the
-// accounts' part of that (the rest is SplitEarn's, read live from the launcher). A coin's optional
-// creator tax comes on top, all to the accounts.
-const TRADE_ETH = 1;
-const FEE_PCT = 1;
-const CREATOR_PCT = 70;
-const eth = (n: number) => `${n.toFixed(4)} ETH`;
+// The same numbers the FAQ states, on the bonding curve: pump.fun's 1.25% fee, 0.30 of it the
+// creator's (24% of the fee), and the developers' part of that (the rest is Splidev's).
+const TRADE_SOL = 1;
+const FEE_PCT = 1.25;
+const CREATOR_PCT = 24;
+const sol = (n: number) => `${n.toFixed(4)} SOL`;
 
 /*
  * The fee diagram builds itself once it scrolls into view (the <Reveal> around it gets `is-in`).
@@ -92,25 +86,8 @@ const RISE =
 const ACCORDION =
   "group [interpolate-size:allow-keywords] [&::details-content]:h-0 [&::details-content]:overflow-hidden [&::details-content]:transition-[height,content-visibility] [&::details-content]:duration-500 [&::details-content]:ease-[cubic-bezier(0.2,0.8,0.2,1)] [&::details-content]:[transition-behavior:allow-discrete] [&[open]::details-content]:h-auto motion-reduce:[&::details-content]:transition-none";
 
-// Re-read SplitEarn's current share every few minutes (the owner can change it for new coins).
-export const revalidate = 300;
-
-/** SplitEarn's cut of the creator fee for coins launched now, in %: from the launcher, else 20. */
-async function splitEarnPct(): Promise<number> {
-  const n = NETWORKS.mainnet;
-  if (!n.launcher) return 20;
-  try {
-    const bps = await serverClient(n).readContract({ address: n.launcher, abi: launcherAbi, functionName: "platformShareBps" });
-    return Number(bps) / 100;
-  } catch {
-    return 20;
-  }
-}
-
-export default async function HowPage() {
-  const splitPct = await splitEarnPct();
-  const ACCOUNTS_PCT = 100 - splitPct;
-  const FAQ = faq(splitPct);
+export default function HowPage() {
+  const ACCOUNTS_PCT = 100 - SPLIDEV_PCT;
   return (
     <div className="space-y-20 sm:space-y-28">
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
@@ -125,11 +102,11 @@ export default async function HowPage() {
               </span>
             </Reveal>
             <Reveal as="h1" delay={60} className="display mt-6 text-[52px] leading-[0.9] sm:text-[84px]">
-              How SplitEarn <span className="accent text-neon pr-2">works.</span>
+              How Splidev <span className="accent text-neon pr-2">works.</span>
             </Reveal>
             <Reveal delay={140}>
               <p className="mt-6 max-w-lg text-[17px] leading-relaxed text-ink-2 sm:text-[18px]">
-                One coin, many X accounts, fees split automatically. Here is the whole thing in three steps.
+                One pump.fun coin, many GitHub developers, fees split for good. Here is the whole thing in three steps.
               </p>
             </Reveal>
           </div>
@@ -166,7 +143,7 @@ export default async function HowPage() {
       {/* ── 02 · Where the fee goes ──────────────────────────────────────── */}
       <section id="fees" className="scroll-mt-24 space-y-8">
         <ChapterHead n="02" kicker="The money" title="Where the fee goes">
-          Every buy and every sell pays pons&apos;s 1% fee, on the bonding curve and in the Uniswap v4 pool after graduation. Here is one trade&apos;s fee, followed all the way down.
+          Every buy and every sell pays pump.fun&apos;s fee, on the bonding curve and in pump.fun&apos;s pool after graduation. Here is one curve trade&apos;s fee, followed all the way down.
         </ChapterHead>
         <FeeFlow accountsPct={ACCOUNTS_PCT} />
       </section>
@@ -215,9 +192,9 @@ export default async function HowPage() {
         <div className="flex items-center justify-between gap-8">
           <div className="max-w-xl">
             <div className="eyebrow">Your turn</div>
-            <h2 className="display mt-3 text-[36px] leading-[0.95] sm:text-[56px]">Name it. Add the accounts. Launch.</h2>
+            <h2 className="display mt-3 text-[36px] leading-[0.95] sm:text-[56px]">Name it. Add the devs. Launch.</h2>
             <p className="mt-4 max-w-md text-[15px] leading-relaxed text-ink-2 sm:text-[16px]">
-              Every trade after that pays the X accounts you picked, on the curve and after it graduates.
+              Every trade after that pays the GitHub developers you picked, on the curve and after it graduates.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link href="/create" className="btn-neon group/cta px-6 py-3.5 text-[16px]">
@@ -227,7 +204,7 @@ export default async function HowPage() {
                 </span>
               </Link>
               <Link href="/claim" className="btn-secondary px-6 py-3.5 text-[16px]">
-                Claim my fees
+                I&apos;m a developer
               </Link>
             </div>
           </div>
@@ -260,12 +237,12 @@ function ChapterHead({ n, kicker, title, children }: { n: string; kicker: string
 }
 
 /**
- * Where one trade's fee goes, zooming in three times: 1 square in 100 is pons's fee, 70% of the fee
- * is the creator's, the accounts' part of that goes to the X accounts, and it splits by their
- * shares. The receipt beside it runs the same numbers for a 1 ETH trade.
+ * Where one trade's fee goes, zooming in three times: about one square in 100 is pump.fun's fee,
+ * 24% of the fee is the creator's, the developers' part of that goes to their GitHub accounts, and
+ * it splits by their shares. The receipt beside it runs the same numbers for a 1 SOL trade.
  */
 function FeeFlow({ accountsPct: ACCOUNTS_PCT }: { accountsPct: number }) {
-  const fee = (TRADE_ETH * FEE_PCT) / 100;
+  const fee = (TRADE_SOL * FEE_PCT) / 100;
   const creator = (fee * CREATOR_PCT) / 100;
   const toPons = fee - creator;
   const toAccounts = (creator * ACCOUNTS_PCT) / 100;
@@ -285,31 +262,31 @@ function FeeFlow({ accountsPct: ACCOUNTS_PCT }: { accountsPct: number }) {
           <div className="mt-2.5 flex items-center justify-between gap-3 font-mono text-[11px]">
             <span className="text-ink-3">99% · the trade itself</span>
             <span className="text-ink-2">
-              <span className="text-neon font-semibold">1%</span> · pons&apos;s fee
+              <span className="text-neon font-semibold">1.25%</span> · pump.fun&apos;s fee
             </span>
           </div>
 
           <Wedge id="how-wedge-fee" from={[96.7, 100]} delay={520} />
 
-          <RowHead label="The 1% fee" />
+          <RowHead label="The 1.25% fee" />
           <SplitBar left={CREATOR_PCT} leftLabel="creator" rightLabel={`${100 - CREATOR_PCT}%`} delay={640} />
           <div className="mt-2.5 flex items-center justify-between gap-3 font-mono text-[11px] text-ink-3">
             <span>the creator&apos;s share</span>
-            <span>to pons</span>
+            <span>to pump.fun</span>
           </div>
 
           <Wedge id="how-wedge-creator" from={[0, CREATOR_PCT]} delay={900} />
 
-          <RowHead label="The creator's 70%" />
-          <SplitBar left={ACCOUNTS_PCT} leftLabel="X accounts" rightLabel={`${100 - ACCOUNTS_PCT}%`} delay={1020} />
+          <RowHead label="The creator's 0.30%" />
+          <SplitBar left={ACCOUNTS_PCT} leftLabel="GitHub devs" rightLabel={`${100 - ACCOUNTS_PCT}%`} delay={1020} />
           <div className="mt-2.5 flex items-center justify-between gap-3 font-mono text-[11px] text-ink-3">
-            <span>to the X accounts</span>
-            <span>to SplitEarn</span>
+            <span>to the GitHub developers</span>
+            <span>to Splidev</span>
           </div>
 
           <Wedge id="how-wedge-accounts" from={[0, ACCOUNTS_PCT]} delay={1300} />
 
-          <RowHead label="The accounts' part" note="example shares" />
+          <RowHead label="The developers' part" note="example shares" />
           <div className={`flex h-11 gap-[3px] overflow-hidden rounded-2xl ${WIPE}`} style={{ transitionDelay: "1420ms" }}>
             {ACCOUNTS.map((a) => (
               <div key={a.handle} className="grid min-w-0 place-items-center" style={{ flex: `${a.share} 1 0%`, backgroundColor: a.color }}>
@@ -329,8 +306,8 @@ function FeeFlow({ accountsPct: ACCOUNTS_PCT }: { accountsPct: number }) {
         <Receipt fee={fee} toPons={toPons} creator={creator} toPlatform={toPlatform} toAccounts={toAccounts} accountsPct={ACCOUNTS_PCT} />
       </div>
       <figcaption className="mt-7 border-t border-line pt-4 text-[13px] leading-relaxed text-ink-3">
-        Shares are set at launch and never change. A coin&apos;s creator tax (0–10%, chosen at launch) comes on top of the fee and goes entirely to its X accounts.
-        Fees wait in the FeeVault under each account&apos;s permanent X user id until its owner claims them to any wallet.
+        Shares are set at launch and never change. After graduation pump.fun&apos;s pool sets the creator&apos;s part by market cap (0.95% down to 0.05%); the split
+        stays the same. Fees wait in pump.fun&apos;s GitHub fee account of each developer until they sign in with GitHub on pump.fun and claim.
       </figcaption>
     </Reveal>
   );
@@ -400,30 +377,30 @@ function AccountFace({ a, className }: { a: Account; className?: string }) {
   );
 }
 
-/** The same split as a till receipt, for a 1 ETH trade. */
+/** The same split as a till receipt, for a 1 SOL trade on the curve. */
 function Receipt({ fee, toPons, creator, toPlatform, toAccounts, accountsPct: ACCOUNTS_PCT }: { fee: number; toPons: number; creator: number; toPlatform: number; toAccounts: number; accountsPct: number }) {
-  const accountsPct = (FEE_PCT * CREATOR_PCT * ACCOUNTS_PCT) / 10_000;
+  const accountsPct = +((FEE_PCT * CREATOR_PCT * ACCOUNTS_PCT) / 10_000).toFixed(3);
   return (
     <div className="flex min-w-0 flex-col rounded-2xl border border-line bg-card-2 font-mono text-[12px]">
       <div className="flex items-center justify-between gap-3 border-b border-dashed border-line-2 px-4 py-3">
         <span className="eyebrow">Receipt</span>
-        <span className="text-ink-3">a {TRADE_ETH} ETH trade</span>
+        <span className="text-ink-3">a {TRADE_SOL} SOL trade</span>
       </div>
       <div className="flex-1 space-y-2.5 px-4 py-4">
-        <ReceiptLine label="Trade" value={eth(TRADE_ETH)} delay={200} />
-        <ReceiptLine label={`pons fee (${FEE_PCT}%)`} value={eth(fee)} delay={270} strong />
+        <ReceiptLine label="Trade" value={sol(TRADE_SOL)} delay={200} />
+        <ReceiptLine label={`pump.fun fee (${FEE_PCT}%)`} value={sol(fee)} delay={270} strong />
         <div className="space-y-2.5 border-l border-line-2 pl-3">
-          <ReceiptLine label={`pons (${100 - CREATOR_PCT}%)`} value={eth(toPons)} delay={340} />
-          <ReceiptLine label={`Creator (${CREATOR_PCT}%)`} value={eth(creator)} delay={380} strong />
+          <ReceiptLine label={`pump.fun (${100 - CREATOR_PCT}%)`} value={sol(toPons)} delay={340} />
+          <ReceiptLine label={`Creator (${CREATOR_PCT}%)`} value={sol(creator)} delay={380} strong />
           <div className="space-y-2.5 border-l border-line-2 pl-3">
-            <ReceiptLine label={`SplitEarn (${100 - ACCOUNTS_PCT}%)`} value={eth(toPlatform)} delay={420} />
-            <ReceiptLine label={`X accounts (${ACCOUNTS_PCT}%)`} value={eth(toAccounts)} delay={460} strong />
+            <ReceiptLine label={`Splidev (${100 - ACCOUNTS_PCT}%)`} value={sol(toPlatform)} delay={420} />
+            <ReceiptLine label={`GitHub devs (${ACCOUNTS_PCT}%)`} value={sol(toAccounts)} delay={460} strong />
             <div className="space-y-2 border-l border-line-2 pl-3">
               {ACCOUNTS.map((a, i) => (
                 <ReceiptLine
                   key={a.handle}
                   delay={520 + i * 70}
-                  value={eth((toAccounts * a.share) / 100)}
+                  value={sol((toAccounts * a.share) / 100)}
                   label={
                     <>
                       <AccountFace a={a} className="h-5 w-5 shrink-0" />
@@ -438,12 +415,12 @@ function Receipt({ fee, toPons, creator, toPlatform, toAccounts, accountsPct: AC
         </div>
       </div>
       <div className={`border-t border-dashed border-line-2 px-4 py-4 ${RISE}`} style={{ transitionDelay: "900ms" }}>
-        <div className="eyebrow">To the X accounts</div>
+        <div className="eyebrow">To the GitHub developers</div>
         <div className="mt-2 flex items-baseline gap-2">
           <span className="display text-[34px] leading-none text-ink">{accountsPct}%</span>
           <span className="font-sans text-[14px] font-medium text-ink-2">of every trade</span>
         </div>
-        <p className="mt-2 text-ink-3">Plus the whole creator tax, if the coin has one. Paid before and after graduating.</p>
+        <p className="mt-2 text-ink-3">On the curve. After graduating, pump.fun&apos;s pool sets the creator&apos;s part by market cap.</p>
       </div>
     </div>
   );

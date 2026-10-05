@@ -126,7 +126,7 @@ export function SearchBox({ className = "", compact: small = false }: { classNam
                     ${t.symbol} · {t.recipients.map((r) => `@${r.login ?? r.githubId}`).join(" ")}
                   </span>
                 </span>
-                <span className="num text-[12px] text-ink-2">{compact(t.marketCap)} Ξ</span>
+                <span className="num text-[12px] text-ink-2">{compact(t.marketCap)} SOL</span>
               </Link>
             ))
           ) : (
