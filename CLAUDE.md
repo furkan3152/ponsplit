@@ -84,8 +84,12 @@ RPC=http://127.0.0.1:8899 node e2e/solana/graduate-local.mjs  # two-part launch,
 Gotchas:
 - pump.fun's SDK ESM build doesn't load under plain Node (a CommonJS dependency); Next bundles it fine,
   Node scripts use the esbuild bundle (`e2e/solana/build-lib.mjs`) or `createRequire`.
-- The first launch transaction is near Solana's 1232-byte limit with a first buy: keep extra instructions
-  out of it (the launch fee rides with the fee-sharing transaction).
+- The first launch transaction (create_v2 + first buy, ~25 accounts) sits at Solana's 1232-byte limit:
+  keep extra instructions out of it (the launch fee rides with the fee-sharing transaction), keep
+  metadata links short (`m/<16 hex>` on Blob), and `createTransaction` drops the compute budget
+  instructions when a long name wouldn't fit. `launch-local.mjs` launches the longest allowed name.
+  An address lookup table would give room back (none exists yet; it needs a one-time owner transaction).
+- The public mainnet RPC rate-limits `getTransaction` hard: scans of many transactions in `solana.yml` time out.
 - `getProgramAccounts` on pump.fun's fee program is fine (thousands of accounts); never on the pump
   program itself (millions).
 - pump.fun pools price with virtual SOL reserves on top of the real ones (`pool.virtualQuoteReserves`):
