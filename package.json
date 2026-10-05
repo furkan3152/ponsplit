@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --import ./src/lib/test-hooks.mjs --test src/lib/*.test.ts"
+    "test": "node --experimental-strip-types --import ./src/lib/test-hooks.mjs --test src/lib/*.test.ts src/lib/solana/*.test.ts"
   },
   "dependencies": {
     "@pump-fun/pump-sdk": "^2.0.0",

@@ -52,11 +52,18 @@ export type LaunchInput = {
   uri: string;
   githubIds: string[];
   bps: number[];
-  /** First buy in lamports (0 for none). */
+  /** First buy in lamports, fees included (0 for none). */
   firstBuyLamports: bigint;
-  /** Smallest number of tokens (raw, 6 decimals) the first buy may return. */
-  minTokens?: bigint;
 };
+
+type PumpGlobal = Awaited<ReturnType<OnlinePumpSdk["fetchGlobal"]>>;
+type PumpFeeConfig = Awaited<ReturnType<OnlinePumpSdk["fetchFeeConfig"]>> | null;
+
+/** Tokens (raw) a first buy of `lamports` gets on a brand-new curve. */
+export function firstBuyTokens(global: PumpGlobal, feeConfig: PumpFeeConfig, lamports: bigint): bigint {
+  const t = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: null, bondingCurve: null, amount: new BN(lamports.toString()), quoteMint: NATIVE_MINT });
+  return BigInt(t.toString());
+}
 
 const budget = (units: number) => [ComputeBudgetProgram.setComputeUnitLimit({ units }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 })];
 
@@ -80,7 +87,12 @@ export async function launchTransactions(c: Connection, input: LaunchInput): Pro
 
   const create: TransactionInstruction[] = [];
   if (input.firstBuyLamports > 0n) {
-    const global = await new OnlinePumpSdk(c).fetchGlobal();
+    const sdk = new OnlinePumpSdk(c);
+    const [global, feeConfig] = await Promise.all([sdk.fetchGlobal(), sdk.fetchFeeConfig().catch(() => null)]);
+    const solAmount = new BN(input.firstBuyLamports.toString());
+    // pump.fun's buy takes the token amount and a SOL ceiling; on a brand-new curve nobody can trade
+    // first, so the quote for the SOL amount is exact.
+    const tokens = firstBuyTokens(global, feeConfig, input.firstBuyLamports);
     create.push(
       ...(await PUMP_SDK.createV2AndBuyInstructions({
         global,
@@ -90,8 +102,8 @@ export async function launchTransactions(c: Connection, input: LaunchInput): Pro
         uri: input.uri,
         creator: user,
         user,
-        amount: new BN((input.minTokens ?? 1n).toString()),
-        solAmount: new BN(input.firstBuyLamports.toString()),
+        amount: new BN(tokens.toString()),
+        solAmount,
         mayhemMode: false,
       }))
     );

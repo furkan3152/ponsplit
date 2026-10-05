@@ -11,7 +11,7 @@ import BN from "bn.js";
 const treasury = Keypair.generate();
 process.env.NEXT_PUBLIC_SPLIDEV_TREASURY = treasury.publicKey.toBase58();
 const require = createRequire(import.meta.url);
-const { launchTransactions, buyTransaction, sellTransaction, distributeTransaction, githubFeeAccount, PUMP_FEES_PROGRAM_ID } = require("./.build/lib.cjs");
+const { launchTransactions, buyTransaction, sellTransaction, distributeTransaction, githubFeeAccount, listCoins, readCoin, githubClaimable, PUMP_FEES_PROGRAM_ID } = require("./.build/lib.cjs");
 const { OnlinePumpSdk, PUMP_SDK, feeSharingConfigPda } = require("@pump-fun/pump-sdk");
 
 const c = new Connection(process.env.RPC || "http://127.0.0.1:8899", "confirmed");
@@ -63,6 +63,19 @@ if (!new PublicKey(raw.data.subarray(80, 112)).equals(treasury.publicKey)) fail(
 const listed = await c.getProgramAccounts(PUMP_FEES_PROGRAM_ID, { filters: [{ memcmp: { offset: 80, bytes: treasury.publicKey.toBase58() } }] });
 if (listed.length !== 1) fail(`expected 1 listed coin, got ${listed.length}`);
 ok("fee sharing is set: treasury first, GitHub accounts after, admin revoked, findable by treasury");
+const coins = await listCoins(c);
+const coin = coins.find((x) => x.token === mint.publicKey.toBase58());
+if (coins.length !== 1 || !coin) fail(`the site's coin list found ${coins.length} coins`);
+if (coin.name !== "Splidev Local" || coin.symbol !== "SPLD" || coin.platformBps !== 1000) fail(`unexpected coin ${JSON.stringify(coin, (_, v) => (typeof v === "bigint" ? v.toString() : v))}`);
+if (coin.recipients.map((r) => r.githubId).join() !== githubIds.join() || coin.recipients.map((r) => r.shareBps).join() !== "5400,3600") fail(`unexpected recipients ${JSON.stringify(coin.recipients)}`);
+if (!(coin.price > 0) || !(coin.progress > 0.1)) fail(`no price or progress after the first buy (${coin.progress}%)`);
+const { getAssociatedTokenAddressSync: ataOf } = require("@solana/spl-token");
+const firstBought = BigInt((await c.getTokenAccountBalance(ataOf(mint.publicKey, creator.publicKey, false, TOKEN_2022_PROGRAM_ID))).value.amount);
+if (firstBought < 1_000_000_000_000n) fail(`the 0.1 SOL first buy got only ${firstBought} raw tokens`);
+ok(`the first buy got ${Number(firstBought) / 1e6} tokens`);
+if (!(await readCoin(c, mint.publicKey))) fail("readCoin didn't find the coin");
+if (await readCoin(c, Keypair.generate().publicKey)) fail("readCoin found a coin that doesn't exist");
+ok(`the site lists it: $${coin.symbol}, ${coin.recipients.length} GitHub accounts, price ${coin.price.toExponential(3)} SOL, ${coin.progress.toFixed(2)}% of the curve`);
 const feePaid = (await c.getBalance(treasury.publicKey)) - before;
 ok(`launch fee reached the treasury: ${feePaid / LAMPORTS_PER_SOL} SOL`);
 
@@ -95,3 +108,6 @@ for (const [i, g] of gains.entries()) {
   if (Math.abs(g - expected) > 2) fail(`shareholder ${i} got ${g}, expected about ${expected}`);
 }
 ok(`creator fees distributed by share: Splidev ${gains[0]}, GitHub ${gains.slice(1).join(" / ")} lamports`);
+const claim = await githubClaimable(c, "1024025");
+if (claim.claimable < BigInt(gains[1])) fail(`GitHub 1024025 shows ${claim.claimable} claimable, expected at least ${gains[1]}`);
+ok(`the claim page sees ${Number(claim.claimable) / LAMPORTS_PER_SOL} SOL waiting for GitHub user 1024025 on pump.fun`);
