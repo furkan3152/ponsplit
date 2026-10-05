@@ -75,6 +75,8 @@ async function openAs(browser, kp, viewport = { width: 1280, height: 900 }) {
 
 async function connect(page) {
   const btn = page.getByRole("button", { name: "Connect", exact: true }).first();
+  // The wallet button renders after hydration; wait for it rather than assume it's already there.
+  await btn.waitFor({ state: "visible", timeout: 20_000 }).catch(() => {});
   if (!(await btn.isVisible().catch(() => false))) return;
   await btn.click();
   await page.getByRole("button", { name: /E2E Wallet/ }).first().click({ timeout: 15_000 });
