@@ -48,16 +48,28 @@ github-types.ts), `src/lib/hooks.ts`, `src/app` pages (/, /explore, /create, /to
 /how, /docs) and API routes (/api/snapshot, /api/coin, /api/trades, /api/github/resolve, /api/metadata,
 /api/upload). Docs for the owner are Turkish: README.md.
 
-## Design system ("split terminal")
+## Design system ("night shift", 2026-10-05)
 
-Unchanged from SplitEarn (the owner liked it): near-black paper, lime `#ccff00`, pastel account colors,
-dark by default with the light "paper edition" (`<ThemeToggle>`, `data-theme` set by `THEME_SCRIPT`).
-Tokens in `src/app/globals.css` + `tailwind.config.ts`. Fonts: Bricolage Grotesque (display), Instrument
-Sans (body), Instrument Serif (`accent`, one word per page), Martian Mono (`num`). Motion in
-`src/components/motion.tsx`, stops under reduced motion. Hero art `art/SplitMachine.tsx` with an example
-set of well-known GitHub devs (torvalds, gaearon, sindresorhus, yyx990803, tj), labelled as an example.
-Logo: the S sticker (`art/Logo.tsx`), wordmark "Spli**dev**". Decorations must never widen the page
-(the browser e2e checks every page at 1280 and 390 px).
+The owner asked for a completely new, original look for Splidev (colors, mascot, everything). Keep new work in it:
+- **Theme.** A code editor after midnight: deep violet paper (`#0d0a1a`) with a dot matrix (`body::after`) and
+  ambient tangerine/violet/mint light; light "daylight" edition on warm cream (`<ThemeToggle>`, `data-theme` set by
+  `THEME_SCRIPT`). House color **tangerine `#ff7a3d`** (token still named `--lime` / `bg-lime` / `text-neon`;
+  `--lime-deep` for keycap edges and text on cream), mint up `--green`, coral down `--red`, pastel account colors
+  (sky, pink, sun, lilac, and `--orange` = chartreuse; names are historic).
+- **Mascot: Bitbug** (`art/Bug.tsx`): a beetle with a tangerine shell split down the middle, lilac head, sun
+  antenna tips. `<Bug face open flap />` poses it (faces happy/joy/sleepy/wow/wink; `flap` opens the shell via CSS).
+  It is the logo (`LogoMark` = `BugMark`), the hero (`SplitMachine`: it opens its shell and fees run down a git graph
+  to the developers), and every state illustration (steps, empty, 404, claim, graduated).
+- **Dev details.** Eyebrows read as code comments (`// label`, `.eyebrow::before`), wordmark `splidev` with a blinking
+  caret (`WordmarkText`), buttons are keycaps (solid bottom edge, press travels down), bento panels are editor panes
+  (window dots + `name.sol` tab), doodles are `</>`, `{ }`, a little git graph (`parts.tsx`: CodeTag, Braces, Commits).
+- **Fonts.** Space Grotesk (`display`), Figtree (body), Fraunces soft wonky italic (`accent`, one word per page, with a
+  wavy tangerine underline), JetBrains Mono (`num`, ligatures off). (Sora was tried: its "l" reads as "1".)
+- Tokens in `src/app/globals.css` + `tailwind.config.ts`; colors are CSS variables, so Tailwind alpha modifiers
+  (`bg-x/50`) don't work on them. Motion in `src/components/motion.tsx`, stops under reduced motion.
+- Static logos (`public/logo.svg`, `src/app/icon.svg`, `src/lib/logo-svg.ts`) come from `node scripts/render-logo.mjs`;
+  share cards (`opengraph-image.tsx`) use the night palette. Decorations must never widen the page (the browser e2e
+  checks every page at 1280 and 390 px).
 
 ## Hard rules
 

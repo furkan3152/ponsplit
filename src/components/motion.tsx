@@ -147,7 +147,7 @@ export function Flash({ value, children, className = "" }: { value: number | big
   );
 }
 
-const CONFETTI_COLORS = ["#ccff00", "#72c9ff", "#ff93c9", "#ffd84d", "#b8a1ff", "#ff9f45"];
+const CONFETTI_COLORS = ["#ff7a3d", "#66c7ff", "#ff8ccf", "#ffd45c", "#a98dff", "#3ddc97"];
 
 /** A burst of confetti in the house colors, for launches, claims and graduations. */
 export async function celebrate(): Promise<void> {

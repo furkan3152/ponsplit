@@ -329,3 +329,51 @@ export function QMark({ x, y, s, color, sw, rot = 0 }: { x: number; y: number; s
     </g>
   );
 }
+
+/** A thick colored stroke with an ink edge: the hand-drawn line every dev doodle is made of. */
+function Glyph({ d, color, sw, transform }: { d: string; color: string; sw: number; transform?: string }) {
+  const base = { d, fill: "none", strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  return (
+    <g transform={transform}>
+      <path {...base} stroke={INK} strokeWidth={sw * 2.6} />
+      <path {...base} stroke={color} strokeWidth={sw * 1.2} />
+    </g>
+  );
+}
+
+/** "</>" centered on (x, y), `s` wide. */
+export function CodeTag({ x, y, s, color = C.lime, sw, rot = 0 }: { x: number; y: number; s: number; color?: string; sw: number; rot?: number }) {
+  const h = s * 0.32;
+  const d = `M${pt(x - s * 0.22, y - h)}L${pt(x - s / 2, y)}L${pt(x - s * 0.22, y + h)}M${pt(x + s * 0.22, y - h)}L${pt(x + s / 2, y)}L${pt(x + s * 0.22, y + h)}M${pt(x + s * 0.09, y - h * 1.15)}L${pt(x - s * 0.09, y + h * 1.15)}`;
+  return <Glyph d={d} color={color} sw={sw} transform={rot ? `rotate(${rot} ${x} ${y})` : undefined} />;
+}
+
+/** "{ }" centered on (x, y), `s` wide. */
+export function Braces({ x, y, s, color = C.lilac, sw, rot = 0 }: { x: number; y: number; s: number; color?: string; sw: number; rot?: number }) {
+  const h = s * 0.42;
+  const w = s * 0.12;
+  const brace = (cx: number, dir: 1 | -1) =>
+    `M${pt(cx + dir * w, y - h)}Q${pt(cx, y - h)} ${pt(cx, y - h * 0.6)}V${q(y - h * 0.22)}Q${pt(cx, y)} ${pt(cx - dir * w, y)}Q${pt(cx, y)} ${pt(cx, y + h * 0.22)}V${q(y + h * 0.6)}Q${pt(cx, y + h)} ${pt(cx + dir * w, y + h)}`;
+  return <Glyph d={`${brace(x - s * 0.34, 1)}${brace(x + s * 0.34, -1)}`} color={color} sw={sw} transform={rot ? `rotate(${rot} ${x} ${y})` : undefined} />;
+}
+
+/** A little git graph: a main line with commits and one branch that forks off and comes back. */
+export function Commits({ x, y, s, sw }: { x: number; y: number; s: number; sw: number }) {
+  const k = s / 100;
+  const P = (a: number, b: number) => pt(x + a * k, y + b * k);
+  const dots: [number, number, string][] = [
+    [0, 0, C.lime],
+    [0, 34, C.sky],
+    [30, 52, C.pink],
+    [0, 70, C.sun],
+    [0, 100, C.lime],
+  ];
+  return (
+    <g>
+      <path d={`M${P(0, 0)}V${q(y + 100 * k)}M${P(0, 34)}Q${P(30, 34)} ${P(30, 52)}Q${P(30, 70)} ${P(0, 74)}`} fill="none" stroke="var(--ink-3)" strokeWidth={sw} strokeLinecap="round" />
+      {dots.map(([a, b, c]) => (
+        <circle key={`${a}${b}`} cx={x + a * k} cy={y + b * k} r={7 * k + 2} fill={c} stroke={INK} strokeWidth={sw * 0.8} />
+      ))}
+    </g>
+  );
+}

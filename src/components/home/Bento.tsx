@@ -10,7 +10,7 @@ import { githubProfileUrl } from "@/lib/github-handles";
 import { compact, formatSol, timeAgo } from "@/lib/format";
 import type { Coin, Earner } from "@/lib/types";
 
-/** A bento card: a label at the foot and an "Open" link, like the reference's panels. */
+/** A bento card dressed as an editor pane: a tab with window dots and a file name on top, an "Open" link. */
 export function Panel({
   label,
   href,
@@ -24,15 +24,25 @@ export function Panel({
 }) {
   return (
     <section className={`card relative flex flex-col overflow-hidden ${className}`}>
-      <div className="relative min-h-0 flex-1">{children}</div>
-      <div className="flex items-center justify-between border-t border-line px-5 py-3 text-[13px]">
-        <span className="font-medium text-ink-2">{label}</span>
+      <div className="flex items-center justify-between gap-3 border-b border-line bg-card-2 px-4 py-2.5 text-[13px]">
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex shrink-0 gap-1.5" aria-hidden>
+            <span className="h-2.5 w-2.5 rounded-full bg-down" />
+            <span className="h-2.5 w-2.5 rounded-full bg-sun" />
+            <span className="h-2.5 w-2.5 rounded-full bg-up" />
+          </span>
+          <span className="truncate font-mono text-[12px] text-ink-2">
+            {label.toLowerCase().replace(/\s+/g, "-")}
+            <span className="text-ink-3">.sol</span>
+          </span>
+        </span>
         {href ? (
           <Link href={href} className="group/open inline-flex items-center gap-1 font-medium text-ink-2 transition hover:text-ink">
             Open <ArrowIcon size={14} className="transition-transform group-hover/open:translate-x-0.5" />
           </Link>
         ) : null}
       </div>
+      <div className="relative min-h-0 flex-1">{children}</div>
     </section>
   );
 }
@@ -101,7 +111,7 @@ function CoinCover({ t }: { t: Coin }) {
         <div className="flex items-baseline gap-2 font-mono text-[11px]">
           <span className="font-semibold">{compact(t.marketCap)} SOL</span>
           <span className="text-white/55">MC</span>
-          <span className="ml-auto font-semibold text-[#9dffb8]">{t.graduated ? "graduated" : `${Math.floor(t.progress)}%`}</span>
+          <span className="ml-auto font-semibold text-up-ink">{t.graduated ? "graduated" : `${Math.floor(t.progress)}%`}</span>
         </div>
       </div>
     </Link>

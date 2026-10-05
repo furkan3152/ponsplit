@@ -45,12 +45,19 @@ export default function Home() {
         <div aria-hidden className="bg-grid pointer-events-none absolute -inset-x-4 -top-10 -z-10 h-[520px] sm:-inset-x-6" />
         <HeroDoodles />
         <Reveal>
-          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-2">
-            <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" aria-hidden />
-            {live ? "Live" : "Coming soon"} on Solana · pump.fun
+          <span className="inline-flex items-center gap-2 rounded-xl border border-line bg-card px-3 py-1.5 font-mono text-[12px] text-ink-2 shadow-[0_3px_0_0_var(--key-edge)]">
+            <span className="text-lime" aria-hidden>
+              $
+            </span>
+            splidev <span className="text-ink-3">--status</span>
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--lime-soft)] px-1.5 py-0.5 text-lime">
+              <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" aria-hidden />
+              {live ? "live" : "soon"}
+            </span>
+            <span className="hidden text-ink-3 min-[400px]:inline">solana · pump.fun</span>
           </span>
         </Reveal>
-        <h1 className="display mx-auto mt-6 max-w-[900px] text-[46px] leading-[0.95] sm:text-[76px]">
+        <h1 className="display mx-auto mt-6 max-w-[900px] text-[40px] leading-[1] min-[400px]:text-[44px] sm:text-[72px]">
           <Reveal as="span" className="block" delay={60}>
             Coins that pay
           </Reveal>
@@ -116,8 +123,9 @@ export default function Home() {
         <CornerConfetti className="hidden sm:block" />
         <div>
           <div className="eyebrow">Example split</div>
-          <h2 className="display mt-2 text-[36px] leading-[1.02] sm:text-[44px]">One coin, many devs</h2>
+          <h2 className="display mt-2 text-[34px] leading-[1.04] sm:text-[44px]">One coin, many devs</h2>
           <p className="mt-3 max-w-md text-[15px] leading-relaxed text-ink-2">
+            Meet <span className="font-semibold text-ink">Bitbug</span>, the beetle with the split shell: every time it opens, the fees fly out.{" "}
             This is how a split looks: pick any GitHub developers, set their shares, and each trade&apos;s creator fee flows to them. These
             developers are only an example; no coin pays them unless someone launches one for them.
           </p>
@@ -126,7 +134,7 @@ export default function Home() {
             <ArrowIcon size={16} className="transition-transform group-hover/l:translate-x-0.5" />
           </Link>
         </div>
-        <SplitMachine className="mx-auto w-full max-w-[560px]" accounts={machine} caption="EXAMPLE SPLIT" />
+        <SplitMachine className="mx-auto w-full max-w-[560px]" accounts={machine} caption="example split" />
       </section>
 
       {/* Trending */}
