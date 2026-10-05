@@ -47,7 +47,7 @@ const SOCIAL_FEE_PDA_DISC = Buffer.from([139, 96, 53, 17, 42, 169, 206, 150]);
 /** The curve's starting real token reserves (pump.fun's global config), for the progress bar. */
 const INITIAL_REAL_TOKENS = 793_100_000 * TOKEN_UNITS;
 
-type Sharing = { mint: PublicKey; config: PublicKey; shareholders: { address: PublicKey; shareBps: number }[] };
+type Sharing = { mint: PublicKey; config: PublicKey; /** the wallet that launched the coin and set the split */ admin: PublicKey; shareholders: { address: PublicKey; shareBps: number }[] };
 
 /** Every Splidev coin's fee sharing: pump.fun SharingConfig accounts that list `treasury` first and are final. */
 export async function findSharings(c: Connection, treasury: PublicKey | null = TREASURY): Promise<Sharing[]> {
@@ -64,7 +64,7 @@ export async function findSharings(c: Connection, treasury: PublicKey | null = T
     // status byte (after the discriminator, bump and version): 1 = Active, 0 = Paused.
     if (!cfg.adminRevoked || a.account.data[10] !== 1) continue;
     if (HIDDEN.has(cfg.mint.toBase58())) continue;
-    out.push({ mint: cfg.mint, config: a.pubkey, shareholders: cfg.shareholders.map((s: { address: PublicKey; shareBps: number }) => ({ address: s.address, shareBps: s.shareBps })) });
+    out.push({ mint: cfg.mint, config: a.pubkey, admin: cfg.admin, shareholders: cfg.shareholders.map((s: { address: PublicKey; shareBps: number }) => ({ address: s.address, shareBps: s.shareBps })) });
   }
   return out;
 }
@@ -145,7 +145,8 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
       name: md.name,
       symbol: md.symbol,
       uri: md.uri,
-      creator: curve.creator.toBase58(),
+      // The launching wallet: the curve's creator becomes the fee sharing config once the split is set.
+      creator: s.admin.toBase58(),
       platformBps: treasuryShare,
       recipients,
       graduated: curve.complete,
@@ -210,7 +211,7 @@ export async function readCoin(c: Connection, mint: PublicKey): Promise<Coin | n
   if (!info) return null;
   const cfg = PUMP_SDK.decodeSharingConfig(info);
   if (!cfg.adminRevoked || !cfg.shareholders[0]?.address.equals(TREASURY) || HIDDEN.has(mint.toBase58())) return null;
-  const [coin] = await readCoins(c, [{ mint, config: cfgKey, shareholders: cfg.shareholders }]);
+  const [coin] = await readCoins(c, [{ mint, config: cfgKey, admin: cfg.admin, shareholders: cfg.shareholders }]);
   return coin ?? null;
 }
 
