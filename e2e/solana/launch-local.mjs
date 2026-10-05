@@ -11,7 +11,7 @@ import BN from "bn.js";
 const treasury = Keypair.generate();
 process.env.NEXT_PUBLIC_SPLIDEV_TREASURY = treasury.publicKey.toBase58();
 const require = createRequire(import.meta.url);
-const { launchTransactions, buyTransaction, sellTransaction, distributeTransaction, githubFeeAccount, listCoins, readCoin, githubClaimable, recentTrades, PUMP_FEES_PROGRAM_ID } = require("./.build/lib.cjs");
+const { launchTransactions, buyTransaction, sellTransaction, quoteBuy, quoteSell, distributeTransaction, githubFeeAccount, listCoins, readCoin, githubClaimable, recentTrades, PUMP_FEES_PROGRAM_ID } = require("./.build/lib.cjs");
 const { OnlinePumpSdk, PUMP_SDK, feeSharingConfigPda } = require("@pump-fun/pump-sdk");
 
 const c = new Connection(process.env.RPC || "http://127.0.0.1:8899", "confirmed");
@@ -83,15 +83,22 @@ ok(`launch fee reached the treasury: ${feePaid / LAMPORTS_PER_SOL} SOL`);
 const traders = [Keypair.generate(), Keypair.generate()];
 for (const t of traders) await fund(t.publicKey, 20);
 for (const [i, t] of traders.entries()) {
+  const quoted = await quoteBuy(c, mint.publicKey, BigInt((i + 1) * 2) * BigInt(LAMPORTS_PER_SOL));
   const { tx, tokens } = await buyTransaction(c, t.publicKey, mint.publicKey, BigInt((i + 1) * 2) * BigInt(LAMPORTS_PER_SOL));
   await send(tx, [t]);
-  ok(`trader ${i + 1} bought ${Number(tokens) / 1e6} tokens`);
+  if (quoted !== tokens) fail(`quoteBuy said ${quoted}, the transaction was built for ${tokens}`);
+  ok(`trader ${i + 1} bought ${Number(tokens) / 1e6} tokens (quote matched)`);
 }
 const { getAssociatedTokenAddressSync } = require("@solana/spl-token");
 const ata = getAssociatedTokenAddressSync(mint.publicKey, traders[0].publicKey, false, TOKEN_2022_PROGRAM_ID);
 const held = BigInt((await c.getTokenAccountBalance(ata)).value.amount);
+const sellQuote = await quoteSell(c, mint.publicKey, held / 2n);
 const { tx: sellTx, lamports: got } = await sellTransaction(c, traders[0].publicKey, mint.publicKey, held / 2n);
+if (sellQuote !== got) fail(`quoteSell said ${sellQuote}, the sell was built for ${got}`);
+const solBefore = await c.getBalance(traders[0].publicKey);
 await send(sellTx, [traders[0]]);
+const solGot = (await c.getBalance(traders[0].publicKey)) - solBefore;
+if (Math.abs(solGot - Number(got)) > 200_000) fail(`the sell paid ${solGot} lamports, quoted ${got} (fees aside)`);
 ok(`trader 1 sold half for ~${Number(got) / LAMPORTS_PER_SOL} SOL`);
 
 const trades = await recentTrades(c, mint.publicKey, false);
