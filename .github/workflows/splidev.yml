@@ -1,0 +1,30 @@
+name: Splidev
+
+# The Solana side on pump.fun's real programs (e2e/solana/fixtures, dumped from mainnet): a local
+# solana-test-validator, a launch through the site's own transaction builder, trades and pump.fun's
+# fee distribution to Splidev and the GitHub accounts.
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  pump-local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install the Solana CLI
+        run: |
+          curl -sSfL https://github.com/anza-xyz/agave/releases/download/v2.3.13/solana-release-x86_64-unknown-linux-gnu.tar.bz2 | tar xj
+          echo "$PWD/solana-release/bin" >> "$GITHUB_PATH"
+      - name: Start a validator with pump.fun's programs
+        run: e2e/solana/validator.sh "$RUNNER_TEMP/ledger"
+      - name: Launch, trade and distribute
+        run: |
+          node e2e/solana/build-lib.mjs
+          RPC=http://127.0.0.1:8899 node e2e/solana/launch-local.mjs

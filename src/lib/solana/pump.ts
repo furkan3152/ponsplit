@@ -11,9 +11,9 @@ import {
   type Connection,
   type TransactionInstruction,
 } from "@solana/web3.js";
-import { NATIVE_MINT, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import BN from "bn.js";
-import { OnlinePumpSdk, PUMP_SDK, Platform, socialFeePda } from "@pump-fun/pump-sdk";
+import { OnlinePumpSdk, PUMP_SDK, Platform, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, socialFeePda } from "@pump-fun/pump-sdk";
 import { LAUNCH_FEE_LAMPORTS, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
 
 export { Platform, socialFeePda };
@@ -121,4 +121,64 @@ export async function launchTransactions(c: Connection, input: LaunchInput): Pro
   const fee = LAUNCH_FEE_LAMPORTS > 0n ? [SystemProgram.transfer({ fromPubkey: user, toPubkey: TREASURY, lamports: LAUNCH_FEE_LAMPORTS })] : [];
   txs.push(await v0(c, user, [...budget(400_000), sharing, update, ...fee]));
   return txs;
+}
+
+/** Token decimals of every pump.fun coin. */
+export const TOKEN_DECIMALS = 6;
+
+/**
+ * A curve buy: spend `lamports` (pump.fun's fees included), accepting at worst `slippageBps` fewer
+ * tokens than quoted now. Returns the transaction and the quoted token amount (raw).
+ */
+export async function buyTransaction(c: Connection, user: PublicKey, mint: PublicKey, lamports: bigint, slippageBps = 200) {
+  const sdk = new OnlinePumpSdk(c);
+  const [global, feeConfig, state] = await Promise.all([sdk.fetchGlobal(), sdk.fetchFeeConfig().catch(() => null), sdk.fetchBuyState(mint, user, TOKEN_2022_PROGRAM_ID)]);
+  if (state.bondingCurve.complete) throw new Error("This coin has left the curve; trade it on pump.fun's pool.");
+  const solAmount = new BN(lamports.toString());
+  const tokens = getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: state.bondingCurve.tokenTotalSupply, bondingCurve: state.bondingCurve, amount: solAmount, quoteMint: NATIVE_MINT });
+  const ixs = await PUMP_SDK.buyInstructions({
+    global,
+    bondingCurveAccountInfo: state.bondingCurveAccountInfo,
+    bondingCurve: state.bondingCurve,
+    associatedUserAccountInfo: state.associatedUserAccountInfo,
+    mint,
+    user,
+    amount: tokens,
+    solAmount,
+    slippage: slippageBps / 100,
+    tokenProgram: TOKEN_2022_PROGRAM_ID,
+  });
+  return { tx: await v0(c, user, [...budget(300_000), ...ixs]), tokens: BigInt(tokens.toString()) };
+}
+
+/** A curve sell of `tokens` (raw), accepting at worst `slippageBps` less SOL than quoted now. */
+export async function sellTransaction(c: Connection, user: PublicKey, mint: PublicKey, tokens: bigint, slippageBps = 200) {
+  const sdk = new OnlinePumpSdk(c);
+  const [global, feeConfig, state] = await Promise.all([sdk.fetchGlobal(), sdk.fetchFeeConfig().catch(() => null), sdk.fetchSellState(mint, user, TOKEN_2022_PROGRAM_ID)]);
+  if (state.bondingCurve.complete) throw new Error("This coin has left the curve; trade it on pump.fun's pool.");
+  const amount = new BN(tokens.toString());
+  const sol = getSellSolAmountFromTokenAmount({ global, feeConfig, mintSupply: state.bondingCurve.tokenTotalSupply, bondingCurve: state.bondingCurve, amount });
+  const ixs = await PUMP_SDK.sellInstructions({
+    global,
+    bondingCurveAccountInfo: state.bondingCurveAccountInfo,
+    bondingCurve: state.bondingCurve,
+    mint,
+    user,
+    amount,
+    solAmount: sol,
+    slippage: slippageBps / 100,
+    tokenProgram: TOKEN_2022_PROGRAM_ID,
+    mayhemMode: state.bondingCurve.isMayhemMode,
+  });
+  return { tx: await v0(c, user, [...budget(300_000), ...ixs]), lamports: BigInt(sol.toString()) };
+}
+
+/**
+ * Moves a coin's accumulated creator fees to its shareholders (Splidev and the GitHub fee accounts),
+ * through pump.fun's permissionless distribution; for a graduated coin it first sweeps the pool's
+ * creator fees. Anyone can send it and pays only the network fee.
+ */
+export async function distributeTransaction(c: Connection, payer: PublicKey, mint: PublicKey) {
+  const { instructions } = await new OnlinePumpSdk(c).buildDistributeCreatorFeesInstructions(mint, { payer });
+  return v0(c, payer, [...budget(400_000), ...instructions]);
 }
