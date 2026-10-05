@@ -69,8 +69,14 @@ const budget = (units: number) => [ComputeBudgetProgram.setComputeUnitLimit({ un
 
 async function v0(c: Connection, payer: PublicKey, ixs: TransactionInstruction[]) {
   const { blockhash } = await c.getLatestBlockhash("confirmed");
-  return new VersionedTransaction(new TransactionMessage({ payerKey: payer, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message());
+  return compile(payer, blockhash, ixs);
 }
+
+const compile = (payer: PublicKey, blockhash: string, ixs: TransactionInstruction[]) =>
+  new VersionedTransaction(new TransactionMessage({ payerKey: payer, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message());
+
+/** Solana's limit for a serialized transaction, signatures included. */
+export const TX_BYTES_LIMIT = 1232;
 
 /**
  * A launch as transactions to sign together and send in order:
@@ -112,7 +118,16 @@ export async function createTransaction(c: Connection, input: LaunchInput): Prom
   } else {
     create.push(await PUMP_SDK.createV2Instruction({ mint, name: input.name, symbol: input.symbol, uri: input.uri, creator: user, user, mayhemMode: false }));
   }
-  return v0(c, user, [...budget(400_000), ...create]);
+  // create_v2 + the first buy touch ~26 accounts, so a long name or metadata link can push the
+  // transaction past Solana's size limit. The compute budget instructions give way first (the
+  // priority fee, then everything): the coin still launches, just without priority.
+  const { blockhash } = await c.getLatestBlockhash("confirmed");
+  const price = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 });
+  for (const extra of [budget(400_000), [price], []]) {
+    const tx = compile(user, blockhash, [...extra, ...create]);
+    if (tx.serialize().length <= TX_BYTES_LIMIT) return tx;
+  }
+  throw new Error("The coin's name, ticker and details don't fit in one Solana transaction. Shorten the name or ticker.");
 }
 
 /**
