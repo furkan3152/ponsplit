@@ -67,6 +67,9 @@ const { tx: sell } = await lib.sellTransaction(c, trader.publicKey, mint.publicK
 await send(sell, [trader]);
 ok("sold half on the pool");
 
+const poolTrades = (await lib.recentTrades(c, mint.publicKey, true)).filter((t) => t.venue === "pool");
+if (poolTrades.map((t) => t.kind).join() !== "sell,buy" || poolTrades.some((t) => !(t.price > 0))) fail(`pool trade history reads ${JSON.stringify(poolTrades, (_, v) => (typeof v === "bigint" ? v.toString() : v))}`);
+ok(`the pool's trades read back: ${poolTrades.map((t) => `${t.kind} @ ${t.price.toExponential(3)}`).join(", ")}`);
 const cfg = PUMP_SDK.decodeSharingConfig(await c.getAccountInfo(feeSharingConfigPda(mint.publicKey)));
 const holders = cfg.shareholders.map((h) => h.address);
 const before = await Promise.all(holders.map((h) => c.getBalance(h)));
