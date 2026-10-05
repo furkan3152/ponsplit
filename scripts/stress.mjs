@@ -1,16 +1,16 @@
 // Load test for the live site and the chain's RPC, from one machine (the stress.yml runner).
 // Nothing is signed or sent on-chain. Phases:
 //   1. pages  — the public pages and a coin page, many at once (what Vercel serves)
-//   2. apis   — the read APIs the pages call (config, X lookups; their per-client limits answer 429
-//               by design, since every request here comes from one IP)
-//   3. rpc    — a burst of reads against the chain RPC the browsers use (public or paid)
+//   2. apis   — the read APIs the pages call (snapshot, coin, trades, GitHub lookups; their
+//               per-client limits answer 429 by design, since every request here comes from one IP)
+//   3. rpc    — a burst of reads against the Solana RPC the browsers use (public or paid)
 // Prints latency percentiles, status counts and errors per phase; exits non-zero on 5xx or
 // timeouts from the site.
 //
-//   SITE=https://splitearn.app RPC=https://rpc.mainnet.chain.robinhood.com COIN=0x… \
+//   SITE=https://splitearn.app RPC=https://api.mainnet-beta.solana.com COIN=<mint> \
 //   CONCURRENCY=40 REQUESTS=600 node scripts/stress.mjs
 const SITE = (process.env.SITE || "https://splitearn.app").replace(/\/$/, "");
-const RPC = process.env.RPC || "https://rpc.mainnet.chain.robinhood.com";
+const RPC = process.env.RPC || "https://api.mainnet-beta.solana.com";
 const COIN = process.env.COIN || "";
 const CONCURRENCY = Number(process.env.CONCURRENCY || 40);
 const REQUESTS = Number(process.env.REQUESTS || 600);
@@ -52,39 +52,30 @@ async function run(name, total, concurrency, make) {
   return { statuses, errors };
 }
 
-const get = (path) => fetch(SITE + path, { signal: AbortSignal.timeout(TIMEOUT), headers: { "user-agent": "splitearn-stress/1" } });
+const get = (path) => fetch(SITE + path, { signal: AbortSignal.timeout(TIMEOUT), headers: { "user-agent": "splidev-stress/1" } });
 const pages = ["/", "/explore", "/create", "/claim", "/how", "/me", ...(COIN ? [`/token/${COIN}`] : [])];
 const results = [];
 
-// 1. Pages: every page, many times over, with the network cookie alternating like real visitors.
-results.push(
-  await run("pages", REQUESTS, CONCURRENCY, (i) =>
-    fetch(SITE + pages[i % pages.length], {
-      signal: AbortSignal.timeout(TIMEOUT),
-      headers: { cookie: `pe-network=${i % 2 ? "testnet" : "mainnet"}`, "user-agent": "splitearn-stress/1" },
-    })
-  )
-);
+// 1. Pages: every page, many times over.
+results.push(await run("pages", REQUESTS, CONCURRENCY, (i) => get(pages[i % pages.length])));
 
-// 2. APIs the browser calls. /api/config is cheap; the X lookup hits fxtwitter behind per-client
-// budgets, so a modest number here (a burst from one IP must be answered with 429s, not 5xx).
-results.push(await run("api/config", Math.round(REQUESTS / 2), CONCURRENCY, () => get("/api/config")));
-const handles = ["jack", "x", "naval", "elonmusk", "robinhoodapp", "vitalikbuterin"];
-results.push(await run("api/x/resolve", 60, 10, (i) => get(`/api/x/resolve?handles=${handles[i % handles.length]}`)));
-// The shared chain snapshots every page reads (cached by the CDN for a few seconds).
-results.push(await run("api/snapshot", 200, 40, (i) => get(`/api/snapshot?network=${i % 2 ? "testnet" : "mainnet"}`)));
-if (COIN) results.push(await run("api/trades", 100, 20, () => get(`/api/trades?network=mainnet&token=${COIN}`)));
+// 2. APIs the browser calls. The GitHub lookup has per-client budgets, so a modest number here (a
+// burst from one IP must be answered with 429s, not 5xx).
+const logins = ["torvalds", "gaearon", "sindresorhus", "yyx990803", "tj", "octocat"];
+results.push(await run("api/github/resolve", 60, 10, (i) => get(`/api/github/resolve?logins=${logins[i % logins.length]}`)));
+// The shared chain snapshot every page reads (cached by the CDN for a few seconds).
+results.push(await run("api/snapshot", 200, 40, () => get("/api/snapshot")));
+if (COIN) results.push(await run("api/coin", 100, 20, () => get(`/api/coin?mint=${COIN}`)));
+if (COIN) results.push(await run("api/trades", 100, 20, () => get(`/api/trades?mint=${COIN}`)));
 // Coin share cards render server-side from the chain.
 if (COIN) results.push(await run("coin share card", 40, 10, () => get(`/token/${COIN}/opengraph-image`)));
 
-// 3. The chain RPC: what one busy browser session sends (batched reads, logs).
+// 3. The Solana RPC: what one busy browser session sends (single and batched reads).
 const body = (i) =>
   JSON.stringify(
-    i % 5 === 0
-      ? { jsonrpc: "2.0", id: i, method: "eth_getLogs", params: [{ fromBlock: "latest", toBlock: "latest" }] }
-      : i % 5 === 1
-        ? [1, 2, 3, 4, 5].map((k) => ({ jsonrpc: "2.0", id: i * 10 + k, method: "eth_blockNumber", params: [] }))
-        : { jsonrpc: "2.0", id: i, method: i % 2 ? "eth_blockNumber" : "eth_gasPrice", params: [] }
+    i % 5 === 1
+      ? [1, 2, 3, 4, 5].map((k) => ({ jsonrpc: "2.0", id: i * 10 + k, method: "getSlot", params: [] }))
+      : { jsonrpc: "2.0", id: i, method: i % 2 ? "getSlot" : "getLatestBlockhash", params: [] }
   );
 const rpcRes = await run("rpc", REQUESTS, CONCURRENCY, (i) =>
   fetch(RPC, { method: "POST", headers: { "content-type": "application/json" }, body: body(i), signal: AbortSignal.timeout(TIMEOUT) })
