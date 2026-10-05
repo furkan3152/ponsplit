@@ -1,0 +1,45 @@
+name: Solana fixtures
+
+# Dumps the real pump.fun programs and the mainnet accounts they need into e2e/solana/fixtures, so
+# tests run pump.fun's own code on a local solana-test-validator, and commits them.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install the Solana CLI
+        run: |
+          curl -sSfL https://github.com/anza-xyz/agave/releases/download/v2.3.13/solana-release-x86_64-unknown-linux-gnu.tar.bz2 | tar xj
+          echo "$PWD/solana-release/bin" >> "$GITHUB_PATH"
+      - name: Collect accounts
+        run: |
+          rm -rf e2e/solana/fixtures
+          node e2e/solana/collect-fixtures.mjs e2e/solana/fixtures
+      - name: Dump programs
+        run: |
+          mkdir -p e2e/solana/fixtures/programs
+          while read -r p; do
+            [ -n "$p" ] || continue
+            solana program dump -um "$p" "e2e/solana/fixtures/programs/$p.so"
+          done < e2e/solana/fixtures/programs.txt
+          ls -la e2e/solana/fixtures/programs
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add e2e/solana/fixtures
+          git diff --cached --quiet && exit 0
+          git commit -m "Solana fixtures: pump.fun programs and accounts from mainnet ($(date -u +%F))"
+          git push
