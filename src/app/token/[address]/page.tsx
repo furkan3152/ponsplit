@@ -2,38 +2,36 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useId, useRef, useState } from "react";
-import { getAddress, isAddress } from "viem";
-import { useAccount } from "wagmi";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { PublicKey } from "@solana/web3.js";
 import { GraduatedArt, NotFoundArt, StepLaunch } from "@/components/art";
 import { Flash, Reveal, celebrate } from "@/components/motion";
 import { PriceChart } from "@/components/PriceChart";
 import { Progress } from "@/components/Progress";
-import { SplitCard, accountsPct } from "@/components/SplitCard";
+import { SplitCard } from "@/components/SplitCard";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { TradePanel } from "@/components/TradePanel";
 import { TradesTable } from "@/components/TradesTable";
-import { coinImage } from "@/lib/coin-ui";
-import { compact, formatEth, formatPrice, formatTokens, progressText, shortAddress, timeAgo } from "@/lib/format";
+import { coinImage, explorerUrl, pumpUrl } from "@/lib/coin-ui";
+import { compact, errorMessage, formatPrice, formatSol, pct, progressText, shortAddress, timeAgo } from "@/lib/format";
 import { isOfficial } from "@/lib/brand";
-import { useCoin, useCoinElsewhere, useCoinTrades, useHandleChecks, useNow, useTokenInfo } from "@/lib/hooks";
+import { useCoin, useCoinTrades, useNow } from "@/lib/hooks";
 import { safeUrl } from "@/lib/metadata";
-import { useNetwork, useSwitchNetwork } from "@/lib/network-context";
-import { NETWORKS, explorerLink, isHidden, onNetwork, type NetworkId } from "@/lib/networks";
-import { TOTAL_SUPPLY, toRecipients } from "@/lib/pons";
+import { distributeTransaction } from "@/lib/solana/pump";
 import type { Coin, Trade } from "@/lib/types";
 
+const isMint = (v: string) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v);
+
 export default function TokenPage({ params }: { params: { address: string } }) {
-  const n = useNetwork();
-  const parsed = isAddress(params.address) ? getAddress(params.address) : undefined;
-  // A hidden coin (src/deployment.json) isn't read at all; the page says it isn't listed.
-  const hidden = Boolean(parsed && isHidden(n, parsed));
-  const token = hidden ? undefined : parsed;
-  const { data: t, isLoading, isError, refetch, isPlaceholderData } = useCoin(token);
-  const elsewhere = useCoinElsewhere(token, t === null);
+  const token = isMint(params.address) ? params.address : undefined;
+  const { data: t, isLoading, isError, refetch } = useCoin(token);
   const trades = useCoinTrades(t);
-  const info = useTokenInfo(t ? t.token : undefined);
-  const { address } = useAccount();
+  // Oldest first, for the chart.
+  const chrono = useMemo(() => (trades.data ? [...trades.data].reverse() : undefined), [trades.data]);
+  const { publicKey } = useWallet();
+  const address = publicKey?.toBase58();
   const router = useRouter();
   const pathname = usePathname();
   // The create page lands here with ?launched=1. Remember that once, then drop it from the URL,
@@ -43,7 +41,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   useEffect(() => {
     if (fromLaunch) router.replace(pathname, { scroll: false });
   }, [fromLaunch, pathname, router]);
-  const launched = fromLaunch && Boolean(t && address && t.creator.toLowerCase() === address.toLowerCase());
+  const launched = fromLaunch && Boolean(t && address && t.creator === address);
   const celebrated = useRef(false);
   useEffect(() => {
     if (launched && !celebrated.current) {
@@ -52,32 +50,23 @@ export default function TokenPage({ params }: { params: { address: string } }) {
     }
   }, [launched]);
   useNow(15_000);
-  useGraduationCelebration(t?.token, t?.phase);
+  useGraduationCelebration(t?.token, t?.graduated);
 
-  if (hidden) return <Missing text="This coin isn't listed on SplitEarn." />;
   if (!token) return <Missing text="That is not a valid coin address." />;
   if (isLoading) return <PageSkeleton />;
   // A failed read is a network problem, not proof the coin doesn't exist.
   if (t === undefined && isError) return <Missing text="Couldn't load this coin right now. Retrying…" />;
-  if (!t) {
-    if (elsewhere.data) return <OnOtherNetwork id={elsewhere.data} />;
-    if (elsewhere.isLoading) return <PageSkeleton />;
-    return <Missing text={`This coin wasn't launched on SplitEarn ${n.isTestnet ? "testnet" : "mainnet"}.`} />;
-  }
+  if (!t) return <Missing text="This coin wasn't launched on Splidev." />;
 
-  const socials = info.data?.socials;
   const links = [
-    socials?.website && { label: "Website", href: safeUrl(socials.website) },
-    socials?.telegram && { label: "Telegram", href: safeUrl(socials.telegram) },
-    socials?.twitter && { label: "X", href: safeUrl(socials.twitter) },
-    socials?.discord && { label: "Discord", href: safeUrl(socials.discord) },
-    socials?.farcaster && { label: "Farcaster", href: safeUrl(socials.farcaster) },
-  ].filter((l): l is { label: string; href: string } => Boolean(l && l.href));
-  const description = info.data?.description?.trim();
-  const onPool = t.phase === "pool";
+    { label: "Website", href: safeUrl(t.website) },
+    { label: "Telegram", href: safeUrl(t.telegram) },
+    { label: "X", href: safeUrl(t.twitter) },
+  ].filter((l): l is { label: string; href: string } => Boolean(l.href));
+  const description = t.description?.trim();
   const graduated = t.graduated;
-  const mine = Boolean(address && t.creator.toLowerCase() === address.toLowerCase());
-  const pending = toRecipients(t.feesPending, t.platformBps);
+  const mine = Boolean(address && t.creator === address);
+  const accountsBps = 10_000 - t.platformBps;
 
   return (
     <div className="space-y-6 pt-1 sm:space-y-8">
@@ -89,11 +78,8 @@ export default function TokenPage({ params }: { params: { address: string } }) {
 
         <div className="flex items-center justify-between gap-3">
           <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-line bg-card px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-2">
-            <span aria-hidden className={`h-1.5 w-1.5 shrink-0 animate-pulse-dot rounded-full ${onPool ? "bg-up" : "bg-lime"}`} />
-            <span className="truncate">
-              {onPool ? "Uniswap v4 pool" : t.phase === "curve" ? "pons bonding curve" : t.phase === "graduating" ? "Graduating" : "Rescued"}
-              {n.isTestnet ? " · testnet" : ""}
-            </span>
+            <span aria-hidden className={`h-1.5 w-1.5 shrink-0 animate-pulse-dot rounded-full ${graduated ? "bg-up" : "bg-lime"}`} />
+            <span className="truncate">{graduated ? "pump.fun pool" : "pump.fun bonding curve"}</span>
           </span>
           <ShareButton t={t} />
         </div>
@@ -109,10 +95,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
             {/* x-clip: the stamp starts at 1.8x scale, which must not widen the page next to a long ticker. */}
             <div className="mt-3 flex flex-wrap items-center gap-2 overflow-x-clip sm:mt-4">
               <span className="num inline-flex items-center rounded-full border border-line-2 bg-card px-2.5 py-1 text-[12px] font-semibold text-ink">${t.symbol}</span>
-              {isOfficial(t.token) ? (
-                <span className="chip border-lime bg-lime font-semibold text-[var(--lime-ink)]">✓ Official SplitEarn token</span>
-              ) : null}
-              {t.creatorTaxBps ? <span className="chip num">{t.creatorTaxBps / 100}% creator tax</span> : null}
+              {isOfficial(t.token) ? <span className="chip border-lime bg-lime font-semibold text-[var(--lime-ink)]">✓ Official Splidev token</span> : null}
               {graduated ? (
                 <span
                   className="inline-flex animate-stamp items-center gap-1.5 rounded-lg border-2 border-up bg-up-soft px-2.5 py-0.5 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-up-ink"
@@ -132,25 +115,26 @@ export default function TokenPage({ params }: { params: { address: string } }) {
           <CopyAddress value={token} />
           <span className="px-1">
             by{" "}
-            <a className="text-ink underline-offset-2 hover:underline" href={explorerLink(n, "address", t.creator)} target="_blank" rel="noreferrer">
+            <a className="text-ink underline-offset-2 hover:underline" href={explorerUrl("account", t.creator)} target="_blank" rel="noreferrer">
               {mine ? "you" : shortAddress(t.creator)}
             </a>
           </span>
-          <span aria-hidden className="text-ink-3">
-            /
-          </span>
-          <span className="px-1">{timeAgo(t.createdAt)} ago</span>
-          {/* On mainnet the coin is a pons coin, listed on pons's own launchpad too. */}
-          {n.ponsIsCopy ? null : (
-            <a
-              href={`https://ponsfamily.com/launchpad/${token}`}
-              target="_blank"
-              rel="noreferrer"
-              className="relative inline-flex min-h-[32px] items-center rounded-full border border-line px-2.5 font-sans text-[12.5px] font-medium text-ink transition after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] hover:border-line-2 hover:bg-card-2 sm:px-3"
-            >
-              View on pons ↗
-            </a>
-          )}
+          {t.createdAt ? (
+            <>
+              <span aria-hidden className="text-ink-3">
+                /
+              </span>
+              <span className="px-1">{timeAgo(t.createdAt)} ago</span>
+            </>
+          ) : null}
+          <a
+            href={pumpUrl(token)}
+            target="_blank"
+            rel="noreferrer"
+            className="relative inline-flex min-h-[32px] items-center rounded-full border border-line px-2.5 font-sans text-[12.5px] font-medium text-ink transition after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] hover:border-line-2 hover:bg-card-2 sm:px-3"
+          >
+            View on pump.fun ↗
+          </a>
           {links.map((l) => (
             <a
               key={l.label}
@@ -165,28 +149,19 @@ export default function TokenPage({ params }: { params: { address: string } }) {
         </div>
       </header>
 
-      {t.feesMoved ? (
-        <p className="card px-4 py-3.5 text-[13px] leading-relaxed text-ink-2">
-          pons now sends this coin&apos;s creator fees to <span className="num text-ink">{shortAddress(t.feeRecipient)}</span> instead of its SplitEarn split, so new
-          fees no longer reach the X accounts below. What they already earned stays theirs to claim.
-        </p>
-      ) : null}
-
       <Reveal delay={60}>
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-[22px] border border-line bg-line shadow-card lg:grid-cols-4">
-          <Tile label="Price" foot={<Sparkline trades={trades.trades} />}>
-            <Flash value={t.price}>{`${formatPrice(t.price)} Ξ`}</Flash>
+          <Tile label="Price" foot={<Sparkline trades={chrono} />}>
+            <Flash value={t.price}>{`${formatPrice(t.price)} SOL`}</Flash>
           </Tile>
-          <Tile label="Market cap" foot={<Foot>{compact(TOTAL_SUPPLY)} supply</Foot>}>
-            <Flash value={t.marketCap}>{`${compact(t.marketCap)} Ξ`}</Flash>
+          <Tile label="Market cap" foot={<Foot>1B supply</Foot>}>
+            <Flash value={t.marketCap}>{`${compact(t.marketCap)} SOL`}</Flash>
           </Tile>
           <Tile
-            label={graduated ? "Graduated at" : "Raised on curve"}
+            label={graduated ? "Pool liquidity" : "Bonding curve"}
             foot={
               graduated ? (
-                <Foot>
-                  <LockIcon /> liquidity locked by pons
-                </Foot>
+                <Foot>on pump.fun&apos;s pool</Foot>
               ) : (
                 <div className="flex w-full items-center gap-2">
                   <div className="flex-1">
@@ -197,43 +172,27 @@ export default function TokenPage({ params }: { params: { address: string } }) {
               )
             }
           >
-            <Flash value={graduated ? t.threshold : t.raised}>{`${formatEth(graduated ? t.threshold : t.raised, 3)} Ξ`}</Flash>
+            <Flash value={t.liquiditySol}>{`${compact(t.liquiditySol)} SOL`}</Flash>
           </Tile>
-          <Tile
-            label="Paid to X accounts"
-            foot={
-              <Foot>
-                {pending > 0n ? `+${formatEth(pending, 4)} on the way · ` : ""}
-                {accountsPct(t.creatorTaxBps, t.platformBps).toLocaleString("en-US", { maximumFractionDigits: 2 })}% of each trade
-              </Foot>
-            }
-          >
-            {/* Paid means in the vault already; what the coin still holds is the "on the way" line. */}
-            <Flash value={t.feesSplit} className="text-up-ink">{`${formatEth(t.feesSplit, 4)} Ξ`}</Flash>
+          <Tile label="Waiting to split" foot={<Foot>{pct(accountsBps)} of the creator fee to GitHub</Foot>}>
+            <Flash value={Number(t.pendingFees)} className="text-up-ink">{`${formatSol(t.pendingFees, 4)} SOL`}</Flash>
           </Tile>
         </dl>
       </Reveal>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_372px] lg:gap-6">
         <div className="min-w-0 space-y-5 lg:space-y-6">
-          {trades.error && !trades.trades ? (
+          {trades.error && !trades.data ? (
             <p className="card flex items-center gap-2.5 px-4 py-3.5 text-[14px] font-medium text-down-ink">
               <span aria-hidden className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-down" />
               Couldn&apos;t load this coin&apos;s trades right now. Retrying…
             </p>
           ) : null}
           <Reveal delay={120}>
-            <PriceChart trades={trades.trades} loading={!trades.trades} partial={trades.hasOlder} symbol={t.symbol} />
+            <PriceChart trades={chrono} loading={!trades.data} partial={(trades.data?.length ?? 0) >= 150} symbol={t.symbol} />
           </Reveal>
           <Reveal delay={60}>
-            <TradesTable
-              trades={trades.trades}
-              symbol={t.symbol}
-              me={address}
-              hasOlder={trades.hasOlder}
-              loadOlder={trades.loadOlder}
-              loadingOlder={trades.loadingOlder}
-            />
+            <TradesTable trades={trades.data} symbol={t.symbol} me={address} />
           </Reveal>
           {description ? (
             <Reveal delay={60}>
@@ -243,8 +202,11 @@ export default function TokenPage({ params }: { params: { address: string } }) {
         </div>
 
         <aside className="order-first min-w-0 space-y-5 lg:sticky lg:top-20 lg:order-none lg:space-y-6 lg:self-start">
-          <TradePanel coin={t} live={!isPlaceholderData} onTraded={() => refetch()} />
+          <TradePanel coin={t} onTraded={() => refetch()} />
           <Reveal delay={120}>{graduated ? <GraduatedCard t={t} /> : <CurveCard t={t} />}</Reveal>
+          <Reveal delay={150}>
+            <DistributeCard t={t} onDone={() => refetch()} />
+          </Reveal>
           <Reveal delay={180}>
             <SplitCard t={t} />
           </Reveal>
@@ -254,31 +216,63 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   );
 }
 
-/** The coin exists on the other network: say so and offer to switch there. */
-function OnOtherNetwork({ id }: { id: NetworkId }) {
-  const switchTo = useSwitchNetwork();
-  const other = NETWORKS[id];
+/**
+ * pump.fun keeps a coin's creator fees in its vault until someone distributes them to the
+ * shareholders. Anyone can do it (pump.fun's own crank does too); it costs only the network fee.
+ */
+function DistributeCard({ t, onDone }: { t: Coin; onDone: () => void }) {
+  const { connection } = useConnection();
+  const { publicKey, connected, sendTransaction } = useWallet();
+  const { setVisible } = useWalletModal();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  async function distribute() {
+    setMsg(null);
+    if (!connected || !publicKey) return setVisible(true);
+    try {
+      setBusy("Confirm in your wallet…");
+      const tx = await distributeTransaction(connection, publicKey, new PublicKey(t.token));
+      const sig = await sendTransaction(tx, connection);
+      setBusy("Confirming…");
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+      const r = await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+      if (r.value.err) throw new Error("The transaction failed on chain.");
+      setMsg({ ok: true, text: "Distributed. The developers can claim it on pump.fun." });
+      onDone();
+    } catch (e) {
+      setMsg({ ok: false, text: errorMessage(e) });
+    } finally {
+      setBusy(null);
+    }
+  }
   return (
-    <div className="card relative isolate mx-auto mt-6 flex max-w-lg flex-col items-center gap-4 overflow-hidden px-6 py-14 text-center">
-      <div aria-hidden className="bg-grid absolute inset-0 -z-10" />
-      <NotFoundArt className="h-36 w-48 animate-float" />
-      <div className="eyebrow">Coin page</div>
-      <p className="display max-w-sm text-[26px] leading-[1.05]">This coin is on {other.label.toLowerCase()}.</p>
-      <button className="btn-neon mt-1" onClick={() => switchTo(id)}>
-        Switch to {other.label.toLowerCase()}
+    <section className="card space-y-3 p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="eyebrow">Creator fees</div>
+          <h2 className="display mt-1 text-[22px] leading-none">Send them out</h2>
+        </div>
+        <span className="num shrink-0 text-[18px] font-semibold text-up-ink">{formatSol(t.pendingFees, 4)} SOL</span>
+      </div>
+      <p className="text-[13px] leading-relaxed text-ink-2">
+        pump.fun holds this coin&apos;s creator fees until someone distributes them to the GitHub accounts and Splidev. Anyone can; it costs only the network fee.
+      </p>
+      <button className="btn-secondary w-full py-2.5 text-[14px]" disabled={Boolean(busy) || (connected && t.pendingFees === 0n && !t.graduated)} onClick={distribute}>
+        {busy ?? (connected ? "Distribute now" : "Connect wallet")}
       </button>
-    </div>
+      {msg ? <p className={`rounded-xl px-3 py-2 text-[13px] ${msg.ok ? "bg-up-soft text-up-ink" : "bg-down-soft text-down-ink"}`}>{msg.text}</p> : null}
+    </section>
   );
 }
 
 /** Confetti when a coin graduates while its page is open (not when opening an already graduated coin). */
-function useGraduationCelebration(token: string | undefined, phase: Coin["phase"] | undefined) {
-  const prev = useRef<{ token?: string; phase?: Coin["phase"] }>({});
+function useGraduationCelebration(token: string | undefined, graduated: boolean | undefined) {
+  const prev = useRef<{ token?: string; graduated?: boolean }>({});
   useEffect(() => {
     const p = prev.current;
-    if (token && p.token === token && p.phase === "curve" && phase && phase !== "curve") void celebrate();
-    prev.current = { token, phase };
-  }, [token, phase]);
+    if (token && p.token === token && p.graduated === false && graduated) void celebrate();
+    prev.current = { token, graduated };
+  }, [token, graduated]);
 }
 
 /** The creator's first look at their live coin: a neon ticket with the share button. */
@@ -297,7 +291,7 @@ function LaunchBanner({ t }: { t: Coin }) {
         <div className="min-w-0 flex-1">
           <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] opacity-70">Launch confirmed</div>
           <p className="display mt-1 text-[30px] leading-[0.95] [overflow-wrap:anywhere] sm:text-[38px]">${t.symbol} is live.</p>
-          <p className="mt-1.5 text-[14px] font-medium opacity-80">Share it: every trade pays your X accounts.</p>
+          <p className="mt-1.5 text-[14px] font-medium opacity-80">Share it: every trade pays your GitHub devs.</p>
         </div>
         <ShareButton t={t} tone="ink" className="self-start sm:self-center" />
       </div>
@@ -350,24 +344,20 @@ function Sparkline({ trades }: { trades: readonly Trade[] | undefined }) {
 
 /** Where the coin sits on its bonding curve, and how much is left before it graduates. */
 function CurveCard({ t }: { t: Coin }) {
-  // The curve's shape: the share of the supply it sells before only the pool's reserve is left.
-  const supply = BigInt(TOTAL_SUPPLY) * 10n ** 18n;
-  const r = t.reservedTokens > 0n && t.reservedTokens < supply ? 1 - Number((t.reservedTokens * 10_000n) / supply) / 10_000 : 0.714;
-  const left = t.threshold > t.raised ? t.threshold - t.raised : 0n;
   return (
     <section className="card relative isolate overflow-hidden p-5">
       <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 -z-10 h-52 w-52 rounded-full bg-lime opacity-[0.08] blur-3xl" />
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="eyebrow">Road to Uniswap</div>
+          <div className="eyebrow">Road to the pool</div>
           <h2 className="display mt-1 text-[26px] leading-none">Bonding curve</h2>
         </div>
         <span className="num text-neon text-[24px] font-bold leading-none">{progressText(t.progress, 1)}%</span>
       </div>
-      <CurveSketch progress={t.progress} ratio={r > 0.05 && r < 0.98 ? r : 0.714} />
+      <CurveSketch progress={t.progress} ratio={0.793} />
       <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
-        {formatTokens(t.sellable)} {t.symbol} left on the curve, about {formatEth(left, 3)} ETH more to raise. Then pons graduates it into a Uniswap v4 pool
-        with locked liquidity, and it keeps trading here.
+        {compact(t.liquiditySol)} SOL in the curve so far. When its last coins sell, pump.fun moves it to its own pool, and it keeps trading here with the
+        same fee split.
       </p>
     </section>
   );
@@ -422,7 +412,7 @@ function CurveSketch({ progress, ratio }: { progress: number; ratio: number }) {
       </div>
       <div className="mt-2 flex justify-between font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">
         <span>Launch</span>
-        <span>PonSwap</span>
+        <span>pump.fun pool</span>
       </div>
     </div>
   );
@@ -430,7 +420,6 @@ function CurveSketch({ progress, ratio }: { progress: number; ratio: number }) {
 
 /** A graduated coin's certificate: a slowly turning seal and where it trades now. */
 function GraduatedCard({ t }: { t: Coin }) {
-  const n = useNetwork();
   return (
     <section className="card ring-glow relative p-5">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-[inherit]">
@@ -442,21 +431,20 @@ function GraduatedCard({ t }: { t: Coin }) {
         <Seal />
         <div className="min-w-0">
           <div className="eyebrow !text-up-ink">Graduated</div>
-          <h2 className="display mt-1.5 text-[26px] leading-[0.98]">{t.phase === "pool" ? "Trading on Uniswap v4" : t.phase === "graduating" ? "Opening its pool" : "Rescued by pons"}</h2>
+          <h2 className="display mt-1.5 text-[26px] leading-[0.98]">Trading on pump.fun&apos;s pool</h2>
         </div>
       </div>
       <p className="mt-4 text-[13px] leading-relaxed text-ink-2">
-        The curve raised {formatEth(t.threshold, 2)} ETH and sold out. pons put that ETH and {formatTokens(t.reservedTokens)} {t.symbol} into a Uniswap v4 pool whose
-        liquidity is locked. Its creator fees keep flowing to the X accounts.
+        The curve sold out and pump.fun moved {t.symbol} to its pool. Its creator fees keep flowing to the same GitHub accounts.
       </p>
       <a
-        href={explorerLink(n, "address", t.token)}
+        href={pumpUrl(t.token)}
         target="_blank"
         rel="noreferrer"
         className="mt-4 inline-flex items-center gap-2 rounded-full border border-line-2 bg-card px-3 py-1.5 font-mono text-[11px] font-medium text-ink transition hover:bg-card-2"
       >
         <LockIcon />
-        Liquidity locked by pons ↗
+        On pump.fun ↗
       </a>
     </section>
   );
@@ -502,26 +490,21 @@ function About({ text }: { text: string }) {
   );
 }
 
-/** Opens an X post with the coin, its fee split and a link that unfurls into the coin's card. */
+/** Opens an X post with the coin, its GitHub split and a link that unfurls into the coin's card. */
 function ShareButton({
   t,
   tone = "default",
   className = "",
 }: {
-  t: Pick<Coin, "name" | "symbol" | "handles" | "xIds" | "token">;
+  t: Pick<Coin, "name" | "symbol" | "recipients" | "token">;
   /** "ink": the dark pill used on the neon launch banner. */
   tone?: "default" | "ink";
   className?: string;
 }) {
-  const n = useNetwork();
-  const checks = useHandleChecks(t.handles, t.xIds);
   function share() {
-    // @-mention only usernames confirmed to still belong to the fee recipient; a renamed account's
-    // old name may now be someone else's, so it is written without the @.
-    const who = checks.map((c) => (c.status === "current" ? `@${c.handle}` : c.handle)).join(" ");
-    const text = `${t.name} ($${t.symbol}) on SplitEarn${n.isTestnet ? " testnet" : ""}: every trade pays ${who}`;
-    // The link opens the coin on its own network, whatever the reader was browsing.
-    const url = `${location.origin}${onNetwork(`/token/${t.token}`, n.id)}`;
+    const who = t.recipients.map((r) => (r.login ? `github.com/${r.login}` : `GitHub #${r.githubId}`)).join(", ");
+    const text = `${t.name} ($${t.symbol}) on Splidev: every trade pays ${who}`;
+    const url = `${location.origin}/token/${t.token}`;
     window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, "_blank", "noopener,noreferrer");
   }
   const look =
@@ -542,7 +525,7 @@ function CopyAddress({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
-      title="Copy the coin address"
+      title="Copy the mint address"
       className="num relative after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] inline-flex min-h-[32px] items-center rounded-full border border-line bg-card px-3 text-[11.5px] text-ink-2 transition hover:border-line-2 hover:text-ink"
       onClick={() => {
         navigator.clipboard.writeText(value);
