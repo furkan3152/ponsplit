@@ -53,6 +53,21 @@ function remember(url: string, value: string | null) {
 }
 
 async function download(start: string): Promise<string | null> {
+  const bytes = await fetchPublicBytes(start, MAX_BYTES);
+  if (!bytes) return null;
+  // The OG renderer draws PNG, JPEG and GIF (first frame); WebP falls back to the initials card.
+  const type = sniffImage(bytes);
+  if ((type !== "image/png" && type !== "image/jpeg" && type !== "image/gif") || !imageWithinLimits(bytes)) return null;
+  // The renderer's own JPEG parser is stricter than decoders; files it can't read would break the card.
+  if (type === "image/jpeg" && !satoriCanSizeJpeg(bytes)) return null;
+  return `data:${type};base64,${Buffer.from(bytes).toString("base64")}`;
+}
+
+/**
+ * Fetches a user-supplied https URL from a public host only (checked after DNS and on every
+ * redirect), with a 3 s timeout and a size cap. Null on any problem.
+ */
+export async function fetchPublicBytes(start: string, maxBytes: number): Promise<Uint8Array | null> {
   let url = start;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const u = new URL(url);
@@ -69,23 +84,16 @@ async function download(start: string): Promise<string | null> {
       continue;
     }
     if (!res.ok || !res.body) return null;
-    if (Number(res.headers.get("content-length") ?? 0) > MAX_BYTES) {
+    if (Number(res.headers.get("content-length") ?? 0) > maxBytes) {
       await res.body.cancel().catch(() => {});
       return null;
     }
-    const bytes = await readCapped(res.body);
-    if (!bytes) return null;
-    // The OG renderer draws PNG, JPEG and GIF (first frame); WebP falls back to the initials card.
-    const type = sniffImage(bytes);
-    if ((type !== "image/png" && type !== "image/jpeg" && type !== "image/gif") || !imageWithinLimits(bytes)) return null;
-    // The renderer's own JPEG parser is stricter than decoders; files it can't read would break the card.
-    if (type === "image/jpeg" && !satoriCanSizeJpeg(bytes)) return null;
-    return `data:${type};base64,${Buffer.from(bytes).toString("base64")}`;
+    return readCapped(res.body, maxBytes);
   }
   return null;
 }
 
-async function readCapped(body: ReadableStream<Uint8Array>): Promise<Uint8Array | null> {
+async function readCapped(body: ReadableStream<Uint8Array>, maxBytes: number): Promise<Uint8Array | null> {
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -93,7 +101,7 @@ async function readCapped(body: ReadableStream<Uint8Array>): Promise<Uint8Array 
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > MAX_BYTES) {
+    if (size > maxBytes) {
       await reader.cancel().catch(() => {});
       return null;
     }
