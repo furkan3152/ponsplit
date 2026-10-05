@@ -39,13 +39,14 @@ export async function POST(req: Request) {
   };
   const json = JSON.stringify(meta);
   if (memory) {
-    const id = createHash("sha256").update(json).digest("hex").slice(0, 32);
+    const id = createHash("sha256").update(json).digest("hex").slice(0, 16);
     memoryMetadata.set(id, json);
     return NextResponse.json({ uri: `${new URL(req.url).origin}/api/metadata/${id}` });
   }
   if (blob) {
-    const hash = createHash("sha256").update(json).digest("hex").slice(0, 32);
-    const stored = await put(`metadata/${hash}.json`, json, {
+    // The link goes into the launch transaction, which has little room: keep it short.
+    const hash = createHash("sha256").update(json).digest("hex").slice(0, 16);
+    const stored = await put(`m/${hash}`, json, {
       access: "public",
       contentType: "application/json",
       token: blob,

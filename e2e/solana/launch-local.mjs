@@ -11,7 +11,7 @@ import BN from "bn.js";
 const treasury = Keypair.generate();
 process.env.NEXT_PUBLIC_SPLIDEV_TREASURY = treasury.publicKey.toBase58();
 const require = createRequire(import.meta.url);
-const { launchTransactions, buyTransaction, sellTransaction, quoteBuy, quoteSell, distributeTransaction, githubFeeAccount, listCoins, readCoin, githubClaimable, recentTrades, PUMP_FEES_PROGRAM_ID } = require("./.build/lib.cjs");
+const { launchTransactions, createTransaction, TX_BYTES_LIMIT, buyTransaction, sellTransaction, quoteBuy, quoteSell, distributeTransaction, githubFeeAccount, listCoins, readCoin, githubClaimable, recentTrades, PUMP_FEES_PROGRAM_ID } = require("./.build/lib.cjs");
 const { OnlinePumpSdk, PUMP_SDK, feeSharingConfigPda } = require("@pump-fun/pump-sdk");
 
 const c = new Connection(process.env.RPC || "http://127.0.0.1:8899", "confirmed");
@@ -123,3 +123,20 @@ ok(`creator fees distributed by share: Splidev ${gains[0]}, GitHub ${gains.slice
 const claim = await githubClaimable(c, "1024025");
 if (claim.claimable < BigInt(gains[1])) fail(`GitHub 1024025 shows ${claim.claimable} claimable, expected at least ${gains[1]}`);
 ok(`the claim page sees ${Number(claim.claimable) / LAMPORTS_PER_SOL} SOL waiting for GitHub user 1024025 on pump.fun`);
+
+// The longest launch the site allows (32-character name, 10-character ticker, a metadata link as
+// long as a Vercel Blob one) with a first buy still fits in one transaction and lands.
+const long = Keypair.generate();
+const longTx = await createTransaction(c, {
+  user: creator.publicKey,
+  mint: long.publicKey,
+  name: "N".repeat(32),
+  symbol: "T".repeat(10),
+  uri: "https://abcdefghijklmnop.public.blob.vercel-storage.com/m/0123456789abcdef0123.json",
+  githubIds,
+  bps: [6000, 4000],
+  firstBuyLamports: 100_000_000n,
+});
+if (longTx.serialize().length > TX_BYTES_LIMIT) fail(`the longest launch is ${longTx.serialize().length} bytes`);
+await send(longTx, [creator, long]);
+ok(`the longest launch fits (${longTx.serialize().length} bytes) and lands`);
