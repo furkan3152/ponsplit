@@ -11,6 +11,7 @@ import BN from "bn.js";
 
 const require = createRequire(import.meta.url);
 const { OnlinePumpSdk, PUMP_SDK, Platform } = require("@pump-fun/pump-sdk");
+const amm = require("@pump-fun/pump-swap-sdk");
 
 const out = process.argv[2] || "fixtures";
 mkdirSync(`${out}/accounts`, { recursive: true });
@@ -33,6 +34,13 @@ for (const ix of ixs) {
 }
 // Every address pump's global config names (fee recipients are picked at random per trade).
 for (const v of Object.values(global)) for (const k of [v].flat()) if (k instanceof PublicKey && !k.equals(PublicKey.default)) keys.set(k.toBase58(), true);
+// pump.fun's pool program (graduation and pool trades): its global and fee configs and every address they name.
+const ammGlobal = await new amm.OnlinePumpAmmSdk(c).fetchGlobalConfigAccount();
+for (const v of Object.values(ammGlobal)) for (const k of [v].flat()) if (k instanceof PublicKey && !k.equals(PublicKey.default)) keys.set(k.toBase58(), true);
+for (const k of [amm.GLOBAL_CONFIG_PDA, amm.PUMP_AMM_FEE_CONFIG_PDA, amm.GLOBAL_VOLUME_ACCUMULATOR_PDA]) keys.set(k.toBase58(), true);
+// pump's migration instruction (a coin leaving the curve for its pool).
+ixs.push(await PUMP_SDK.migrateInstruction({ withdrawAuthority: global.withdrawAuthority, mint, user, tokenProgram: new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb") }));
+for (const ix of ixs) for (const k of ix.keys) keys.set(k.pubkey.toBase58(), true);
 // Programs the flows reach through CPI.
 for (const p of [
   "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P", // pump
