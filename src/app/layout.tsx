@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Instrument_Sans, Instrument_Serif, Martian_Mono } from "next/font/google";
+import { Figtree, Fraunces, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
 import { Sidebar } from "@/components/Sidebar";
@@ -9,10 +9,12 @@ import { THEME_SCRIPT } from "@/lib/theme";
 import { Providers } from "./providers";
 import "./globals.css";
 
-const display = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-display", axes: ["wdth", "opsz"] });
-const sans = Instrument_Sans({ subsets: ["latin"], variable: "--font-sans", axes: ["wdth"] });
-const serif = Instrument_Serif({ subsets: ["latin"], variable: "--font-serif", weight: "400", style: ["normal", "italic"] });
-const mono = Martian_Mono({ subsets: ["latin"], variable: "--font-mono", axes: ["wdth"] });
+// Space Grotesk for headlines, Figtree for reading, Fraunces (soft, wonky italic) for the one accent word,
+// JetBrains Mono for numbers, addresses and the "// comment" labels.
+const display = Space_Grotesk({ subsets: ["latin"], variable: "--font-display" });
+const sans = Figtree({ subsets: ["latin"], variable: "--font-sans" });
+const serif = Fraunces({ subsets: ["latin"], variable: "--font-serif", style: ["italic"], axes: ["SOFT", "WONK", "opsz"] });
+const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 /** The public URL, for absolute links in share cards: explicit, else the host's production URL. */
 function siteUrl(): string {

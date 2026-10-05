@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { formatSol, shortAddress } from "@/lib/format";
 import { useSolBalance } from "@/lib/hooks";
 import { SIDEBAR_KEY } from "@/lib/theme";
-import { LogoMark, TokenSticker } from "./art";
+import { LogoMark, TokenSticker, WordmarkText } from "./art";
 import { BookIcon, ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, WalletIcon, XLogo } from "./icons";
 import { X_HANDLE, X_URL } from "@/lib/brand";
 
@@ -52,9 +52,7 @@ export function Sidebar() {
       <div className="flex h-16 items-center gap-2 px-4">
         <Link href="/" className="group flex min-w-0 items-center gap-2.5" aria-label="Splidev home">
           <LogoMark size={34} className="shrink-0 transition-transform duration-500 group-hover:-rotate-12" />
-          <span className="sidebar-label display truncate text-[20px] leading-none">
-            Spli<span className="text-neon">dev</span>
-          </span>
+          <WordmarkText className="sidebar-label truncate text-[21px]" />
         </Link>
         <button
           type="button"

@@ -1,34 +1,33 @@
-import { C, INK, Sparkle, SplitCoin, Star } from "./parts";
+import { Bug } from "./Bug";
+import { C, CodeTag, INK, Sparkle } from "./parts";
 
 const SW = 2.8;
 
-/** "Launch" step: a split-coin character blasting off on little rocket fins. */
+/** "Launch" step: Bitbug blasting off on a little rocket flame, `</>` sticker trailing. */
 export function StepLaunch({ className }: { className?: string }) {
   const lo = { stroke: INK, strokeWidth: SW, strokeLinejoin: "round" as const, strokeLinecap: "round" as const };
   return (
     <svg viewBox="0 0 160 160" className={className} aria-hidden="true" focusable="false">
       {/* smoke puffs */}
-      <g fill={C.sky} {...lo}>
-        <circle cx={48} cy={140} r={11} />
-        <circle cx={112} cy={140} r={11} />
-        <circle cx={64} cy={146} r={10} />
-        <circle cx={96} cy={146} r={10} />
+      <g fill={C.lilac} {...lo}>
+        <circle cx={50} cy={144} r={10} />
+        <circle cx={110} cy={144} r={10} />
+        <circle cx={66} cy={150} r={9} />
+        <circle cx={94} cy={150} r={9} />
       </g>
       {/* flame */}
-      <path d="M66 100Q62 124 80 146Q98 124 94 100Z" fill={C.orange} {...lo} />
-      <path d="M73 102Q72 118 80 132Q88 118 87 102Z" fill={C.sun} />
-      {/* fins + nozzle */}
-      <path d="M56 78Q40 88 38 108Q48 100 60 98Z" fill={C.red} {...lo} />
-      <path d="M104 78Q120 88 122 108Q112 100 100 98Z" fill={C.red} {...lo} />
-      <path d="M68 92H92L96 104H64Z" fill={C.lilac} {...lo} />
-      <SplitCoin cx={80} cy={62} r={30} sw={SW} shadow={3} face="joy" />
-      {/* speed lines */}
-      <g {...lo} opacity={0.5}>
-        <path d="M24 58V78M34 70V90M126 54V74M136 66V86" />
+      <path d="M64 108Q60 130 80 150Q100 130 96 108Z" fill={C.lime} {...lo} />
+      <path d="M72 110Q71 124 80 138Q89 124 88 110Z" fill={C.sun} />
+      <g transform="rotate(0 80 64)">
+        <Bug x={80} y={66} size={92} face="joy" open={10} sw={3} />
       </g>
-      <Star x={132} y={28} s={9} sw={SW * 0.8} rot={12} />
-      <Sparkle x={26} y={30} s={8} color={C.lime} sw={SW * 0.8} />
-      <Sparkle x={140} y={112} s={6} color={C.pink} sw={SW * 0.7} />
+      {/* speed lines */}
+      <g {...lo} stroke="var(--ink-3)" opacity={0.7}>
+        <path d="M22 70V92M32 84V104M128 66V88M138 80V100" />
+      </g>
+      <CodeTag x={134} y={26} s={26} sw={1.4} color={C.sky} rot={12} />
+      <Sparkle x={24} y={28} s={8} color={C.sun} sw={SW * 0.8} />
+      <Sparkle x={144} y={124} s={6} color={C.pink} sw={SW * 0.7} />
     </svg>
   );
 }

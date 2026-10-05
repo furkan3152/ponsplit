@@ -1,42 +1,43 @@
-// Little sticker doodles that decorate pages: a happy split coin, a stack of coins, stars,
-// sparkles and confetti. Purely decorative (aria-hidden, no pointer events); each sits inside its
-// own box, so none of them can widen the page.
-import { C, Confetti, INK, MiniCoin, Sparkle, SplitCoin, Star } from "./parts";
+// Dev doodles that decorate pages: Bitbug, "</>" and "{ }" stickers, a little git graph, sparkles.
+// Purely decorative (aria-hidden, no pointer events); each sits inside its own box, so none of them
+// can widen the page.
+import { Bug } from "./Bug";
+import { Braces, C, CodeTag, Commits, MiniCoin, Sparkle } from "./parts";
 
 const box = "pointer-events-none absolute select-none";
 
-/** The hero's side doodles: big ones beside the headline on wide screens, small sparkles on phones. */
+/** The hero's side doodles: big ones beside the headline on wide screens, small ones on phones. */
 export function HeroDoodles() {
   return (
     <>
-      {/* wide screens: a happy split coin on the left, a stack of coins on the right */}
-      <svg aria-hidden="true" focusable="false" viewBox="0 0 160 170" className={`${box} left-0 top-20 hidden w-[150px] xl:block`}>
+      {/* wide screens: Bitbug carrying a coin on the left, code stickers and a git graph on the right */}
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 170 190" className={`${box} left-0 top-16 hidden w-[160px] xl:block`}>
         <g className="animate-float" style={{ transformBox: "fill-box", transformOrigin: "center" }}>
-          <SplitCoin cx={78} cy={92} r={46} sw={3.2} shadow={4} face="joy" />
+          <g transform="rotate(-14 84 104)">
+            <Bug x={84} y={104} size={110} face="wink" />
+          </g>
         </g>
-        <Sparkle x={24} y={30} s={10} color={C.sun} sw={2.2} />
-        <Confetti x={138} y={40} kind="w" color={C.pink} sw={1.6} rot={-18} />
-        <Confetti x={20} y={150} kind="r" color={C.sky} sw={2.2} rot={24} />
-        <Confetti x={140} y={150} kind="d" color={C.lilac} sw={2.4} />
+        <g className="animate-wiggle" style={{ transformBox: "fill-box", transformOrigin: "center" }}>
+          <MiniCoin cx={138} cy={44} r={15} sw={2.4} split />
+        </g>
+        <Braces x={30} y={34} s={34} sw={2} rot={-10} />
+        <Sparkle x={150} y={160} s={9} color={C.pink} sw={2} />
       </svg>
-      <svg aria-hidden="true" focusable="false" viewBox="0 0 160 170" className={`${box} right-0 top-16 hidden w-[150px] xl:block`}>
-        <g className="animate-wiggle" style={{ transformBox: "fill-box", transformOrigin: "50% 100%" }}>
-          <ellipse cx={82} cy={150} rx={44} ry={7} fill={INK} opacity={0.12} />
-          <MiniCoin cx={82} cy={132} r={30} sw={3} color={C.sun} />
-          <MiniCoin cx={74} cy={104} r={30} sw={3} color={C.orange} />
-          <MiniCoin cx={86} cy={76} r={30} sw={3} split />
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 170 190" className={`${box} right-0 top-14 hidden w-[160px] xl:block`}>
+        <g className="animate-wiggle" style={{ transformBox: "fill-box", transformOrigin: "center" }}>
+          <CodeTag x={86} y={42} s={70} sw={2.4} rot={8} />
         </g>
-        <Star x={132} y={34} s={15} color={C.lime} sw={2.6} rot={12} />
-        <Sparkle x={30} y={44} s={8} color={C.pink} sw={2} />
-        <Confetti x={24} y={120} kind="d" color={C.green} sw={2.4} />
+        <Commits x={62} y={82} s={86} sw={3} />
+        <Sparkle x={130} y={120} s={11} color={C.sun} sw={2.2} />
+        <Sparkle x={24} y={100} s={6} color={C.sky} sw={1.8} />
       </svg>
 
-      {/* phones and tablets: two small sparkles in the top corners */}
-      <svg aria-hidden="true" focusable="false" viewBox="0 0 40 40" className={`${box} left-1 top-1 w-9 xl:hidden`}>
-        <Sparkle x={18} y={20} s={11} color={C.sun} sw={2.2} />
+      {/* phones and tablets: two small stickers in the top corners */}
+      <svg aria-hidden="true" focusable="false" viewBox="0 0 40 40" className={`${box} left-1 top-1 w-10 xl:hidden`}>
+        <CodeTag x={20} y={20} s={26} sw={1.4} rot={-10} />
       </svg>
       <svg aria-hidden="true" focusable="false" viewBox="0 0 40 40" className={`${box} right-1 top-3 w-8 xl:hidden`}>
-        <Star x={20} y={21} s={13} color={C.pink} sw={2.4} rot={-10} />
+        <Sparkle x={20} y={21} s={12} color={C.sun} sw={2.2} />
       </svg>
     </>
   );
@@ -52,20 +53,24 @@ export function HeadingDoodle({ kind = "sparkle", className = "" }: { kind?: "sp
           <Sparkle x={33} y={9} s={5} color={C.pink} sw={1.6} />
         </>
       )}
-      {kind === "star" && <Star x={20} y={21} s={14} color={C.lime} sw={2.4} rot={-8} />}
-      {kind === "coin" && <MiniCoin cx={19} cy={19} r={14} sw={2.4} split />}
+      {kind === "star" && <CodeTag x={20} y={21} s={28} sw={1.5} rot={-8} />}
+      {kind === "coin" && (
+        <g transform="rotate(-12 20 20)">
+          <Bug x={20} y={20} size={34} shadow={false} sw={3.2} />
+        </g>
+      )}
     </svg>
   );
 }
 
-/** Confetti for a card's corners: sits in the card's top-right, inside it. */
+/** Stickers for a card's corner: sits in the card's top-right, inside it. */
 export function CornerConfetti({ className = "" }: { className?: string }) {
   return (
-    <svg aria-hidden="true" focusable="false" viewBox="0 0 90 60" className={`${box} right-3 top-3 w-[90px] ${className}`}>
-      <Confetti x={20} y={16} kind="w" color={C.sky} sw={1.5} rot={-14} />
-      <Confetti x={62} y={12} kind="r" color={C.pink} sw={2} rot={30} />
-      <Confetti x={78} y={38} kind="d" color={C.sun} sw={2.2} />
-      <Sparkle x={46} y={40} s={7} color={C.lime} sw={1.8} />
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 96 64" className={`${box} right-3 top-3 w-[96px] ${className}`}>
+      <Braces x={22} y={22} s={26} color={C.sky} sw={1.5} rot={-12} />
+      <CodeTag x={68} y={18} s={30} color={C.pink} sw={1.4} rot={10} />
+      <Sparkle x={52} y={46} s={7} color={C.sun} sw={1.8} />
+      <Sparkle x={86} y={48} s={4.5} color={C.lime} sw={1.4} />
     </svg>
   );
 }
