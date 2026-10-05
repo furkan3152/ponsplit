@@ -160,6 +160,32 @@ function poolTerms(swap: Awaited<ReturnType<typeof poolSwapState>>) {
   };
 }
 
+/** What a buy of `lamports` (fees included) gets now, in raw tokens, on the curve or the pool. */
+export async function quoteBuy(c: Connection, mint: PublicKey, lamports: bigint): Promise<bigint> {
+  const sdk = new OnlinePumpSdk(c);
+  const solAmount = new BN(lamports.toString());
+  const [global, feeConfig, curve] = await Promise.all([sdk.fetchGlobal(), sdk.fetchFeeConfig().catch(() => null), sdk.fetchBondingCurve(mint)]);
+  if (curve.complete) {
+    const swap = await poolSwapState(c, PublicKey.default, mint);
+    const q = buyQuoteInput({ quote: solAmount, slippage: 0, baseReserve: swap.poolBaseAmount, quoteReserve: swap.poolQuoteAmount, globalConfig: swap.globalConfig, baseMintAccount: swap.baseMintAccount, baseMint: swap.baseMint, ...poolTerms(swap) });
+    return BigInt(q.base.toString());
+  }
+  return BigInt(getBuyTokenAmountFromSolAmount({ global, feeConfig, mintSupply: curve.tokenTotalSupply, bondingCurve: curve, amount: solAmount, quoteMint: NATIVE_MINT }).toString());
+}
+
+/** What a sell of `tokens` (raw) gets now, in lamports after fees, on the curve or the pool. */
+export async function quoteSell(c: Connection, mint: PublicKey, tokens: bigint): Promise<bigint> {
+  const sdk = new OnlinePumpSdk(c);
+  const amount = new BN(tokens.toString());
+  const [global, feeConfig, curve] = await Promise.all([sdk.fetchGlobal(), sdk.fetchFeeConfig().catch(() => null), sdk.fetchBondingCurve(mint)]);
+  if (curve.complete) {
+    const swap = await poolSwapState(c, PublicKey.default, mint);
+    const q = sellBaseInput({ base: amount, slippage: 0, baseReserve: swap.poolBaseAmount, quoteReserve: swap.poolQuoteAmount, globalConfig: swap.globalConfig, baseMintAccount: swap.baseMintAccount, baseMint: swap.baseMint, ...poolTerms(swap) });
+    return BigInt(q.uiQuote.toString());
+  }
+  return BigInt(getSellSolAmountFromTokenAmount({ global, feeConfig, mintSupply: curve.tokenTotalSupply, bondingCurve: curve, amount }).toString());
+}
+
 /**
  * A buy: spend `lamports` (fees included) on the curve, or on pump.fun's pool once the coin has
  * graduated, accepting at worst `slippageBps` fewer tokens than quoted now. Returns the

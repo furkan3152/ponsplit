@@ -1,43 +1,41 @@
 "use client";
 
-import { useConnectModal } from "@rainbow-me/rainbowkit";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { PublicKey } from "@solana/web3.js";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { formatUnits, parseEther, parseEventLogs, type Address, type Hex } from "viem";
-import { useAccount, useBalance, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
-import { ponsCurveAbi, ponsFactoryAbi, ponsTokenAbi, routerAbi } from "@/lib/abi";
-import { errorMessage, formatEth, formatTokens } from "@/lib/format";
-import { clientFor, useLauncherInfo } from "@/lib/hooks";
-import { useNetwork } from "@/lib/network-context";
-import { BPS, PONS_FEE_BPS, PONS_PROTOCOL_SHARE_BPS, minOut, quoteCurveBuy, quoteCurveSell, type CurveTerms } from "@/lib/pons";
+import { errorMessage, formatSol, formatTokens } from "@/lib/format";
+import { useSolBalance, useTokenBalance } from "@/lib/hooks";
+import { buyTransaction, quoteBuy, quoteSell, sellTransaction } from "@/lib/solana/pump";
 import type { Coin } from "@/lib/types";
 import { useRiskGate } from "./RiskNotice";
 
-const SLIPPAGES = [50, 100, 200, 500]; // bps
-/** ETH kept back for gas when buying with "Balance" (ETH is Robinhood Chain's gas token). */
-const GAS_RESERVE = parseEther("0.0002");
-/** How long a pool trade may wait in the mempool before it's refused (the router's deadline). */
-const DEADLINE_SECONDS = 600n;
+const SLIPPAGES = [100, 200, 500, 1000]; // bps
+/** SOL kept back for network fees and new token accounts when buying with "Balance". */
+const FEE_RESERVE = 10_000_000n;
 
-function parse(v: string): bigint | undefined {
-  try {
-    const n = parseEther(v.trim());
-    return n > 0n ? n : undefined;
-  } catch {
-    return undefined;
-  }
+function parseAmount(v: string, decimals: number): bigint | undefined {
+  const t = v.trim().replace(",", ".");
+  if (!/^\d*\.?\d*$/.test(t) || t === "" || t === ".") return undefined;
+  const [i, f = ""] = t.split(".");
+  if (f.length > decimals) return undefined;
+  const n = BigInt(i || "0") * 10n ** BigInt(decimals) + BigInt((f + "0".repeat(decimals)).slice(0, decimals) || "0");
+  return n > 0n ? n : undefined;
 }
-
-type Quote = { out: bigint; spent: bigint; refund: bigint };
+const toText = (raw: bigint, decimals: number) => {
+  const s = raw.toString().padStart(decimals + 1, "0");
+  const i = s.slice(0, -decimals);
+  const f = s.slice(-decimals).replace(/0+$/, "");
+  return f ? `${i}.${f}` : i;
+};
 
 /**
- * Buys and sells a coin where it trades right now: on its pons bonding curve, then (after the
- * crossing buy and the pool's creation) in its pons Uniswap v4 pool through SplitEarn's router. In
- * between, anyone can push the graduation along; pons's own keeper usually does it first.
+ * Buys and sells a coin where it trades right now: on its pump.fun bonding curve, then on
+ * pump.fun's pool once it has graduated. pump.fun's fees apply as on pump.fun itself; the
+ * creator's part of them goes to the coin's GitHub accounts and Splidev.
  */
-/** `live`: the coin's reserves were just read from the chain (not a placeholder); trades wait for that. */
-export function TradePanel({ coin, onTraded, live = true }: { coin: Coin; onTraded: () => void; live?: boolean }) {
-  const n = useNetwork();
+export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => void }) {
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState("");
   const [slippage, setSlippage] = useState(200);
@@ -45,179 +43,53 @@ export function TradePanel({ coin, onTraded, live = true }: { coin: Coin; onTrad
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const lock = useRef(false);
 
-  const { address, isConnected, chainId } = useAccount();
-  const { openConnectModal } = useConnectModal();
-  const { switchChainAsync } = useSwitchChain();
-  const { writeContractAsync } = useWriteContract();
+  const { connection } = useConnection();
+  const { publicKey, connected, sendTransaction } = useWallet();
+  const { setVisible } = useWalletModal();
   const { guard, dialog } = useRiskGate();
-  const { data: wiring } = useLauncherInfo();
-  const client = clientFor(n);
+  const sol = useSolBalance();
+  const tokens = useTokenBalance(coin.token);
+  const mint = new PublicKey(coin.token);
 
-  const onCurve = coin.phase === "curve";
-  const onPool = coin.phase === "pool";
-  const soldOut = onCurve && coin.sellable === 0n;
-  const spender: Address | undefined = onCurve ? coin.curve : onPool ? wiring?.router : undefined;
-
-  const { data: ethBalance, refetch: refetchEth } = useBalance({ address, chainId: n.chain.id });
-  const { data: tokenBalance, refetch: refetchToken } = useReadContract({
-    address: coin.token,
-    abi: ponsTokenAbi,
-    chainId: n.chain.id,
-    functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    query: { enabled: Boolean(address) },
-  });
-  const { data: allowance, refetch: refetchAllowance } = useReadContract({
-    address: coin.token,
-    abi: ponsTokenAbi,
-    chainId: n.chain.id,
-    functionName: "allowance",
-    args: address && spender ? [address, spender] : undefined,
-    query: { enabled: Boolean(address && spender && side === "sell") },
-  });
-  // The curve's base fee is fixed per launch (1% on pons's standard terms).
-  const { data: curveFee } = useReadContract({
-    address: coin.curve,
-    abi: ponsCurveAbi,
-    chainId: n.chain.id,
-    functionName: "feeBps",
-    query: { staleTime: Infinity },
-  });
-  // Pons taxes buys heavily in a coin's first seconds (not the launcher's own first buy). Only a
-  // coin that young needs the check.
-  const young = Date.now() / 1000 - coin.createdAt < 90;
-  const { data: snipe } = useReadContract({
-    address: coin.curve,
-    abi: ponsCurveAbi,
-    chainId: n.chain.id,
-    functionName: "currentSnipeTaxBps",
-    args: [address ?? "0x0000000000000000000000000000000000000001"],
-    query: { enabled: onCurve && young, refetchInterval: 1_000 },
-  });
-
-  const parsed = parse(amount);
-  const terms: CurveTerms = {
-    quoteReserve: coin.quoteReserve,
-    tokenReserve: coin.tokenReserve,
-    sellable: coin.sellable,
-    feeBps: curveFee ?? BigInt(PONS_FEE_BPS),
-    creatorTaxBps: BigInt(coin.creatorTaxBps),
-    snipeBps: young ? (snipe ?? 0n) : 0n,
-  };
-  const curveQuote = (s: "buy" | "sell", v: bigint, t: CurveTerms): Quote => {
-    if (s === "sell") return { out: quoteCurveSell(t, v), spent: v, refund: 0n };
-    const q = quoteCurveBuy(t, v);
-    return { out: q.tokensOut, spent: q.spent, refund: q.refund };
-  };
-  const poolQuote = useQuery({
-    queryKey: ["pool-quote", n.id, coin.token, side, parsed?.toString()],
-    enabled: onPool && Boolean(parsed && wiring),
+  const parsed = parseAmount(amount, side === "buy" ? 9 : 6);
+  const quote = useQuery({
+    queryKey: ["quote", coin.token, side, parsed?.toString()],
+    enabled: Boolean(parsed),
     refetchInterval: 5_000,
-    queryFn: async (): Promise<Quote> => {
-      const { result } = await client.simulateContract({ address: wiring!.router, abi: routerAbi, functionName: "quote", args: [coin.token, side === "buy", parsed!] });
-      return { out: result, spent: parsed!, refund: 0n };
-    },
+    queryFn: () => (side === "buy" ? quoteBuy(connection, mint, parsed!) : quoteSell(connection, mint, parsed!)),
   });
-  const quote: Quote | undefined = !parsed ? undefined : onCurve ? curveQuote(side, parsed, terms) : onPool ? poolQuote.data : undefined;
 
-  const balance = side === "buy" ? ethBalance?.value : tokenBalance;
+  const balance = side === "buy" ? sol.data : tokens.data;
   const insufficient = parsed !== undefined && balance !== undefined && parsed > balance;
-  const noGasLeft = side === "buy" && !insufficient && parsed !== undefined && balance !== undefined && parsed + GAS_RESERVE > balance;
-  const noEth = isConnected && side === "buy" && ethBalance?.value === 0n;
-  const needsApproval = side === "sell" && parsed !== undefined && allowance !== undefined && allowance < parsed;
-
-  // What this trade pays the coin's X accounts: the creator's part of the base fee plus the creator
-  // tax, less SplitEarn's share. On the curve both come out of the ETH side.
-  const ethSide = quote ? (side === "buy" ? quote.spent : quote.out) : undefined;
-  const feeBps = Number(terms.feeBps);
-  const toAccounts =
-    ethSide === undefined
-      ? undefined
-      : ((((ethSide * BigInt(feeBps) * BigInt(10_000 - PONS_PROTOCOL_SHARE_BPS)) / BPS / BPS + (ethSide * BigInt(coin.creatorTaxBps)) / BPS) *
-          BigInt(10_000 - coin.platformBps)) /
-        BPS);
+  const noFeesLeft = side === "buy" && !insufficient && parsed !== undefined && balance !== undefined && parsed + FEE_RESERVE > balance;
 
   const presets =
     side === "buy"
-      ? ["0.01", "0.05", "0.1", "0.5"].map((v) => ({ label: `${v} Ξ`, value: v }))
-      : [25, 50, 75, 100].map((p) => ({ label: p === 100 ? "Max" : `${p}%`, value: tokenBalance ? formatUnits((tokenBalance * BigInt(p)) / 100n, 18) : "" }));
-
-  async function send(label: string, write: () => Promise<Hex>) {
-    setBusy(label);
-    const hash = await write();
-    const receipt = await client.waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success") throw new Error("Transaction reverted");
-    return receipt;
-  }
-
-  async function ensureChain() {
-    if (chainId !== n.chain.id) {
-      setBusy("Switching network…");
-      await switchChainAsync({ chainId: n.chain.id });
-    }
-  }
+      ? ["0.1", "0.5", "1", "5"].map((v) => ({ label: `${v} SOL`, value: v }))
+      : [25, 50, 75, 100].map((p) => ({ label: p === 100 ? "Max" : `${p}%`, value: tokens.data ? toText((tokens.data * BigInt(p)) / 100n, 6) : "" }));
 
   async function trade() {
     setMsg(null);
-    if (!isConnected || !address) return openConnectModal?.();
-    if (!live || !parsed || !quote || !quote.out || lock.current) return;
+    if (!connected || !publicKey) return setVisible(true);
+    if (!parsed || lock.current) return;
     lock.current = true;
-    // The quote on screen when the button was pressed is what the slippage setting protects.
-    const floor = minOut(quote.out, slippage);
     try {
-      await ensureChain();
       setBusy("Checking the price…");
-      if (side === "sell" && spender && (await client.readContract({ address: coin.token, abi: ponsTokenAbi, functionName: "allowance", args: [address, spender] })) < parsed) {
-        await send("Approve in your wallet…", () =>
-          writeContractAsync({ address: coin.token, abi: ponsTokenAbi, chainId: n.chain.id, functionName: "approve", args: [spender, parsed] })
-        );
-        void refetchAllowance();
-      }
-      let got: bigint | undefined;
-      if (onCurve) {
-        // Re-price on the curve's current reserves: if it already moved past the limit, stop here
-        // rather than send a transaction that would revert.
-        const [[quoteReserve, tokenReserve], sellable] = await Promise.all([
-          client.readContract({ address: coin.curve, abi: ponsCurveAbi, functionName: "getReserves" }),
-          client.readContract({ address: coin.curve, abi: ponsCurveAbi, functionName: "sellableTokens" }),
-        ]);
-        const fresh = curveQuote(side, parsed, { ...terms, quoteReserve, tokenReserve, sellable });
-        if (fresh.out < floor || fresh.out === 0n) throw new Error("The price moved since your quote. Check the new amount and try again.");
-        // pons checks a buy by price (tokens per ETH actually spent), measured against all the ETH
-        // sent. When the curve sells out part of it is refunded, so scale the limit up to the price
-        // of the quoted fill; otherwise a smaller, pricier fill would still pass.
-        const buyFloor = quote.refund > 0n && quote.spent > 0n ? (floor * parsed) / quote.spent : floor;
-        const receipt =
-          side === "buy"
-            ? await send("Confirm in your wallet…", () =>
-                writeContractAsync({ address: coin.curve, abi: ponsCurveAbi, chainId: n.chain.id, functionName: "buy", args: [parsed, buyFloor, address], value: parsed })
-              )
-            : await send("Confirm in your wallet…", () =>
-                writeContractAsync({ address: coin.curve, abi: ponsCurveAbi, chainId: n.chain.id, functionName: "sell", args: [parsed, floor, address] })
-              );
-        const logs = parseEventLogs({ abi: ponsCurveAbi, logs: receipt.logs }).filter((l) => l.address.toLowerCase() === coin.curve.toLowerCase());
-        const ev = logs.find((l) => l.eventName === (side === "buy" ? "CurveBuy" : "CurveSell"))?.args as { tokensOut?: bigint; quoteOut?: bigint } | undefined;
-        got = side === "buy" ? ev?.tokensOut : ev?.quoteOut;
-      } else if (onPool && wiring) {
-        const { result: fresh } = await client.simulateContract({ address: wiring.router, abi: routerAbi, functionName: "quote", args: [coin.token, side === "buy", parsed] });
-        if (fresh < floor || fresh === 0n) throw new Error("The price moved since your quote. Check the new amount and try again.");
-        const deadline = BigInt(Math.floor(Date.now() / 1000)) + DEADLINE_SECONDS;
-        const receipt =
-          side === "buy"
-            ? await send("Confirm in your wallet…", () =>
-                writeContractAsync({ address: wiring.router, abi: routerAbi, chainId: n.chain.id, functionName: "buy", args: [coin.token, floor, address, deadline], value: parsed })
-              )
-            : await send("Confirm in your wallet…", () =>
-                writeContractAsync({ address: wiring.router, abi: routerAbi, chainId: n.chain.id, functionName: "sell", args: [coin.token, parsed, floor, address, deadline] })
-              );
-        const ev = parseEventLogs({ abi: routerAbi, eventName: "PoolTrade", logs: receipt.logs })[0]?.args;
-        got = side === "buy" ? ev?.tokenAmount : ev?.ethAmount;
-      }
-      const out = got ?? quote.out;
-      setMsg({ kind: "ok", text: side === "buy" ? `Bought ${formatTokens(out)} ${coin.symbol}` : `Sold for ${formatEth(out)} ETH` });
+      // Built on the chain's current state; the slippage setting bounds the price against this quote.
+      const built = side === "buy" ? await buyTransaction(connection, publicKey, mint, parsed, slippage) : await sellTransaction(connection, publicKey, mint, parsed, slippage);
+      setBusy("Confirm in your wallet…");
+      const sig = await sendTransaction(built.tx, connection, { maxRetries: 3 });
+      setBusy("Confirming…");
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+      const res = await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+      if (res.value.err) throw new Error("The transaction failed on chain.");
+      setMsg({
+        kind: "ok",
+        text: side === "buy" ? `Bought about ${formatTokens("tokens" in built ? built.tokens : 0n)} ${coin.symbol}` : `Sold for about ${formatSol("lamports" in built ? built.lamports : 0n)} SOL`,
+      });
       setAmount("");
-      void refetchEth();
-      void refetchToken();
+      void sol.refetch();
+      void tokens.refetch();
       onTraded();
     } catch (e) {
       setMsg({ kind: "err", text: errorMessage(e) });
@@ -225,58 +97,6 @@ export function TradePanel({ coin, onTraded, live = true }: { coin: Coin; onTrad
       setBusy(null);
       lock.current = false;
     }
-  }
-
-  /** Moves a graduating coin along: sweeps a sold-out curve, or creates its Uniswap v4 pool. */
-  async function graduate() {
-    setMsg(null);
-    if (!isConnected) return openConnectModal?.();
-    if (!wiring || lock.current) return;
-    lock.current = true;
-    try {
-      await ensureChain();
-      const functionName = coin.phase === "graduating" ? "createGraduatedPool" : "graduate";
-      await send("Confirm in your wallet…", () =>
-        writeContractAsync({ address: wiring.ponsFactory, abi: ponsFactoryAbi, chainId: n.chain.id, functionName, args: [coin.token] })
-      );
-      setMsg({ kind: "ok", text: functionName === "graduate" ? "The curve is closed; next, its pool." : "The pool is live. Trading continues here." });
-      onTraded();
-    } catch (e) {
-      setMsg({ kind: "err", text: errorMessage(e) });
-    } finally {
-      setBusy(null);
-      lock.current = false;
-    }
-  }
-
-  if (coin.phase === "graduating" || soldOut) {
-    return (
-      <div className="card relative isolate space-y-4 overflow-hidden p-4 sm:p-5">
-        <div className="eyebrow">Graduating</div>
-        <h2 className="display text-[26px] leading-none">{soldOut ? "The curve sold out" : "Opening the pool"}</h2>
-        <p className="text-[14px] leading-relaxed text-ink-2">
-          {soldOut
-            ? "The last buy sold the curve out. Once it is swept, pons puts the ETH and the reserved coins into a Uniswap v4 pool with locked liquidity, and trading continues there."
-            : "The curve has sold out and its ETH and reserved coins are waiting to seed the Uniswap v4 pool. pons usually creates it within moments; anyone can do it now."}
-        </p>
-        <button className="btn-neon w-full !py-4 text-[16px]" disabled={Boolean(busy) || !wiring} onClick={graduate}>
-          {busy ? <Spinner /> : null}
-          {!isConnected ? "Connect wallet" : busy ?? (soldOut ? "Close the curve" : "Create the pool")}
-        </button>
-        {msg ? <Status msg={msg} /> : null}
-      </div>
-    );
-  }
-
-  if (coin.phase === "rescued") {
-    return (
-      <div className="card space-y-3 p-4 sm:p-5">
-        <div className="eyebrow">Not trading</div>
-        <p className="text-[14px] leading-relaxed text-ink-2">
-          pons couldn&apos;t seed this coin&apos;s pool and returned its reserves instead, so it no longer trades on pons.
-        </p>
-      </div>
-    );
   }
 
   const buying = side === "buy";
@@ -313,16 +133,16 @@ export function TradePanel({ coin, onTraded, live = true }: { coin: Coin; onTrad
       <div>
         <div className="mb-2 flex min-h-[28px] items-center justify-between gap-3">
           <span className="eyebrow">{buying ? "You pay" : "You sell"}</span>
-          {isConnected ? (
+          {connected ? (
             <button
               className="num -mr-2 min-w-0 truncate rounded-full px-2 py-1 text-[11px] text-ink-2 transition hover:bg-card-2 hover:text-ink"
               onClick={() => {
                 if (balance === undefined) return;
-                const usable = side === "buy" ? (balance > GAS_RESERVE ? balance - GAS_RESERVE : 0n) : balance;
-                setAmount(usable > 0n ? formatUnits(usable, 18) : "");
+                const usable = side === "buy" ? (balance > FEE_RESERVE ? balance - FEE_RESERVE : 0n) : balance;
+                setAmount(usable > 0n ? toText(usable, side === "buy" ? 9 : 6) : "");
               }}
             >
-              Balance {side === "buy" ? `${ethBalance ? formatEth(ethBalance.value) : "–"} ETH` : `${tokenBalance !== undefined ? formatTokens(tokenBalance) : "–"} ${coin.symbol}`}
+              Balance {side === "buy" ? `${sol.data !== undefined ? formatSol(sol.data) : "–"} SOL` : `${tokens.data !== undefined ? formatTokens(tokens.data) : "–"} ${coin.symbol}`}
             </button>
           ) : null}
         </div>
@@ -335,17 +155,17 @@ export function TradePanel({ coin, onTraded, live = true }: { coin: Coin; onTrad
             className="num min-w-0 flex-1 bg-transparent py-3 text-[30px] font-semibold leading-none tracking-tight text-ink outline-none placeholder:text-ink-3"
             inputMode="decimal"
             placeholder="0"
-            aria-label={side === "buy" ? "ETH amount" : `${coin.symbol} amount`}
+            aria-label={side === "buy" ? "SOL amount" : `${coin.symbol} amount`}
             value={amount}
             onChange={(e) => setAmount(e.target.value.replace(",", "."))}
           />
           <span className="pointer-events-none inline-flex max-w-[45%] shrink-0 items-center gap-1.5 rounded-full border border-line bg-card px-2.5 py-1.5 font-mono text-[12px] font-semibold text-ink">
             {buying ? (
-              <span aria-hidden className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-ink text-[10px] leading-none text-paper">
-                Ξ
+              <span aria-hidden className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-ink text-[9px] font-bold leading-none text-paper">
+                ◎
               </span>
             ) : null}
-            <span className="truncate">{buying ? "ETH" : coin.symbol}</span>
+            <span className="truncate">{buying ? "SOL" : coin.symbol}</span>
           </span>
         </div>
         <div className="mt-2 grid grid-cols-4 gap-1.5">
@@ -367,16 +187,15 @@ export function TradePanel({ coin, onTraded, live = true }: { coin: Coin; onTrad
         <dl className="space-y-2 px-4 pb-3 pt-3.5">
           <Row
             label="You receive"
-            value={quote?.out ? (buying ? `${formatTokens(quote.out)} ${coin.symbol}` : `${formatEth(quote.out, 6)} ETH`) : onPool && parsed && poolQuote.isFetching ? "…" : "–"}
+            value={quote.data ? (buying ? `${formatTokens(quote.data)} ${coin.symbol}` : `${formatSol(quote.data, 6)} SOL`) : parsed && quote.isFetching ? "…" : "–"}
             strong
           />
           <Row
-            label={`Fee ${feeBps / 100}%${coin.creatorTaxBps ? ` + ${coin.creatorTaxBps / 100}% tax` : ""}`}
-            value={toAccounts !== undefined ? `${formatEth(toAccounts, 6)} ETH to X` : "–"}
+            label="pump.fun fees"
+            value="included"
             className="!mt-2.5 border-t border-dashed border-line pt-2.5"
           />
-          {terms.snipeBps && onCurve && buying ? <Row label="Opening snipe tax (first seconds)" value={`${Number(terms.snipeBps) / 100}%`} /> : null}
-          {quote?.refund ? <Row label="Refund (the curve sells out)" value={`${formatEth(quote.refund, 6)} ETH`} /> : null}
+          <Row label="Creator fee goes to" value={`${coin.recipients.length} GitHub dev${coin.recipients.length === 1 ? "" : "s"} + Splidev`} />
         </dl>
         <div aria-hidden className="relative mx-4 border-t border-dashed border-line-2">
           <span className="absolute -left-[23px] -top-[7px] h-3.5 w-3.5 rounded-full bg-card" />
@@ -402,44 +221,26 @@ export function TradePanel({ coin, onTraded, live = true }: { coin: Coin; onTrad
       </div>
 
       <button
-        className={`w-full !py-4 text-[16px] ${!isConnected ? "btn-neon" : buying ? "btn-buy" : "btn-sell"}`}
-        disabled={isConnected && (Boolean(busy) || !live || !parsed || !quote?.out || insufficient || noGasLeft)}
+        className={`w-full !py-4 text-[16px] ${!connected ? "btn-neon" : buying ? "btn-buy" : "btn-sell"}`}
+        disabled={connected && (Boolean(busy) || !parsed || !quote.data || insufficient || noFeesLeft)}
         onClick={() => guard(trade)}
       >
         {busy ? <Spinner /> : null}
-        {!isConnected
+        {!connected
           ? "Connect wallet"
           : busy
             ? busy
             : insufficient
               ? "Insufficient balance"
-              : noGasLeft
-                ? "Leave a little ETH for gas"
-                : needsApproval
-                  ? `Approve and sell ${coin.symbol}`
-                  : `${buying ? "Buy" : "Sell"} ${coin.symbol}`}
+              : noFeesLeft
+                ? "Leave a little SOL for fees"
+                : `${buying ? "Buy" : "Sell"} ${coin.symbol}`}
       </button>
-      {noEth && n.faucet ? (
-        <p className="text-center text-[12px] text-ink-2">
-          No test ETH yet?{" "}
-          <a className="font-medium text-ink underline" href={n.faucet} target="_blank" rel="noreferrer">
-            Get some from the faucet
-          </a>
-        </p>
-      ) : null}
       {msg ? <Status msg={msg} /> : null}
       {dialog}
       <p className="text-center font-mono text-[10.5px] leading-relaxed text-ink-3">
-        <span aria-hidden className={`mr-2 inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full align-middle ${onPool ? "bg-up" : "bg-lime"}`} />
-        {onPool ? (
-          // Too long for one line in the panel, so it breaks where the separator is.
-          <>
-            Trading in the pons Uniswap v4 pool<span className="sr-only"> · </span>
-            <span className="block">liquidity locked by pons</span>
-          </>
-        ) : (
-          "Trading on the pons bonding curve"
-        )}
+        <span aria-hidden className={`mr-2 inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full align-middle ${coin.graduated ? "bg-up" : "bg-lime"}`} />
+        {coin.graduated ? "Trading on pump.fun's pool" : "Trading on the pump.fun bonding curve"}
       </p>
       {/* The active side lights the panel from above: green to buy, red to sell. Last in the DOM so it
           takes no spacing; -z-10 keeps it under everything. */}

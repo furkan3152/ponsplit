@@ -2,17 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { formatEther } from "viem";
-import { useReadContract } from "wagmi";
-import { feeVaultAbi } from "@/lib/abi";
-import { formatEth, pct } from "@/lib/format";
-import { xProfileUrlById } from "@/lib/handles";
-import { useHandleChecks } from "@/lib/hooks";
-import { useNetwork } from "@/lib/network-context";
-import { BPS, PONS_FEE_BPS, PONS_PROTOCOL_SHARE_BPS, toRecipients } from "@/lib/pons";
-import type { Coin } from "@/lib/types";
+import { githubProfileUrl } from "@/lib/github-handles";
+import { formatSol, pct } from "@/lib/format";
+import { useClaimable } from "@/lib/hooks";
+import type { Coin, GithubRecipient } from "@/lib/types";
 import { CountUp, useInView } from "./motion";
-import { XAvatar } from "./XAvatar";
+import { GithubAvatar } from "./GithubAvatar";
 
 /** The account colors, in order, as on the home page. Accounts past the fifth reuse them, striped. */
 const ACCOUNT_COLORS = ["var(--sky)", "var(--pink)", "var(--sun)", "var(--lilac)", "var(--orange)"];
@@ -20,37 +15,21 @@ const STRIPES = "repeating-linear-gradient(135deg, transparent 0 3px, rgba(11, 1
 const colorOf = (i: number) => ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
 const swatch = (i: number): CSSProperties => ({ backgroundColor: colorOf(i), backgroundImage: i >= ACCOUNT_COLORS.length ? STRIPES : undefined });
 
-/** formatEth for a plain number, for the in-between values of a count-up. */
-function ethText(n: number, digits = 4) {
+/** formatSol for a plain number, for the in-between values of a count-up. */
+function solText(n: number, digits = 4) {
   if (n <= 0) return "0";
   if (n < 10 ** -digits) return `<${(10 ** -digits).toFixed(digits)}`;
   return n.toLocaleString("en-US", { maximumFractionDigits: digits });
 }
 
-/** Of every trade's volume, the part (in %) that reaches the X accounts: the creator's share of pons's fee plus the creator tax, less SplitEarn's cut. */
-export function accountsPct(creatorTaxBps: number, platformBps: number, feeBps = PONS_FEE_BPS) {
-  const creator = (feeBps * (10_000 - PONS_PROTOCOL_SHARE_BPS)) / 10_000 + creatorTaxBps;
-  return (creator * (10_000 - platformBps)) / 10_000 / 100;
-}
-
-/** Who gets this coin's creator fees, how much of each payout, and what they've earned from it. */
+/** Who gets this coin's creator fees and how much of each, with what's waiting for them. */
 export function SplitCard({ t }: { t: Coin }) {
-  const n = useNetwork();
-  const { data } = useReadContract({
-    address: n.feeVault,
-    abi: feeVaultAbi,
-    chainId: n.chain.id,
-    functionName: "earningsOf",
-    args: [t.xIds],
-    query: { enabled: Boolean(n.feeVault && t.xIds.length), refetchInterval: 10_000 },
-  });
-  const checks = useHandleChecks(t.handles, t.xIds);
-  // Terms were locked in when this coin launched.
-  const share = accountsPct(t.creatorTaxBps, t.platformBps);
-  const pending = toRecipients(t.feesPending, t.platformBps);
   const [barRef, barIn] = useInView<HTMLDivElement>();
-  const shares = t.recipients.map((r) => r.bps / 100);
+  const accountsBps = 10_000 - t.platformBps;
+  // Shares of the accounts' part, for the bar (Splidev's cut is said below).
+  const shares = t.recipients.map((r) => (r.shareBps / accountsBps) * 100);
   const count = shares.length;
+  const pendingToAccounts = (t.pendingFees * BigInt(accountsBps)) / 10_000n;
 
   return (
     <section className="card relative isolate overflow-hidden p-4 sm:p-5">
@@ -58,7 +37,7 @@ export function SplitCard({ t }: { t: Coin }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="eyebrow">
-            {count} X {count === 1 ? "account" : "accounts"}
+            {count} GitHub {count === 1 ? "account" : "accounts"}
           </div>
           <h2 className="display mt-1 text-[28px] leading-none">
             Fee <span className="accent text-neon pr-1">split</span>
@@ -66,20 +45,19 @@ export function SplitCard({ t }: { t: Coin }) {
         </div>
         <div className="shrink-0 text-right">
           <div className="num text-[20px] font-semibold leading-none text-up-ink">
-            <CountUp value={Number(formatEther(t.feesSplit))} format={(v) => ethText(v, 4)} />
+            <CountUp value={Number(pendingToAccounts) / 1e9} format={(v) => solText(v, 4)} />
           </div>
           <div className="mt-1.5 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
             <span aria-hidden className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" />
-            ETH split
+            SOL waiting to split
           </div>
         </div>
       </div>
       <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
-        {`${share.toLocaleString("en-US", { maximumFractionDigits: 2 })}% of every trade goes to these accounts`}
-        {t.creatorTaxBps ? ` (including the ${t.creatorTaxBps / 100}% creator tax)` : ""}, locked in at launch.
-        {pending > 0n ? ` ${formatEth(pending, 5)} ETH more is on its way.` : ""}{" "}
+        {pct(accountsBps)} of this coin&apos;s pump.fun creator fee goes to these developers, set for good at launch: nobody, not even the
+        creator or Splidev, can change it.{" "}
         <Link href="/claim" className="font-medium text-ink underline-offset-2 hover:underline">
-          Claim with X →
+          Claim with GitHub →
         </Link>
       </p>
 
@@ -96,49 +74,43 @@ export function SplitCard({ t }: { t: Coin }) {
       </div>
 
       <ul className="mt-3 divide-y divide-line">
-        {t.handles.map((h, i) => {
-          const bps = t.recipients[i]?.bps ?? 0;
-          // Paid into the vault so far, like the headline; what is still on its way is said above.
-          const fromToken = (t.feesSplit * BigInt(bps)) / BPS;
-          const check = checks[i];
-          return (
-            <li key={`${h}:${i}`} className="flex items-center gap-3 py-3 last:pb-0">
-              {/* The outer ring is the account's color in the bar (the avatar's own 2px ring sits
-                  inside it). Only show a photo once the username is confirmed to still be this account's. */}
-              <span className="shrink-0 rounded-full p-1" style={swatch(i)}>
-                <XAvatar handle={h} image={check.image} photo={check.status === "current"} size={32} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-                  <a
-                    href={xProfileUrlById(t.xIds[i])}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={`Username at launch. Fees go to X account #${t.xIds[i].toString()}, even if it is renamed.`}
-                    className="truncate text-[14px] font-semibold hover:underline"
-                  >
-                    @{h}
-                  </a>
-                  {check.status === "moved" ? (
-                    <span className="chip shrink-0 !text-[11px]">renamed since launch</span>
-                  ) : check.status === "missing" ? (
-                    <span className="chip shrink-0 !text-[11px]">not found on X right now</span>
-                  ) : null}
-                </div>
-                <div className="num mt-0.5 text-[11px] leading-snug text-ink-2">{formatEth(fromToken, 5)} ETH from this coin</div>
-                {data ? <div className="num text-[11px] leading-snug text-ink-3">{formatEth(data[0][i], 5)} ETH unclaimed overall</div> : null}
-              </div>
-              <span className="num shrink-0 rounded-full px-2 py-1 text-[12px] font-bold leading-none text-[var(--lime-ink)]" style={{ backgroundColor: colorOf(i) }}>
-                {pct(bps)}
-              </span>
-            </li>
-          );
-        })}
+        {t.recipients.map((r, i) => (
+          <RecipientRow key={r.githubId} r={r} i={i} pending={(t.pendingFees * BigInt(r.shareBps)) / 10_000n} accountsBps={accountsBps} />
+        ))}
       </ul>
       <p className="mt-4 border-t border-dashed border-line-2 pt-3 text-[11px] leading-relaxed text-ink-3">
-        Usernames as of launch. Fees follow each account&apos;s permanent X id, so a rename never moves them. SplitEarn keeps {pct(t.platformBps)} of each payout.
+        Fees go to each developer&apos;s pump.fun GitHub account, keyed by the permanent GitHub id, so a rename never moves them. Splidev keeps{" "}
+        {pct(t.platformBps)} of the creator fee.
       </p>
     </section>
+  );
+}
+
+function RecipientRow({ r, i, pending, accountsBps }: { r: GithubRecipient; i: number; pending: bigint; accountsBps: number }) {
+  const claimable = useClaimable(r.githubId);
+  return (
+    <li className="flex items-center gap-3 py-3 last:pb-0">
+      {/* The outer ring is the account's color in the bar (the avatar's own 2px ring sits inside it). */}
+      <span className="shrink-0 rounded-full p-1" style={swatch(i)}>
+        <GithubAvatar id={r.githubId} login={r.login} size={32} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <a
+          href={r.login ? githubProfileUrl(r.login) : `https://api.github.com/user/${r.githubId}`}
+          target="_blank"
+          rel="noreferrer"
+          title={`GitHub user #${r.githubId}`}
+          className="block truncate text-[14px] font-semibold hover:underline"
+        >
+          @{r.login ?? `#${r.githubId}`}
+        </a>
+        <div className="num mt-0.5 text-[11px] leading-snug text-ink-2">{formatSol(pending, 5)} SOL from this coin, waiting to split</div>
+        {claimable.data ? <div className="num text-[11px] leading-snug text-ink-3">{formatSol(claimable.data.claimable, 5)} SOL to claim on pump.fun</div> : null}
+      </div>
+      <span className="num shrink-0 rounded-full px-2 py-1 text-[12px] font-bold leading-none text-[var(--lime-ink)]" style={{ backgroundColor: colorOf(i) }}>
+        {pct(Math.round((r.shareBps / accountsBps) * 10_000))}
+      </span>
+    </li>
   );
 }
 
