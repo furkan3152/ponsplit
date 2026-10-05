@@ -10,7 +10,7 @@ const HALF =
 const TURN = "rotate(180 22 22)";
 
 /**
- * SplitEarn brand mark: the owner's S drawn flat, as a sticker. Its two halves (lime on top, green
+ * Splidev brand mark: the owner's S drawn flat, as a sticker. Its two halves (lime on top, green
  * below) have a chunky ink outline, a hard shadow, a shine and a sparkle. `public/logo.svg` and
  * `src/app/icon.svg` are rendered from this (scripts/render-logo.mjs).
  */
@@ -45,13 +45,13 @@ export function LogoCoin() {
   );
 }
 
-/** LogoMark + "SplitEarn" wordmark as a flex row. The mark turns a little when its link is hovered. */
+/** LogoMark + "Splidev" wordmark as a flex row. The mark turns a little when its link is hovered. */
 export function Wordmark({ className, textClassName = "", size = 28 }: { className?: string; textClassName?: string; size?: number }) {
   return (
     <span className={`inline-flex items-center gap-2 ${className ?? ""}`}>
       <LogoMark size={size} className="transition-transform duration-500 group-hover:-rotate-12 group-hover:scale-110" />
       <span className={`display text-[20px] leading-none ${textClassName}`}>
-        Split<span className="text-neon">Earn</span>
+        Spli<span className="text-neon">dev</span>
       </span>
     </span>
   );

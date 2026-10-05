@@ -1,4 +1,4 @@
-// Shared "chunky sticker" building blocks for SplitEarn illustrations.
+// Shared "chunky sticker" building blocks for Splidev illustrations.
 // Pure SVG, no ids, all colors via CSS variables.
 import type { ReactNode } from "react";
 
@@ -236,7 +236,7 @@ export function Trail({ d, sw }: { d: string; sw: number }) {
 
 export type Hair = 0 | 1 | 2 | 3 | 4;
 
-/** Round avatar bubble standing in for an X account. */
+/** Round avatar bubble standing in for a developer. */
 export function Avatar({
   cx,
   cy,

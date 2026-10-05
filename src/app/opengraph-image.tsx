@@ -3,7 +3,7 @@ import { join } from "path";
 import { ImageResponse } from "next/og";
 
 export const runtime = "nodejs";
-export const alt = "SplitEarn: one coin, many X accounts, fees split";
+export const alt = "Splidev: pump.fun coins that pay GitHub developers";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -18,10 +18,10 @@ export default function OgImage() {
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={src(logo)} width={64} height={64} alt="" />
-            <span style={{ fontSize: 40, fontWeight: 700, color: "#1d1d1f" }}>SplitEarn</span>
+            <span style={{ fontSize: 40, fontWeight: 700, color: "#1d1d1f" }}>Splidev</span>
           </div>
-          <div style={{ fontSize: 68, fontWeight: 800, color: "#1d1d1f", lineHeight: 1.05, marginTop: 36, letterSpacing: -2 }}>One coin. Many X accounts. Fees, split.</div>
-          <div style={{ fontSize: 28, color: "#6e6e73", marginTop: 24 }}>Launch on pons · Robinhood Chain</div>
+          <div style={{ fontSize: 68, fontWeight: 800, color: "#1d1d1f", lineHeight: 1.05, marginTop: 36, letterSpacing: -2 }}>Coins that pay GitHub devs.</div>
+          <div style={{ fontSize: 28, color: "#6e6e73", marginTop: 24 }}>Launch on pump.fun · Solana</div>
         </div>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src(hero)} width={560} height={360} alt="" />
