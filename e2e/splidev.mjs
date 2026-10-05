@@ -69,7 +69,7 @@ async function openAs(browser, kp, viewport = { width: 1280, height: 900 }) {
     return Array.from(tx.serialize());
   });
   page.on("pageerror", (e) => console.log("page error:", e.message));
-  page.on("console", (m) => m.type() === "error" && console.log("console error:", m.text().slice(0, 300)));
+  page.on("console", (m) => m.type() === "error" && console.log("console error:", m.text().slice(0, 4000)));
   return page;
 }
 

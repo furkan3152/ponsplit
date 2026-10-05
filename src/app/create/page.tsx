@@ -206,7 +206,11 @@ export default function CreatePage() {
     setStatus("Confirm in your wallet…");
     const signed = await signAllTransactions(txs);
     for (const [i, tx] of signed.entries()) {
-      const sig = await connection.sendRawTransaction(tx.serialize(), { maxRetries: 3 });
+      const sig = await connection.sendRawTransaction(tx.serialize(), { maxRetries: 3 }).catch((e: { logs?: string[] }) => {
+        // The program logs are what explain a rejected launch; keep them in the console.
+        console.error(`Launch transaction ${i + 1} of ${signed.length} was rejected`, e, e?.logs?.join("\n") ?? "");
+        throw e;
+      });
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
       const r = await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
       if (r.value.err) throw new Error(i === 0 ? "Creating the coin failed on chain." : "Setting the fee split failed on chain.");
