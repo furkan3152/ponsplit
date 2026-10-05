@@ -1,19 +1,17 @@
 "use client";
 
-import { useConnectModal } from "@rainbow-me/rainbowkit";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
-import { formatUnits } from "viem";
-import { useAccount } from "wagmi";
 import { Progress } from "@/components/Progress";
 import { TokenAvatar } from "@/components/TokenAvatar";
-import { XAvatarStack } from "@/components/XAvatar";
+import { GithubAvatarStack } from "@/components/GithubAvatar";
 import { EmptyArt, StepLaunch, TokenSticker } from "@/components/art";
 import { CountUp, Flash, Reveal } from "@/components/motion";
 import { coinImage, progressTag } from "@/lib/coin-ui";
-import { compact, formatEth, formatTokens, progressText, shortAddress } from "@/lib/format";
+import { compact, formatSol, formatTokens, progressText, shortAddress } from "@/lib/format";
 import { useCoins, useHoldings } from "@/lib/hooks";
-import { useNetwork } from "@/lib/network-context";
 import type { Coin } from "@/lib/types";
 
 type Holding = { t: Coin; bal: bigint; value: number };
@@ -22,16 +20,16 @@ type Holding = { t: Coin; bal: bigint; value: number };
 const CARD_GRID = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3";
 
 export default function PortfolioPage() {
-  const { address, isConnected } = useAccount();
-  const { openConnectModal } = useConnectModal();
+  const { publicKey, connected } = useWallet();
+  const { setVisible } = useWalletModal();
+  const address = publicKey?.toBase58();
 
-  if (!isConnected || !address) return <ConnectPrompt onConnect={openConnectModal} />;
+  if (!connected || !address) return <ConnectPrompt onConnect={() => setVisible(true)} />;
   // Keyed by wallet: switching accounts starts fresh instead of briefly showing the previous one's coins.
   return <Portfolio key={address} address={address} />;
 }
 
 function ConnectPrompt({ onConnect }: { onConnect?: () => void }) {
-  const n = useNetwork();
   return (
     <div className="relative mx-auto max-w-xl pt-4 sm:pt-10">
       <div aria-hidden className="bg-grid pointer-events-none absolute -inset-x-4 -top-8 -z-10 h-[440px] sm:-inset-x-6" />
@@ -49,7 +47,7 @@ function ConnectPrompt({ onConnect }: { onConnect?: () => void }) {
           <div className="eyebrow mt-6">Portfolio</div>
           <h1 className="display mt-2 text-[34px] leading-[0.95] sm:text-[44px]">Connect to see your coins</h1>
           <p className="mx-auto mt-3 max-w-sm text-[15px] leading-relaxed text-ink-2">
-            Your holdings at their current price, plus every coin you launched, read straight from {n.chain.name}.
+            Your holdings at their current price, plus every coin you launched, read straight from Solana.
           </p>
           <button className="btn-neon mt-8 px-6 py-3.5 text-[16px]" onClick={onConnect}>
             Connect wallet
@@ -60,8 +58,7 @@ function ConnectPrompt({ onConnect }: { onConnect?: () => void }) {
   );
 }
 
-function Portfolio({ address }: { address: `0x${string}` }) {
-  const n = useNetwork();
+function Portfolio({ address }: { address: string }) {
   const { data: newestFirst, error: tokensError } = useCoins();
   const { holdings: held, isLoading: balancesLoading } = useHoldings(address);
 
@@ -69,12 +66,12 @@ function Portfolio({ address }: { address: `0x${string}` }) {
   const unavailable = Boolean(tokensError) && !newestFirst;
   const loading = (!newestFirst && !unavailable) || balancesLoading;
   const holdings: Holding[] = held
-    .map(({ coin, balance }) => ({ t: coin, bal: balance, value: Number(formatUnits(balance, 18)) * coin.price }))
+    .map(({ coin, balance }) => ({ t: coin, bal: balance, value: (Number(balance) / 1e6) * coin.price }))
     .sort((a, b) => b.value - a.value);
-  const created = useMemo(() => (newestFirst ?? []).filter((t) => t.creator.toLowerCase() === address.toLowerCase()), [newestFirst, address]);
+  const created = useMemo(() => (newestFirst ?? []).filter((t) => t.creator === address), [newestFirst, address]);
   const total = holdings.reduce((a, h) => a + h.value, 0);
   const known = !loading && !unavailable;
-  const launchedSplit = created.reduce((a, t) => a + t.accountsEarned, 0n);
+  const launchedPending = created.reduce((a, t) => a + t.pendingFees, 0n);
 
   return (
     <div className="space-y-14 pt-2 sm:space-y-20 sm:pt-4">
@@ -98,7 +95,7 @@ function Portfolio({ address }: { address: `0x${string}` }) {
         </div>
 
         {unavailable ? (
-          <Notice>Couldn&apos;t load coins from {n.chain.name} right now. Retrying…</Notice>
+          <Notice>Couldn&apos;t load coins from Solana right now. Retrying…</Notice>
         ) : null}
 
         <Reveal delay={180}>
@@ -146,7 +143,7 @@ function Portfolio({ address }: { address: `0x${string}` }) {
         <SectionHead eyebrow="Your launches" title="Launched by you">
           {newestFirst && created.length ? (
             <span className="font-mono text-[12px] text-ink-3">
-              <span className="text-up-ink">{formatEth(launchedSplit, 4)} Ξ</span> split to X
+              <span className="text-up-ink">{formatSol(launchedPending, 4)} SOL</span> waiting to split
             </span>
           ) : null}
         </SectionHead>
@@ -190,7 +187,6 @@ function Totals({
   launched: number | undefined;
   top: Holding[] | undefined;
 }) {
-  const n = useNetwork();
   return (
     <section aria-label="Totals" className="card ring-glow relative rounded-[28px] p-5 sm:p-7">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-[inherit]">
@@ -206,10 +202,10 @@ function Totals({
               format={(n) => compact(n, 4)}
               className="num text-neon min-w-0 break-all text-[48px] font-semibold leading-none tracking-[-0.04em] sm:text-[68px]"
             />
-            {known ? <span className="font-mono text-[18px] font-medium text-ink-2 sm:text-[22px]">Ξ</span> : null}
+            {known ? <span className="font-mono text-[18px] font-medium text-ink-2 sm:text-[22px]">SOL</span> : null}
           </div>
           <p className="mt-3 font-mono text-[12px] text-ink-3">
-            {known ? `At current prices on ${n.chain.name}` : unavailable ? "Unavailable right now." : "Reading balances…"}
+            {known ? "At current prices on Solana" : unavailable ? "Unavailable right now." : "Reading balances…"}
           </p>
         </div>
         <CoinFan top={top} />
@@ -313,7 +309,7 @@ function HoldingCard({ h, share }: { h: Holding; share: number | undefined }) {
         <div className="shrink-0 text-right">
           <div className="num text-[17px] font-semibold leading-tight">
             <Flash value={value} className="px-0.5">
-              {compact(value, 5)} Ξ
+              {compact(value, 5)} SOL
             </Flash>
           </div>
           <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">Value</div>
@@ -349,15 +345,14 @@ function LaunchedCard({ t }: { t: Coin }) {
             <span className="min-w-0 max-w-[45%] shrink-0 truncate font-mono text-[12px] text-ink-2">${t.symbol}</span>
           </div>
           <div className="mt-1 truncate font-mono text-[11px] text-ink-3">
-            {t.phase === "curve" ? `${progressText(t.progress, 1)}% bonded` : graduated ? "Graduated" : t.phase}
-            {t.creatorTaxBps ? ` · ${t.creatorTaxBps / 100}% tax` : ""}
+            {graduated ? "Graduated" : `${progressText(t.progress, 1)}% bonded`}
           </div>
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <XAvatarStack handles={t.handles} size={20} max={3} />
+        <GithubAvatarStack people={t.recipients} size={20} max={3} />
         <span className="ml-auto font-mono text-[11px] text-ink-3">
-          mcap <span className="text-[13px] font-semibold text-ink">{compact(t.marketCap)} Ξ</span>
+          mcap <span className="text-[13px] font-semibold text-ink">{compact(t.marketCap)} SOL</span>
         </span>
       </div>
       <div className="flex items-center gap-2">
@@ -367,9 +362,9 @@ function LaunchedCard({ t }: { t: Coin }) {
         <span className={`num text-[11px] font-semibold ${graduated ? "text-up-ink" : "text-ink-2"}`}>{progressTag(t, progressText(t.progress))}</span>
       </div>
       <div className="mt-auto flex items-center justify-between border-t border-line pt-2.5 font-mono text-[11px] text-ink-3">
-        <span>split to X</span>
-        <Flash value={t.accountsEarned} className="px-0.5 text-up-ink">
-          {formatEth(t.accountsEarned, 4)} Ξ
+        <span>waiting to split</span>
+        <Flash value={Number(t.pendingFees)} className="px-0.5 text-up-ink">
+          {formatSol(t.pendingFees, 4)} SOL
         </Flash>
       </div>
     </Link>
@@ -400,7 +395,7 @@ function EmptyLaunched() {
       <StepLaunch className="h-16 w-16 shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="text-[16px] font-semibold">Nothing yet.</div>
-        <p className="mt-0.5 text-[14px] leading-relaxed text-ink-2">Launch a coin and every trade pays the X accounts you pick.</p>
+        <p className="mt-0.5 text-[14px] leading-relaxed text-ink-2">Launch a coin and every trade pays the GitHub developers you pick.</p>
       </div>
       <Link href="/create" className="btn-secondary">
         Launch a coin
