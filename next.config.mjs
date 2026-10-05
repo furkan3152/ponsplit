@@ -1,78 +1,28 @@
 import { readFileSync } from "fs";
-import { isAddress } from "viem";
 
 /**
- * Checks what pins the site to its contracts on each network before building: the addresses in
- * src/deployment.json and the NEXT_PUBLIC_<NETWORK>_* variables that override them. A malformed or
- * half-set pin fails the build instead of quietly pointing the site at nothing.
+ * Checks src/splidev.json before building: a malformed treasury, hidden coin or official token,
+ * or a platform share outside pump.fun's limits, fails the build instead of quietly breaking launches.
  */
-function checkAddress(value, name) {
-  if (!isAddress(value, { strict: false })) {
-    throw new Error(`${name} is set but isn't an address: use 0x followed by 40 hex characters, with no quotes, spaces or "NAME=" prefix.`);
-  }
+const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+function checkKey(value, name) {
+  if (!BASE58.test(String(value))) throw new Error(`${name} isn't a Solana address (base58, 32-44 characters, no quotes or spaces).`);
 }
 
-function checkPins() {
-  const deployment = JSON.parse(readFileSync(new URL("./src/deployment.json", import.meta.url), "utf8"));
-  for (const network of ["mainnet", "testnet"]) {
-    const NET = network.toUpperCase();
-    const entry = deployment[network] ?? {};
-    const launcher = process.env[`NEXT_PUBLIC_${NET}_LAUNCHER_ADDRESS`] || entry.launcher;
-    const feeVault = process.env[`NEXT_PUBLIC_${NET}_FEE_VAULT_ADDRESS`] || entry.feeVault;
-    // All or nothing: with only one of them the site would find its launcher but not its vault.
-    if (Boolean(launcher) !== Boolean(feeVault)) {
-      throw new Error(`${network}: pin both the launcher and the FeeVault address (src/deployment.json or NEXT_PUBLIC_${NET}_* variables), or neither.`);
-    }
-    if (launcher) {
-      checkAddress(launcher, `${network} launcher`);
-      checkAddress(feeVault, `${network} FeeVault`);
-    }
-    const factory = network === "testnet" ? process.env.NEXT_PUBLIC_TESTNET_PONS_FACTORY || entry.ponsFactory : undefined;
-    if (factory) checkAddress(factory, "testnet ponsFactory");
-    if (entry.hidden !== undefined && !Array.isArray(entry.hidden)) throw new Error(`src/deployment.json: ${network}.hidden must be a list of coin addresses.`);
-    (entry.hidden ?? []).forEach((a, i) => checkAddress(a, `src/deployment.json ${network}.hidden[${i}]`));
-    if (entry.launchFee) {
-      checkAddress(entry.launchFee.to, `src/deployment.json ${network}.launchFee.to`);
-      if (!/^\d+(\.\d{1,18})?$/.test(String(entry.launchFee.eth ?? ""))) throw new Error(`src/deployment.json: ${network}.launchFee.eth must be an ETH amount like "0.00073".`);
-    }
-    if (entry.officialToken) checkAddress(entry.officialToken, `src/deployment.json ${network}.officialToken`);
-    if (entry.previousLaunchers !== undefined && !Array.isArray(entry.previousLaunchers))
-      throw new Error(`src/deployment.json: ${network}.previousLaunchers must be a list of launcher addresses.`);
-    (entry.previousLaunchers ?? []).forEach((a, i) => checkAddress(a, `src/deployment.json ${network}.previousLaunchers[${i}]`));
-    (process.env[`NEXT_PUBLIC_${NET}_HIDDEN_COINS`] || "")
-      .split(",")
-      .map((a) => a.trim())
-      .filter(Boolean)
-      .forEach((a, i) => checkAddress(a, `NEXT_PUBLIC_${NET}_HIDDEN_COINS entry ${i + 1}`));
-  }
-  const fallback = process.env.NEXT_PUBLIC_DEFAULT_NETWORK;
-  if (fallback && fallback !== "mainnet" && fallback !== "testnet") throw new Error('NEXT_PUBLIC_DEFAULT_NETWORK must be "mainnet" or "testnet".');
+function checkSettings() {
+  const s = JSON.parse(readFileSync(new URL("./src/splidev.json", import.meta.url), "utf8"));
+  const treasury = process.env.NEXT_PUBLIC_SPLIDEV_TREASURY || s.treasury;
+  if (treasury) checkKey(treasury, "src/splidev.json treasury");
+  const bps = Number(process.env.NEXT_PUBLIC_SPLIDEV_PLATFORM_BPS || s.platformBps);
+  if (!Number.isInteger(bps) || bps < 0 || bps > 5000) throw new Error("src/splidev.json platformBps must be a whole number of basis points from 0 to 5000.");
+  const fee = String(process.env.NEXT_PUBLIC_SPLIDEV_LAUNCH_FEE_SOL ?? s.launchFeeSol);
+  if (!/^\d+(\.\d{1,9})?$/.test(fee)) throw new Error('src/splidev.json launchFeeSol must be a SOL amount like "0.01".');
+  if (!Array.isArray(s.hidden)) throw new Error("src/splidev.json hidden must be a list of mint addresses.");
+  s.hidden.forEach((m, i) => checkKey(m, `src/splidev.json hidden[${i}]`));
+  if (s.officialToken) checkKey(s.officialToken, "src/splidev.json officialToken");
 }
 
-checkPins();
-
-const X402_MODULES = [
-  "@x402/core/client",
-  "@x402/core/schemas",
-  "@x402/core/server",
-  "@x402/evm",
-  "@x402/evm/auth-capture/client",
-  "@x402/evm/batch-settlement/client",
-  "@x402/evm/exact/client",
-  "@x402/evm/exact/server",
-  "@x402/evm/exact/v1/client",
-  "@x402/evm/upto/client",
-  "@x402/evm/upto/server",
-  "@x402/express",
-  "@x402/extensions/bazaar",
-  "@x402/extensions/builder-code",
-  "@x402/fetch",
-  "@x402/svm/exact/client",
-  "@x402/svm/exact/server",
-  "@x402/svm/exact/v1/client",
-  "@x402/svm/upto/client",
-  "@x402/svm/upto/server",
-];
+checkSettings();
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -93,11 +43,9 @@ const nextConfig = {
     ];
   },
   webpack: (config) => {
-    // Optional deps pulled in by WalletConnect / MetaMask SDK that are not needed in the browser.
-    config.externals.push("pino-pretty", "lokijs", "encoding");
-    config.resolve.fallback = { ...config.resolve.fallback, "@react-native-async-storage/async-storage": false };
-    // x402 payment helpers are optional peers of the Base Account connector's CDP SDK; the app never uses them.
-    config.resolve.alias = { ...config.resolve.alias, ...Object.fromEntries(X402_MODULES.map((m) => [m, false])) };
+    // Optional dependencies of the Solana libraries that the browser doesn't need.
+    config.externals.push("pino-pretty", "encoding");
+    config.resolve.fallback = { ...config.resolve.fallback, fs: false, os: false, path: false };
     return config;
   },
 };
