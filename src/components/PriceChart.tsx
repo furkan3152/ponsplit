@@ -26,7 +26,7 @@ function withAlpha(color: string, alpha: number) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
-/** ETH volume, short: 0.1234, 12.3, <0.0001. */
+/** SOL volume, short: 0.1234, 12.3, <0.0001. */
 function volume(n: number) {
   if (n === 0) return "0";
   if (n < 0.0001) return "<0.0001";
@@ -36,7 +36,7 @@ function volume(n: number) {
 type Ohlcv = { o: number; h: number; l: number; c: number; v?: number };
 
 /**
- * Candles from on-chain trades (the pons curve, then its Uniswap v4 pool), drawn like a terminal: mono type, dotted grid, volume at the
+ * Candles from on-chain trades (the pump.fun curve, then its pool), drawn like a terminal: mono type, dotted grid, volume at the
  * foot. Up candles have a faint body and down candles a solid one, so direction never relies on
  * red/green alone (deuteranopia), and the crosshair readout spells out OHLC. Colors come from the
  * theme's CSS variables; the chart is rebuilt whenever the theme changes.
@@ -59,7 +59,7 @@ export function PriceChart({
   const series = useRef<ISeriesApi<"Candlestick">>();
   const volumes = useRef<ISeriesApi<"Histogram">>();
   const volumeColors = useRef({ up: "", down: "" });
-  // A range, as on pons: the last 5 minutes, hour, 6 hours, day, or everything loaded.
+  // A range, as on pump.fun: the last 5 minutes, hour, 6 hours, day, or everything loaded.
   const [range, setRange] = useState<(typeof RANGES)[number]["label"]>("ALL");
   // The window ends now and moves with the clock, so a quiet coin's line keeps reaching the present.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
@@ -187,11 +187,11 @@ export function PriceChart({
         <div className="min-w-0">
           <div className="eyebrow flex items-center gap-2">
             <span aria-hidden className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" />
-            {symbol ? `$${symbol} / ETH` : "Price"}
+            {symbol ? `$${symbol} / SOL` : "Price"}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <span className="num text-[26px] font-semibold leading-none tracking-tight sm:text-[30px]">
-              <Flash value={last?.close}>{last ? `${formatPrice(last.close)} ETH` : "–"}</Flash>
+              <Flash value={last?.close}>{last ? `${formatPrice(last.close)} SOL` : "–"}</Flash>
             </span>
             {first && !hover ? (
               <span className={`num rounded-full px-2 py-1 text-[11.5px] font-semibold leading-none ${change >= 0 ? "bg-up-soft text-up-ink" : "bg-down-soft text-down-ink"}`}>
@@ -206,7 +206,7 @@ export function PriceChart({
                 <Readout k="H" v={formatPrice(shown.h)} />
                 <Readout k="L" v={formatPrice(shown.l)} />
                 <Readout k="C" v={formatPrice(shown.c)} />
-                {shown.v !== undefined ? <Readout k="Vol" v={`${volume(shown.v)} Ξ`} /> : null}
+                {shown.v !== undefined ? <Readout k="Vol" v={`${volume(shown.v)} SOL`} /> : null}
               </>
             ) : (
               <span>No trades yet</span>

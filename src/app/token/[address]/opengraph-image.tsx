@@ -1,13 +1,12 @@
 import { ImageResponse } from "next/og";
 import { LOGO_DATA_URL } from "@/lib/logo-svg";
-import { compact, formatEth, pct, progressText } from "@/lib/format";
+import { compact, formatSol, pct, progressText } from "@/lib/format";
 import { safeUrl } from "@/lib/metadata";
 import { fetchImageDataUrl } from "@/lib/safe-image";
-import { DEFAULT_NETWORK } from "@/lib/networks";
-import { fetchCoin } from "@/lib/server-token";
+import { coinView } from "@/lib/solana/server";
 
 export const runtime = "nodejs";
-export const alt = "Coin on SplitEarn";
+export const alt = "Coin on Splidev";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -23,9 +22,7 @@ const LIVE = { "cache-control": "public, max-age=300, stale-while-revalidate=600
 const MISS = { "cache-control": "no-store" };
 
 export default async function TokenOgImage({ params }: { params: { address: string } }) {
-  // Crawlers carry no cookie: look on the default network first, then the other one.
-  const found = await fetchCoin(params.address, DEFAULT_NETWORK);
-  const t = found?.coin;
+  const t = await coinView(params.address).catch(() => null);
   const logo = LOGO_DATA_URL;
 
   if (!t) {
@@ -34,25 +31,24 @@ export default async function TokenOgImage({ params }: { params: { address: stri
         <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f5f7", fontSize: 64, fontWeight: 800, color: "#1d1d1f", gap: 24 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={logo} width={96} height={96} alt="" />
-          SplitEarn
+          Splidev
         </div>
       ),
       { ...size, headers: MISS }
     );
   }
 
-  const logoUrl = safeUrl(t.logo);
+  const logoUrl = safeUrl(t.image);
   const coinImage = logoUrl ? await fetchImageDataUrl(logoUrl) : null;
   const initials = t.symbol.slice(0, 3).toUpperCase();
-  const testnet = found.network.isTestnet;
+  const accountsBps = 10_000 - t.platformBps;
 
   const card = (image: string | null) => (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: "#f5f5f7", padding: 60, color: "#1d1d1f" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 30, fontWeight: 700 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logo} width={48} height={48} alt="" />
-        SplitEarn
-        {testnet ? <span style={{ marginLeft: 12, fontSize: 22, fontWeight: 700, background: "#ffd84d", border: "3px solid #1d1d1f", borderRadius: 999, padding: "4px 14px" }}>TESTNET</span> : null}
+        Splidev
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 36, marginTop: 44 }}>
         {image ? (
@@ -69,19 +65,19 @@ export default async function TokenOgImage({ params }: { params: { address: stri
         </div>
       </div>
       <div style={{ display: "flex", gap: 14, marginTop: 40, flexWrap: "wrap" }}>
-        {t.handles.slice(0, 5).map((h, i) => (
-          <div key={h} style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "3px solid #1d1d1f", borderRadius: 999, padding: "10px 22px", fontSize: 28, fontWeight: 700 }}>
+        {t.recipients.slice(0, 5).map((r, i) => (
+          <div key={r.githubId} style={{ display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "3px solid #1d1d1f", borderRadius: 999, padding: "10px 22px", fontSize: 28, fontWeight: 700 }}>
             <div style={{ width: 18, height: 18, borderRadius: 999, background: COLORS[i % COLORS.length], border: "2px solid #1d1d1f" }} />
-            {`${h} · ${pct(t.recipients[i]?.bps ?? 0)}`}
+            {`${r.login ?? `#${r.githubId}`} · ${pct(Math.round((r.shareBps / accountsBps) * 10_000))}`}
           </div>
         ))}
       </div>
       <div style={{ display: "flex", gap: 48, marginTop: "auto", fontSize: 30, color: "#6e6e73" }}>
         <div style={{ display: "flex" }}>
-          mcap<b style={{ color: "#1d1d1f", marginLeft: 10 }}>{compact(t.marketCap)} ETH</b>
+          mcap<b style={{ color: "#1d1d1f", marginLeft: 10 }}>{compact(t.marketCap)} SOL</b>
         </div>
         <div style={{ display: "flex" }}>
-          split so far<b style={{ color: "#1d1d1f", marginLeft: 10 }}>{formatEth(t.accountsEarned, 4)} ETH</b>
+          to split<b style={{ color: "#1d1d1f", marginLeft: 10 }}>{formatSol(t.pendingFees, 4)} SOL</b>
         </div>
         <div style={{ display: "flex" }}>
           {t.graduated ? <b style={{ color: "#12a150" }}>Graduated</b> : <span>{progressText(t.progress)}% bonded</span>}

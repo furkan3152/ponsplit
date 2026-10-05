@@ -1,20 +1,17 @@
 import type { Metadata } from "next";
-import { visitorNetworkId } from "@/lib/server-network";
-import { fetchCoin } from "@/lib/server-token";
+import { coinView } from "@/lib/solana/server";
 
 export async function generateMetadata({ params }: { params: { address: string } }): Promise<Metadata> {
-  const found = await fetchCoin(params.address, visitorNetworkId());
-  if (!found) return { title: "Coin" };
-  const { coin: t, description: about, network } = found;
-  // Launch-time usernames (the fees follow the account ids), so written without "@".
-  const who = t.handles.join(", ");
-  const description = about.trim().slice(0, 300) || `Every trade of $${t.symbol} pays ${who}.`;
-  const title = `${t.name} ($${t.symbol})${network.isTestnet ? " · testnet" : ""}`;
+  const t = await coinView(params.address).catch(() => null);
+  if (!t) return { title: "Coin" };
+  const who = t.recipients.map((r) => r.login ?? `#${r.githubId}`).join(", ");
+  const description = (t.description ?? "").trim().slice(0, 300) || `Every trade of $${t.symbol} pays ${who} on GitHub.`;
+  const title = `${t.name} ($${t.symbol})`;
   return {
     title,
     description,
-    openGraph: { title: `${title} on SplitEarn`, description },
-    twitter: { card: "summary_large_image", title: `${title} on SplitEarn`, description },
+    openGraph: { title: `${title} on Splidev`, description },
+    twitter: { card: "summary_large_image", title: `${title} on Splidev`, description },
   };
 }
 
