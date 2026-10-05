@@ -31,6 +31,8 @@ for (const ix of ixs) {
   keys.set(ix.programId.toBase58(), true);
   for (const k of ix.keys) keys.set(k.pubkey.toBase58(), true);
 }
+// Every address pump's global config names (fee recipients are picked at random per trade).
+for (const v of Object.values(global)) for (const k of [v].flat()) if (k instanceof PublicKey && !k.equals(PublicKey.default)) keys.set(k.toBase58(), true);
 // Programs the flows reach through CPI.
 for (const p of [
   "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P", // pump
