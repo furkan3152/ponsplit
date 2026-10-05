@@ -1,8 +1,8 @@
 import "server-only";
 import { isValidLogin, normalizeLogin } from "./github-handles";
 
-/** A GitHub account as Splidev shows it. `id` is GitHub's permanent numeric id: pump.fun's fee account is keyed by it. */
-export type GithubProfile = { id: string; login: string; name: string; avatar: string; type: "User" | "Organization" };
+import type { GithubProfile } from "./github-types";
+export type { GithubProfile };
 
 const TTL_MS = 10 * 60 * 1000;
 const MISS_TTL_MS = 60 * 1000;

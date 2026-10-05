@@ -1,4 +1,4 @@
-import type { Trade } from "./types";
+import type { Trade } from "./solana/trades";
 
 export type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number };
 
@@ -29,7 +29,7 @@ export function buildCandles(trades: readonly Trade[], intervalSec: number, wind
     if (!t.timestamp || !(t.price > 0)) continue;
     const time = Math.floor(t.timestamp / intervalSec) * intervalSec;
     const price = t.price;
-    const vol = Number(t.ethAmount) / 1e18;
+    const vol = Number(t.sol) / 1e9;
     if (time < start) {
       prevClose = price;
       continue;
