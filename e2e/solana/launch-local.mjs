@@ -11,7 +11,7 @@ import BN from "bn.js";
 const treasury = Keypair.generate();
 process.env.NEXT_PUBLIC_SPLIDEV_TREASURY = treasury.publicKey.toBase58();
 const require = createRequire(import.meta.url);
-const { launchTransactions, buyTransaction, sellTransaction, distributeTransaction, githubFeeAccount, listCoins, readCoin, githubClaimable, PUMP_FEES_PROGRAM_ID } = require("./.build/lib.cjs");
+const { launchTransactions, buyTransaction, sellTransaction, distributeTransaction, githubFeeAccount, listCoins, readCoin, githubClaimable, recentTrades, PUMP_FEES_PROGRAM_ID } = require("./.build/lib.cjs");
 const { OnlinePumpSdk, PUMP_SDK, feeSharingConfigPda } = require("@pump-fun/pump-sdk");
 
 const c = new Connection(process.env.RPC || "http://127.0.0.1:8899", "confirmed");
@@ -94,6 +94,11 @@ const { tx: sellTx, lamports: got } = await sellTransaction(c, traders[0].public
 await send(sellTx, [traders[0]]);
 ok(`trader 1 sold half for ~${Number(got) / LAMPORTS_PER_SOL} SOL`);
 
+const trades = await recentTrades(c, mint.publicKey, false);
+const kinds = trades.map((t) => t.kind).join(",");
+if (kinds !== "sell,buy,buy,buy") fail(`the trade history reads ${kinds}`);
+if (trades.some((t) => !(t.price > 0) || t.creatorFee <= 0n || t.sol <= 0n)) fail("a trade without price, SOL or creator fee");
+ok(`trade history: ${trades.length} trades (first buy, 2 buys, 1 sell), creator fees ${trades.map((t) => t.creatorFee).join("/")} lamports`);
 const holders = cfg.shareholders.map((h) => h.address);
 const balancesBefore = await Promise.all(holders.map((h) => c.getBalance(h)));
 const payer = Keypair.generate();
