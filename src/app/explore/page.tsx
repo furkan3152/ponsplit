@@ -3,12 +3,11 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { isAddress } from "viem";
 import { EmptyState } from "@/components/EmptyState";
 import { KingCard } from "@/components/KingCard";
 import { TokenCard } from "@/components/TokenCard";
 import { Reveal } from "@/components/motion";
-import { useActivity, useCoins, useDescriptions, useNow } from "@/lib/hooks";
+import { useCoins, useNow } from "@/lib/hooks";
 import { sortCoins, SORTS, type Sort } from "@/lib/sort-coins";
 import { HeadingDoodle } from "@/components/art/Doodles";
 
@@ -25,7 +24,6 @@ function Explore() {
   const params = useSearchParams();
   const [limit, setLimit] = useState(60);
   const coins = useCoins();
-  const activity = useActivity();
   // This boundary hydrates after the rest of the page, and the shared snapshot can be back by then:
   // render what the server did (loading) until hydrated, so the two match.
   const [hydrated, setHydrated] = useState(false);
@@ -38,24 +36,21 @@ function Explore() {
   const [sort, setSort] = useState<Sort>("trending");
   useNow(15_000);
 
-  const trades24h = hydrated ? activity.data?.tradesByToken : undefined;
   const king = useMemo(() => {
-    const bonding = (tokens ?? []).filter((t) => t.phase === "curve" && t.raised > 0n);
+    const bonding = (tokens ?? []).filter((t) => !t.graduated && t.progress > 0);
     return bonding.sort((a, b) => b.progress - a.progress)[0];
   }, [tokens]);
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase().replace(/^[@$]/, "");
     const filtered = (tokens ?? []).filter(
-      (t) => !q || t.name.toLowerCase().includes(q) || t.symbol.toLowerCase().includes(q) || t.token.toLowerCase() === q || t.handles.some((h) => h.includes(q))
+      (t) => !q || t.name.toLowerCase().includes(q) || t.symbol.toLowerCase().includes(q) || t.token.toLowerCase() === q || t.recipients.some((r) => r.login?.toLowerCase().includes(q))
     );
-    return sortCoins(filtered, sort, trades24h);
-  }, [tokens, query, sort, trades24h]);
+    return sortCoins(filtered, sort);
+  }, [tokens, query, sort]);
   const shown = list.slice(0, limit);
   const hasMore = list.length > limit;
-  const addressQuery = isAddress(query.trim()) ? query.trim() : null;
-  const described = useMemo(() => [...shown.map((t) => t.token), ...(king ? [king.token] : [])], [shown, king]);
-  const descriptions = useDescriptions(described);
+  const addressQuery = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(query.trim()) ? query.trim() : null;
 
   return (
     <div className="space-y-8">
@@ -84,7 +79,7 @@ function Explore() {
 
       {king && !query ? (
         <Reveal as="section">
-          <KingCard key={king.token} t={king} description={descriptions?.get(king.token.toLowerCase())} />
+          <KingCard key={king.token} t={king} />
         </Reveal>
       ) : null}
 
@@ -113,7 +108,7 @@ function Explore() {
           <Grid>
             {shown.map((t, i) => (
               <Reveal key={t.token} delay={Math.min(i, 8) * 50}>
-                <TokenCard t={t} description={descriptions?.get(t.token.toLowerCase())} />
+                <TokenCard t={t} />
               </Reveal>
             ))}
           </Grid>

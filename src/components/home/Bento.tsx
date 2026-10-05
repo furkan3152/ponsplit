@@ -1,16 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { formatEther } from "viem";
 import { ClaimArt, TokenSticker } from "@/components/art";
 import { ArrowIcon } from "@/components/icons";
 import { CountUp } from "@/components/motion";
-import { XAvatar } from "@/components/XAvatar";
+import { GithubAvatar } from "@/components/GithubAvatar";
 import { coinImage } from "@/lib/coin-ui";
-import { compact, formatEth, shortAddress, timeAgo } from "@/lib/format";
-import { useXProfiles, type Payout } from "@/lib/hooks";
-import { explorerLink, type Network } from "@/lib/networks";
-import type { Coin } from "@/lib/types";
+import { githubProfileUrl } from "@/lib/github-handles";
+import { compact, formatSol, timeAgo } from "@/lib/format";
+import type { Coin, Earner } from "@/lib/types";
 
 /** A bento card: a label at the foot and an "Open" link, like the reference's panels. */
 export function Panel({
@@ -58,7 +56,7 @@ export function CoinStrip({ coins, loading }: { coins: Coin[]; loading: boolean 
             <TokenSticker key={s} seed={`empty-${s}`} size={56} className={i === 1 ? "-translate-y-2" : ""} />
           ))}
         </div>
-        <p className="text-[15px] font-semibold">No coins on this network yet.</p>
+        <p className="text-[15px] font-semibold">No coins yet.</p>
         <Link href="/create" className="btn-primary px-4 py-2 text-[13px]">
           Launch the first one
         </Link>
@@ -90,31 +88,28 @@ function CoinCover({ t }: { t: Coin }) {
         </div>
       )}
       <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/85 via-black/40 to-transparent" aria-hidden />
-      <span className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 font-mono text-[10px] text-white backdrop-blur">{timeAgo(t.createdAt)}</span>
+      {t.createdAt ? <span className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-0.5 font-mono text-[10px] text-white backdrop-blur">{timeAgo(t.createdAt)}</span> : null}
       <div className="absolute inset-x-0 bottom-0 space-y-1.5 p-3 text-white">
         <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-black/55 py-0.5 pl-0.5 pr-2 backdrop-blur">
-          <XAvatar handle={t.handles[0]} size={18} photo={false} className="!ring-0" />
-          <span className="truncate text-[11px] font-semibold">@{t.handles[0]}</span>
-          {t.handles.length > 1 ? <span className="text-[10px] text-white/70">+{t.handles.length - 1}</span> : null}
+          <GithubAvatar id={t.recipients[0]?.githubId} login={t.recipients[0]?.login} size={18} className="!ring-0" />
+          <span className="truncate text-[11px] font-semibold">@{t.recipients[0]?.login ?? t.recipients[0]?.githubId}</span>
+          {t.recipients.length > 1 ? <span className="text-[10px] text-white/70">+{t.recipients.length - 1}</span> : null}
         </span>
         <div className="truncate text-[13px] font-semibold">
           {t.name} <span className="font-mono text-[10px] text-white/60">{t.symbol}</span>
         </div>
         <div className="flex items-baseline gap-2 font-mono text-[11px]">
-          <span className="font-semibold">{compact(t.marketCap)} Ξ</span>
+          <span className="font-semibold">{compact(t.marketCap)} SOL</span>
           <span className="text-white/55">MC</span>
-          <span className="ml-auto font-semibold text-[#9dffb8]">{formatEth(t.accountsEarned, 3)}</span>
-          <span className="text-white/55">split</span>
+          <span className="ml-auto font-semibold text-[#9dffb8]">{t.graduated ? "graduated" : `${Math.floor(t.progress)}%`}</span>
         </div>
       </div>
     </Link>
   );
 }
 
-/** The latest payouts: an X account claiming its share, with the wallet it went to. */
-export function PayoutFeed({ n, payouts, loading }: { n: Network; payouts: Payout[]; loading: boolean }) {
-  const handles = payouts.map((p) => p.handle).filter((h): h is string => Boolean(h));
-  const profiles = useXProfiles(Array.from(new Set(handles)));
+/** The coins closest to graduating, with their GitHub developers. */
+export function Leaderboard({ coins, loading }: { coins: Coin[]; loading: boolean }) {
   if (loading) {
     return (
       <div className="space-y-2 p-4">
@@ -124,75 +119,58 @@ export function PayoutFeed({ n, payouts, loading }: { n: Network; payouts: Payou
       </div>
     );
   }
-  if (!payouts.length) {
+  if (!coins.length) {
     return (
       <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-2 p-6 text-center">
         <ClaimArt className="h-[96px] w-auto" />
-        <p className="text-[15px] font-semibold">No payouts yet.</p>
-        <p className="max-w-[260px] text-[13px] text-ink-2">When an X account claims its share of a coin&apos;s fees, it shows up here.</p>
+        <p className="text-[15px] font-semibold">Nothing graduating yet.</p>
+        <p className="max-w-[260px] text-[13px] text-ink-2">Coins that fill their bonding curve move to pump.fun&apos;s pool and show up here.</p>
       </div>
     );
   }
   return (
     <ul className="space-y-2 p-4">
-      {payouts.slice(0, 4).map((p) => {
-        const prof = p.handle ? profiles.data?.[p.handle] : undefined;
-        return (
-          <li key={`${p.txHash}-${p.xId}`}>
-            <a
-              href={explorerLink(n, "tx", p.txHash)}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-3 rounded-2xl border border-line bg-card-2 px-4 py-3 transition hover:border-line-2"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="num text-[20px] font-semibold leading-tight">{formatEth(p.amount, 4)} Ξ</div>
-                <div className="truncate text-[12.5px] text-ink-2">
-                  claimed by <span className="font-semibold text-ink">{p.handle ? `@${p.handle}` : `account #${p.xId}`}</span>
-                </div>
+      {coins.slice(0, 4).map((t) => (
+        <li key={t.token}>
+          <Link href={`/token/${t.token}`} className="flex items-center gap-3 rounded-2xl border border-line bg-card-2 px-4 py-3 transition hover:border-line-2">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[15px] font-semibold">
+                {t.name} <span className="font-mono text-[11px] text-ink-3">${t.symbol}</span>
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                {p.handle ? (
-                  <XAvatar handle={p.handle} image={prof?.image} photo={Boolean(prof && prof.id === p.xId.toString())} size={30} />
-                ) : (
-                  <TokenSticker seed={`x:${p.xId}`} size={30} className="rounded-full" />
-                )}
-                <span className="text-ink-3" aria-hidden>
-                  ⇄
-                </span>
-                <TokenSticker seed={`wallet:${p.to}`} size={30} className="rounded-full" />
-              </div>
-              <span className="w-10 shrink-0 text-right font-mono text-[11px] text-ink-3">{p.timestamp ? timeAgo(p.timestamp) : ""}</span>
-            </a>
-          </li>
-        );
-      })}
+              <div className="truncate text-[12.5px] text-ink-2">pays {t.recipients.map((r) => `@${r.login ?? r.githubId}`).join(", ")}</div>
+            </div>
+            <span className={`num shrink-0 text-[15px] font-semibold ${t.graduated ? "text-up-ink" : ""}`}>{t.graduated ? "✓" : `${Math.floor(t.progress)}%`}</span>
+          </Link>
+        </li>
+      ))}
     </ul>
   );
 }
 
-/** One big number: everything split to X accounts so far, and what's behind it. */
-export function SplitTotal({ split, coins, volume24h }: { split?: bigint; coins?: bigint; volume24h?: bigint }) {
+/** One big number: what the GitHub accounts behind Splidev coins have earned on pump.fun. */
+export function EarnedTotal({ earners, coins }: { earners?: Earner[]; coins?: number }) {
+  const earned = earners?.reduce((a, e) => a + e.claimable + e.claimed, 0n);
+  const devs = earners?.length;
   return (
     <div className="flex h-full flex-col justify-between gap-6 p-5">
       <div>
-        <div className="eyebrow">Split to X accounts</div>
+        <div className="eyebrow">Earned by GitHub devs</div>
         <div className="num mt-2 text-[40px] font-semibold leading-none tracking-tight">
-          <CountUp value={split !== undefined ? Number(formatEther(split)) : undefined} format={(v) => `${v.toFixed(4)} Ξ`} />
+          <CountUp value={earned !== undefined ? Number(earned) / 1e9 : undefined} format={(v) => `${v.toFixed(3)} SOL`} />
         </div>
-        <p className="mt-2 text-[13px] text-ink-2">Every creator fee since launch, on the curve and in the pools.</p>
+        <p className="mt-2 text-[13px] text-ink-2">In their pump.fun GitHub accounts: claimed plus waiting, from every coin that pays them.</p>
       </div>
       <dl className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl bg-card-2 px-3 py-2.5">
           <dt className="eyebrow">Coins</dt>
           <dd className="num mt-1 text-[18px] font-semibold">
-            <CountUp value={coins !== undefined ? Number(coins) : undefined} format={(v) => compact(Math.round(v))} />
+            <CountUp value={coins} format={(v) => compact(Math.round(v))} />
           </dd>
         </div>
         <div className="rounded-2xl bg-card-2 px-3 py-2.5">
-          <dt className="eyebrow">24h volume</dt>
+          <dt className="eyebrow">Developers</dt>
           <dd className="num mt-1 text-[18px] font-semibold">
-            <CountUp value={volume24h !== undefined ? Number(formatEther(volume24h)) : undefined} format={(v) => `${compact(v, 3)} Ξ`} />
+            <CountUp value={devs} format={(v) => compact(Math.round(v))} />
           </dd>
         </div>
       </dl>
@@ -200,49 +178,44 @@ export function SplitTotal({ split, coins, volume24h }: { split?: bigint; coins?
   );
 }
 
-/** The X accounts coins pay the most, with their real profile photos. */
-export function TopEarners({ earners }: { earners: { handle: string; xId: bigint; earned: bigint; coins: number }[] }) {
-  const profiles = useXProfiles(earners.map((e) => e.handle));
+/** The GitHub accounts Splidev coins pay, by what they have earned on pump.fun. */
+export function TopEarners({ earners }: { earners: Earner[] }) {
   if (!earners.length) {
     return (
       <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 p-6 text-center">
         <p className="text-[15px] font-semibold">Nobody is earning yet.</p>
-        <p className="max-w-[240px] text-[13px] text-ink-2">Launch a coin for your favourite accounts and they start earning from its first trade.</p>
+        <p className="max-w-[240px] text-[13px] text-ink-2">Launch a coin for the developers you love and they start earning from its first trade.</p>
       </div>
     );
   }
   const [top, ...rest] = earners;
-  const tp = profiles.data?.[top.handle];
-  const photo = (h: string, id: bigint) => {
-    const p = profiles.data?.[h];
-    return { image: p?.image, ok: Boolean(p && p.id === id.toString()) };
-  };
+  const name = (e: Earner) => e.login ?? `#${e.githubId}`;
   return (
     <div className="space-y-3 p-5">
       <div className="eyebrow">Paying out</div>
       <a
-        href={`https://x.com/${top.handle}`}
+        href={top.login ? githubProfileUrl(top.login) : undefined}
         target="_blank"
         rel="noreferrer"
         className="flex items-center gap-3 rounded-2xl border border-line bg-card-2 p-3 transition hover:border-line-2"
       >
-        <XAvatar handle={top.handle} image={photo(top.handle, top.xId).image} photo={photo(top.handle, top.xId).ok} size={44} />
+        <GithubAvatar id={top.githubId} login={top.login} size={44} />
         <div className="min-w-0">
-          <div className="truncate text-[15px] font-semibold">{tp?.name || `@${top.handle}`}</div>
-          <div className="truncate font-mono text-[12px] text-ink-3">@{top.handle}</div>
+          <div className="truncate text-[15px] font-semibold">@{name(top)}</div>
+          <div className="truncate font-mono text-[12px] text-ink-3">GitHub</div>
         </div>
       </a>
-      <div className="num text-[30px] font-semibold leading-none">{formatEth(top.earned, 4)} Ξ</div>
+      <div className="num text-[30px] font-semibold leading-none">{formatSol(top.claimable + top.claimed, 4)} SOL</div>
       <div className="text-[12.5px] text-ink-2">
-        earned from {top.coins} coin{top.coins === 1 ? "" : "s"}
+        earned on pump.fun · {top.coins} Splidev coin{top.coins === 1 ? "" : "s"}
       </div>
       {rest.length ? (
         <ul className="space-y-1.5 border-t border-line pt-3">
           {rest.slice(0, 3).map((e) => (
-            <li key={e.xId.toString()} className="flex items-center gap-2 text-[13px]">
-              <XAvatar handle={e.handle} image={photo(e.handle, e.xId).image} photo={photo(e.handle, e.xId).ok} size={22} />
-              <span className="truncate">@{e.handle}</span>
-              <span className="num ml-auto text-ink-2">{formatEth(e.earned, 4)} Ξ</span>
+            <li key={e.githubId} className="flex items-center gap-2 text-[13px]">
+              <GithubAvatar id={e.githubId} login={e.login} size={22} />
+              <span className="truncate">@{name(e)}</span>
+              <span className="num ml-auto text-ink-2">{formatSol(e.claimable + e.claimed, 4)} SOL</span>
             </li>
           ))}
         </ul>
@@ -251,15 +224,14 @@ export function TopEarners({ earners }: { earners: { handle: string; xId: bigint
   );
 }
 
-/** Where a fee goes, with the live contracts: the reference's "detection" panel, for pons. */
-export function FeePath({ n, platformPct }: { n: Network; platformPct: number }) {
+/** Where a fee goes: pump.fun's fees, then the creator part's split. */
+export function FeePath({ platformPct }: { platformPct: number }) {
   const rows: [string, string][] = [
-    ["1%", "pons fee on every trade"],
-    ["30%", "of it to pons"],
-    ["70%", "to the coin's creator fee → SplitEarn"],
-    [`${100 - platformPct}%`, "of that to the X accounts"],
-    [`${platformPct}%`, "of that to SplitEarn"],
-    ["0-10%", "creator tax, 100% to the accounts"],
+    ["fee", "pump.fun's fee on every trade"],
+    ["part", "of it is the coin's creator fee"],
+    [`${100 - platformPct}%`, "of that to the GitHub devs"],
+    [`${platformPct}%`, "of that to Splidev"],
+    ["∞", "fixed at launch, nobody can change it"],
   ];
   return (
     <div className="p-5 font-mono text-[12px]">
