@@ -18,14 +18,14 @@ const SLOTS: { x: number; y: number; color: string; hair: Hair; hairColor: strin
   { x: 72, y: 318, color: C.orange, hair: 4, hairColor: C.sky, bend: 38, face: "happy" },
 ];
 
-/** A real X account the coin pays: its username, share, and profile photo when known. */
+/** A real GitHub developer the coin pays: its username, share, and profile photo when known. */
 export type MachineAccount = { handle: string; pct: number; image?: string };
 
 const r2 = (n: number) => Math.round(n * 10) / 10;
 
 /**
  * The home hero: a coin that keeps splitting. Every trade's fee leaves the coin as a stream of
- * drops, one stream per X account, sized by its share. Pure SVG; motion stops for visitors who
+ * drops, one stream per developer, sized by its share. Pure SVG; motion stops for visitors who
  * ask for less of it.
  */
 export function SplitMachine({ className, accounts, caption = "CREATOR FEES, EVERY TRADE" }: { className?: string; accounts: MachineAccount[]; caption?: string }) {

@@ -54,7 +54,7 @@ export function buildCandles(trades: readonly Trade[], intervalSec: number, wind
   return candles.length > MAX_CANDLES ? candles.slice(-MAX_CANDLES) : candles;
 }
 
-/** The chart's ranges, as on pons: a stretch of time and the candle size that suits it. */
+/** The chart's ranges, as on pump.fun: a stretch of time and the candle size that suits it. */
 export const RANGES = [
   { label: "5M", span: 5 * 60, candle: 10 },
   { label: "1H", span: 60 * 60, candle: 60 },

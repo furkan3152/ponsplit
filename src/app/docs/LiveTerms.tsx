@@ -1,29 +1,21 @@
-"use client";
-
-import { formatEther } from "viem";
-import { useLaunchTerms } from "@/lib/hooks";
-import { useNetwork } from "@/lib/network-context";
+import { LAUNCH_FEE_LAMPORTS, PLATFORM_BPS } from "@/lib/solana/config";
 
 const pct = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 3 })}%`;
+/** pump.fun's bonding curve fees (its fee config on mainnet, October 2026). */
+const CURVE_PROTOCOL = 0.95;
+const CURVE_CREATOR = 0.3;
 
-/** pons's fee and SplitEarn's share, as the live launcher reports them (20% until they load). */
-function useShares() {
-  const { data } = useLaunchTerms();
-  const splitEarn = (data?.platformShareBps ?? 2000) / 100;
-  return { terms: data, splitEarn, accounts: 100 - splitEarn };
-}
-
-/** The fee table: what each trade pays and where every part goes, read from the live contracts. */
+/** The fee table: what a curve trade pays and where every part goes. */
 export function FeeTable() {
-  const { splitEarn, accounts } = useShares();
-  const creator = 0.7;
+  const splidev = PLATFORM_BPS / 100;
+  const devs = 100 - splidev;
   const rows: { part: string; ofTrade: string; to: string; strong?: boolean }[] = [
-    { part: "pons fee", ofTrade: pct(1), to: "Every buy and sell, on the curve and in the pool", strong: true },
-    { part: "↳ pons", ofTrade: pct(0.3), to: "30% of the fee, kept by pons" },
-    { part: "↳ creator fee", ofTrade: pct(creator), to: "70% of the fee, paid to the coin's SplitEarn splitter" },
-    { part: "   ↳ X accounts", ofTrade: pct((creator * accounts) / 100), to: `${accounts}% of the creator fee, by the shares set at launch`, strong: true },
-    { part: "   ↳ SplitEarn", ofTrade: pct((creator * splitEarn) / 100), to: `${splitEarn}% of the creator fee` },
-    { part: "creator tax", ofTrade: "0–10%", to: "Optional, chosen at launch: 100% to the X accounts", strong: true },
+    { part: "pump.fun fee", ofTrade: pct(CURVE_PROTOCOL + CURVE_CREATOR), to: "Every buy and sell on the bonding curve", strong: true },
+    { part: "↳ pump.fun", ofTrade: pct(CURVE_PROTOCOL), to: "Kept by pump.fun" },
+    { part: "↳ creator fee", ofTrade: pct(CURVE_CREATOR), to: "Shared through pump.fun's fee sharing, set for good at launch" },
+    { part: "   ↳ GitHub devs", ofTrade: pct((CURVE_CREATOR * devs) / 100), to: `${devs}% of the creator fee, by the shares set at launch`, strong: true },
+    { part: "   ↳ Splidev", ofTrade: pct((CURVE_CREATOR * splidev) / 100), to: `${splidev}% of the creator fee` },
+    { part: "after graduating", ofTrade: "0.05–0.95%", to: "pump.fun's pool sets the creator fee by market cap; same split", strong: true },
   ];
   return (
     <div className="card overflow-hidden">
@@ -52,35 +44,20 @@ export function FeeTable() {
   );
 }
 
-/** A worked example on a 1 ETH trade. */
+/** A worked example on a 1 SOL trade. */
 export function FeeExample() {
-  const { accounts, splitEarn } = useShares();
-  const eth = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 5 })} ETH`;
+  const splidev = PLATFORM_BPS / 100;
+  const s = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 5 })} SOL`;
   return (
     <p className="text-[15px] leading-relaxed text-ink-2">
-      Someone buys for <span className="num text-ink">1 ETH</span> on a coin with no creator tax: the trade pays{" "}
-      <span className="num text-ink">{eth(0.01)}</span> in fees. <span className="num text-ink">{eth(0.003)}</span> goes to pons,{" "}
-      <span className="num text-ink">{eth((0.007 * accounts) / 100)}</span> to the coin&apos;s X accounts and{" "}
-      <span className="num text-ink">{eth((0.007 * splitEarn) / 100)}</span> to SplitEarn. With a 5% creator tax the accounts also get{" "}
-      <span className="num text-ink">{eth(0.05)}</span>.
+      Someone buys for <span className="num text-ink">1 SOL</span> on the curve: the trade pays <span className="num text-ink">{s(0.0125)}</span> in fees.{" "}
+      <span className="num text-ink">{s(0.0095)}</span> goes to pump.fun, <span className="num text-ink">{s((0.003 * (100 - splidev)) / 100)}</span> to the coin&apos;s
+      GitHub developers and <span className="num text-ink">{s((0.003 * splidev) / 100)}</span> to Splidev.
     </p>
   );
 }
 
-/** pons's launch fee, live. */
+/** Splidev's launch fee. */
 export function LaunchFee() {
-  const { terms } = useShares();
-  return <span className="num text-ink">{terms ? `${formatEther(terms.ponsLaunchFee)} ETH` : "a small fee in ETH"}</span>;
-}
-
-/** ", SplitEarn's launch fee (… ETH, paid in a separate transaction just before)", when there is one. */
-export function SplitEarnLaunchFee() {
-  const fee = useNetwork().launchFee;
-  if (!fee) return null;
-  return (
-    <>
-      , SplitEarn&apos;s launch fee (<span className="num text-ink">{formatEther(fee.wei)} ETH</span>, about $2, a separate confirmation just
-      before the launch)
-    </>
-  );
+  return <span className="num text-ink">{(Number(LAUNCH_FEE_LAMPORTS) / 1e9).toLocaleString("en-US", { maximumFractionDigits: 9 })} SOL</span>;
 }
