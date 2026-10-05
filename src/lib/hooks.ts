@@ -109,6 +109,31 @@ export function useTokenBalance(mint: string | undefined) {
   });
 }
 
+/** The Splidev coins a wallet holds (raw balances, 6 decimals). */
+export function useHoldings(owner: string | undefined) {
+  const { connection } = useConnection();
+  const { data: coins } = useCoins();
+  const q = useQuery({
+    queryKey: ["holdings", owner],
+    enabled: Boolean(owner),
+    refetchInterval: 20_000,
+    queryFn: async () => {
+      const r = await connection.getParsedTokenAccountsByOwner(new PublicKey(owner!), { programId: TOKEN_2022_PROGRAM_ID }, "confirmed");
+      const out = new Map<string, bigint>();
+      for (const a of r.value) {
+        const info = (a.account.data as { parsed?: { info?: { mint?: string; tokenAmount?: { amount?: string } } } }).parsed?.info;
+        if (info?.mint && info.tokenAmount?.amount && info.tokenAmount.amount !== "0") out.set(info.mint, (out.get(info.mint) ?? 0n) + BigInt(info.tokenAmount.amount));
+      }
+      return out;
+    },
+  });
+  const holdings = (coins ?? []).flatMap((coin) => {
+    const balance = q.data?.get(coin.token);
+    return balance ? [{ coin, balance }] : [];
+  });
+  return { holdings, isLoading: q.isLoading, error: q.error };
+}
+
 // ------------------------------------------------------------------ small utilities
 
 /** The value, once it has stopped changing for `ms` (use primitives: arrays are new every render). */

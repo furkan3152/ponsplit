@@ -4,18 +4,18 @@ import { Reveal } from "./motion";
 const STEPS = [
   {
     Art: StepLaunch,
-    title: "Launch on pons",
-    body: "Name your coin, add up to ten X accounts and choose how their share is split. It's minted on pons like any pons coin: no code, no liquidity to provide.",
+    title: "Launch on pump.fun",
+    body: "Name your coin, add up to nine GitHub developers and choose their shares. It's a normal pump.fun coin: no code, no liquidity to provide.",
   },
   {
     Art: StepTrade,
     title: "Trade, then graduate",
-    body: "Everyone trades on pons's bonding curve. At 4.2 ETH it graduates the pons way, into a Uniswap v4 pool with liquidity locked for good, and keeps trading here.",
+    body: "Everyone trades on pump.fun's bonding curve, here or on pump.fun. When it sells out, pump.fun moves it to its pool and it keeps trading here.",
   },
   {
     Art: StepSplit,
     title: "Fees split, forever",
-    body: "The coin's creator fees, on the curve and in the pool, go to the X accounts. They prove the account is theirs and claim to any wallet.",
+    body: "The coin's creator fees, on the curve and in the pool, go to the developers' pump.fun GitHub accounts, for good. They sign in with GitHub on pump.fun and claim.",
   },
 ];
 
