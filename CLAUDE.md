@@ -112,13 +112,12 @@ Gotchas:
 - The cloud container can't reach Solana RPCs, pump.fun or api.github.com (proxy 403). Use the
   `solana.yml` workflow (mainnet scripts; pump SDKs installed), `solana-fixtures.yml`, and CI; GitHub
   release downloads and npm work, so the Solana CLI installs locally.
-- Vercel deploys are **held** while `.deploy-hold` exists (scripts/vercel-ignore.sh). Remove it at cutover (owner must confirm).
+- Creating a `.deploy-hold` file holds Vercel deploys (scripts/vercel-ignore.sh skips every build while it exists).
 
-## Deployment state (2026-10-05, Splidev ready, cutover pending)
+## Deployment state (2026-10-05, Splidev live)
 
 - **Vercel**: project `ponsplit` (`prj_K4lYPXiOoIIqWqjNvaJxqqiuBeJI`; the MCP works with the project id and no team
-  slug, the `akdogan1` slug answers 403), domain splitearn.app, auto-deploys the branch, but `.deploy-hold` still holds it on the
-  last SplitEarn build: removing it was blocked as a production deploy until the owner confirms the cutover. Env (production + preview): `NEXT_PUBLIC_SOLANA_RPC_URL` = QuickNode endpoint 671368
+  slug, the `akdogan1` slug answers 403), domain splitearn.app, auto-deploys the branch (`.deploy-hold` removed at cutover, owner confirmed). Env (production + preview): `NEXT_PUBLIC_SOLANA_RPC_URL` = QuickNode endpoint 671368
   (divine-boldest-choice, referrer-locked to splitearn.app, www.splitearn.app, ponsplit.vercel.app), `SOLANA_RPC_URL`
   (sensitive) = QuickNode endpoint 671317 (delicate-wiser-snow, token only), `BLOB_READ_WRITE_TOKEN`. Old EVM env
   (`SIGNER_PRIVATE_KEY`, `ADMIN_ADDRESSES`, `MAINNET_RPC_URL`, `NEXT_PUBLIC_MAINNET_RPC_URL`, `NEXT_PUBLIC_CHAIN`)
