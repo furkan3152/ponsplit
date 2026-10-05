@@ -1,21 +1,11 @@
-import { getAddress, type Address } from "viem";
-import deployment from "../deployment.json";
+import { OFFICIAL_TOKEN as OFFICIAL } from "./solana/config";
 
-/** SplitEarn's own X account: the only social so far. */
-export const X_HANDLE = "SplitEarn";
-export const X_URL = `https://x.com/${X_HANDLE}`;
+/** Splidev's own accounts. Empty until the owner creates them (the links hide themselves). */
+export const X_HANDLE = "";
+export const X_URL = X_HANDLE ? `https://x.com/${X_HANDLE}` : "";
+export const NAME = "Splidev";
 
-/**
- * The official SplitEarn token (its contract address, "CA") on mainnet, once it's launched:
- * `mainnet.officialToken` in src/deployment.json. Until then the home page says it's coming.
- */
-export const OFFICIAL_TOKEN: Address | undefined = (() => {
-  const raw = (deployment as { mainnet?: { officialToken?: string } }).mainnet?.officialToken?.trim();
-  try {
-    return raw ? getAddress(raw) : undefined;
-  } catch {
-    return undefined;
-  }
-})();
+/** The official Splidev token (its mint, "CA"), once launched: `officialToken` in src/splidev.json. */
+export const OFFICIAL_TOKEN = OFFICIAL?.toBase58();
 
-export const isOfficial = (token: string | undefined) => Boolean(OFFICIAL_TOKEN && token && token.toLowerCase() === OFFICIAL_TOKEN.toLowerCase());
+export const isOfficial = (token: string | undefined) => Boolean(OFFICIAL_TOKEN && token === OFFICIAL_TOKEN);
