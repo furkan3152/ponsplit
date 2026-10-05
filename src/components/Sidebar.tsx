@@ -53,7 +53,7 @@ export function Sidebar() {
         <Link href="/" className="group flex min-w-0 items-center gap-2.5" aria-label="Splidev home">
           <LogoMark size={34} className="shrink-0 transition-transform duration-500 group-hover:-rotate-12" />
           <span className="sidebar-label display truncate text-[20px] leading-none">
-            Split<span className="text-neon">Earn</span>
+            Spli<span className="text-neon">dev</span>
           </span>
         </Link>
         <button
