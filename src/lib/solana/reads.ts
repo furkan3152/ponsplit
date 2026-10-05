@@ -168,9 +168,11 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
       if (!p) return;
       const base = tokenAmount(reserves[r++], p.poolBaseTokenAccount);
       const quote = tokenAmount(reserves[r++], p.poolQuoteTokenAccount);
+      // pump.fun's pools price with virtual SOL on top of the real reserve.
+      const effectiveQuote = quote + Number(p.virtualQuoteReserves?.toString() ?? 0);
       const coin = coins[graduated[j]];
       if (base > 0) {
-        coin.price = quote / LAMPORTS / (base / TOKEN_UNITS);
+        coin.price = effectiveQuote / LAMPORTS / (base / TOKEN_UNITS);
         coin.marketCap = coin.price * 1e9;
         coin.liquiditySol = quote / LAMPORTS;
       }

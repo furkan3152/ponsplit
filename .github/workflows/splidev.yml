@@ -28,3 +28,5 @@ jobs:
         run: |
           node e2e/solana/build-lib.mjs
           RPC=http://127.0.0.1:8899 node e2e/solana/launch-local.mjs
+      - name: Graduate to pump.fun's pool, trade there and distribute
+        run: RPC=http://127.0.0.1:8899 node e2e/solana/graduate-local.mjs
