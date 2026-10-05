@@ -1,13 +1,13 @@
 // Full-page screenshots of every page for design review: dark and light, desktop and mobile, each
 // page scrolled through first so scroll reveals have rendered.
 //
-//   BASE=http://localhost:3000 OUT=/tmp/shots TOKEN=0x<a coin> [ONLY=home,token] node screens.mjs
+//   BASE=http://localhost:3000 OUT=/tmp/shots TOKEN=<a mint> [ONLY=home,token] node screens.mjs
 import { chromium } from "playwright";
 const BASE = process.env.BASE || "http://localhost:3000";
 const OUT = process.env.OUT;
 const TOKEN = process.env.TOKEN;
 const only = process.env.ONLY ? process.env.ONLY.split(",") : null;
-const pages = [["home", "/"], ["create", "/create"], ["token", `/token/${TOKEN}`], ["claim", "/claim"], ["me", "/me"], ["how", "/how"], ["setup", "/setup"], ["404", "/nope"]].filter(([n]) => !only || only.includes(n));
+const pages = [["home", "/"], ["create", "/create"], ["token", `/token/${TOKEN}`], ["claim", "/claim"], ["me", "/me"], ["how", "/how"], ["404", "/nope"]].filter(([n]) => !only || only.includes(n));
 const b = await chromium.launch();
 for (const theme of ["dark", "light"]) {
   for (const [vp, size] of [["desktop", { width: 1280, height: 900 }], ["mobile", { width: 390, height: 844 }]]) {

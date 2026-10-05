@@ -30,3 +30,62 @@ jobs:
           RPC=http://127.0.0.1:8899 node e2e/solana/launch-local.mjs
       - name: Graduate to pump.fun's pool, trade there and distribute
         run: RPC=http://127.0.0.1:8899 node e2e/solana/graduate-local.mjs
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx next lint
+      - run: npm test
+      - run: npx next build
+
+  browser:
+    # The site in Chromium against a local validator running pump.fun's programs: launch, trade,
+    # distribute and the claim page, plus every page on desktop and phone widths.
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+      NEXT_PUBLIC_SOLANA_RPC_URL: http://127.0.0.1:8899
+      SOLANA_RPC_URL: http://127.0.0.1:8899
+      SPLIDEV_METADATA_STORE: memory
+      # GitHub lookups (real accounts: torvalds, gaearon) with the job's token, for the API's limits.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install the Solana CLI
+        run: |
+          curl -sSfL https://github.com/anza-xyz/agave/releases/download/v2.3.13/solana-release-x86_64-unknown-linux-gnu.tar.bz2 | tar xj
+          echo "$PWD/solana-release/bin" >> "$GITHUB_PATH"
+      - name: Start a validator with pump.fun's programs
+        run: e2e/solana/validator.sh "$RUNNER_TEMP/ledger"
+      - name: A treasury address for this run
+        run: echo "NEXT_PUBLIC_SPLIDEV_TREASURY=$(node -e 'console.log(require("@solana/web3.js").Keypair.generate().publicKey.toBase58())')" >> "$GITHUB_ENV"
+      - run: npx next build
+      - name: Browser
+        run: |
+          node node_modules/.bin/next start -p 3000 > app.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:3000/ > /dev/null && break; sleep 2; done
+          cd e2e && npm ci && npx playwright install --with-deps chromium
+          mkdir -p shots
+          BASE=http://localhost:3000 RPC=http://127.0.0.1:8899 TREASURY=$NEXT_PUBLIC_SPLIDEV_TREASURY node splidev.mjs
+      - name: Server log
+        if: always()
+        run: tail -n 80 app.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shots
+          path: e2e/shots
