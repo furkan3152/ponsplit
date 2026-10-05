@@ -42,13 +42,14 @@ Vercel ortam değişkenleri:
 - `GITHUB_TOKEN`: GitHub kullanıcı aramaları için (yetkisiz/scope'suz bir token yeterli)
 - `BLOB_READ_WRITE_TOKEN`: coin resimleri ve metadata için Vercel Blob
 
-## Yayına alma (sahibin adımları)
+## Yayın durumu (5 Ekim 2026)
 
-1. Hazine için Phantom/Solflare'de bir Solana adresi kopyala ve bana gönder (yalnızca adres,
-   asla gizli anahtar ya da kelimeler).
-2. Vercel → ponsplit → Settings → Environment Variables: yukarıdaki RPC ve `GITHUB_TOKEN`
-   değerlerini ekle.
-3. Bana "yayına al" de: `.deploy-hold` dosyasını kaldırıp siteyi Splidev'e çeviririm.
+- Site **splitearn.app** üzerinde Splidev olarak yayında.
+- Hazine: `D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm`.
+- RPC: QuickNode. Tarayıcı uç noktası sadece splitearn.app'ten çalışır; sunucu uç noktası gizli.
+- Önerilen adım: GitHub → Settings → Developer settings → Personal access tokens → "Generate new token"
+  (hiçbir izin seçme), çıkan değeri Vercel → ponsplit → Settings → Environment Variables'a `GITHUB_TOKEN`
+  adıyla ekle. Böylece GitHub aramaları saatte 60 yerine 5.000 olur.
 
 ## Geliştirme
 
