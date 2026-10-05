@@ -70,6 +70,12 @@ export function errorMessage(e: unknown): string {
     if (/TooMuchSolRequired|TooLittleSolReceived|ExceededSlippage|0x1772|0x1773|slippage/i.test(logs)) return "The price moved too much. Try again.";
     if (/BondingCurveComplete|0x1775/i.test(logs)) return "This coin just left the curve. Reload the page to trade it on the pool.";
     if (/blockhash not found|block height exceeded/i.test(logs)) return "The network was slow to confirm. Try again.";
+    // A failed simulation's first line says only "Simulation failed."; the program's own error is
+    // more useful (Anchor's "Error Message: …", else the RPC's "Message: …" line).
+    const anchor = logs.match(/Error Message: ([^\n.]+)/)?.[1];
+    if (anchor) return `${anchor}.`;
+    const detail = err.message?.match(/Message: ([^\n]+)/)?.[1];
+    if (/simulation failed/i.test(msg) && detail) return detail.replace(/^Transaction simulation failed: /, "Simulation failed: ");
     return msg;
   }
   return String(e);
