@@ -1,12 +1,11 @@
 {
-  "name": "ponsplit-e2e",
+  "name": "splidev-e2e",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node full.mjs"
+    "test": "node splidev.mjs"
   },
   "dependencies": {
-    "ethers": "^6.13.0",
     "playwright": "1.56.1"
   }
 }
