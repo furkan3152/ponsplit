@@ -1,0 +1,30 @@
+name: Solana script
+
+# Diagnostic: runs a JavaScript (ESM) snippet on the runner against Solana mainnet (read-only, no keys).
+# @solana/web3.js and bs58 are installed in the job; process.env.RPC is the RPC URL.
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: ESM JavaScript to run
+        required: true
+      rpc:
+        description: RPC URL
+        default: https://api.mainnet-beta.solana.com
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run
+        env:
+          SCRIPT: ${{ inputs.script }}
+          RPC: ${{ inputs.rpc }}
+        run: |
+          mkdir s && cd s && npm init -y >/dev/null && npm i -s @solana/web3.js@1 bs58 >/dev/null 2>&1
+          printf '%s' "$SCRIPT" > run.mjs
+          node run.mjs
