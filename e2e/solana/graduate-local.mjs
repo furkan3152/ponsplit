@@ -30,9 +30,13 @@ const whale = Keypair.generate();
 const mint = Keypair.generate();
 await fund(creator.publicKey, 5);
 await fund(whale.publicKey, 200);
-const txs = await lib.launchTransactions(c, { user: creator.publicKey, mint: mint.publicKey, name: "Splidev Grad", symbol: "GRAD", uri: "https://example.com/g.json", githubIds: ["1024025", "810438"], bps: [5000, 5000], firstBuyLamports: 0n });
-for (const [i, tx] of txs.entries()) await send(tx, i === 0 ? [creator, mint] : [creator]);
-ok("launched");
+// Launched in two parts, as when the split step fails and the creator finishes it later.
+const input = { user: creator.publicKey, mint: mint.publicKey, name: "Splidev Grad", symbol: "GRAD", uri: "https://example.com/g.json", githubIds: ["1024025", "810438"], bps: [5000, 5000], firstBuyLamports: 0n };
+await send(await lib.createTransaction(c, input), [creator, mint]);
+if (await lib.readCoin(c, mint.publicKey)) fail("a coin without its split is listed");
+for (const tx of await lib.finishLaunchTransactions(c, creator.publicKey, mint.publicKey, input.githubIds, input.bps)) await send(tx, [creator]);
+if (!(await lib.readCoin(c, mint.publicKey))) fail("the finished launch isn't listed");
+ok("launched in two parts (create, then the split), listed only once the split is set");
 
 const sdk = new OnlinePumpSdk(c);
 for (let i = 0; i < 30; i++) {
