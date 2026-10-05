@@ -75,16 +75,18 @@ async function v0(c: Connection, payer: PublicKey, ixs: TransactionInstruction[]
 /**
  * A launch as transactions to sign together and send in order:
  * 1. pump.fun's create_v2 (the creator is the launching wallet for now) and the first buy;
- * 2. pump.fun GitHub fee accounts for the recipients that don't have one yet (several if needed);
- * 3. pump.fun fee sharing for the coin, set once to Splidev + the GitHub accounts, after which
- *    nobody can change it (pump.fun revokes the admin), and Splidev's launch fee.
+ * 2+. the fee split (see finishLaunchTransactions).
  * The mint keypair signs the first transaction too.
  */
 export async function launchTransactions(c: Connection, input: LaunchInput): Promise<VersionedTransaction[]> {
   if (!TREASURY) throw new Error("Splidev isn't set up yet.");
-  const { user, mint } = input;
-  const shares = shareholders(input.githubIds, input.bps);
+  shareholders(input.githubIds, input.bps); // fail before anything is sent
+  return [await createTransaction(c, input), ...(await finishLaunchTransactions(c, input.user, input.mint, input.githubIds, input.bps))];
+}
 
+/** pump.fun's create_v2 for the coin, with the creator's first buy in the same transaction. */
+export async function createTransaction(c: Connection, input: LaunchInput): Promise<VersionedTransaction> {
+  const { user, mint } = input;
   const create: TransactionInstruction[] = [];
   if (input.firstBuyLamports > 0n) {
     const sdk = new OnlinePumpSdk(c);
@@ -110,17 +112,27 @@ export async function launchTransactions(c: Connection, input: LaunchInput): Pro
   } else {
     create.push(await PUMP_SDK.createV2Instruction({ mint, name: input.name, symbol: input.symbol, uri: input.uri, creator: user, user, mayhemMode: false }));
   }
-  const txs = [await v0(c, user, [...budget(400_000), ...create])];
+  return v0(c, user, [...budget(400_000), ...create]);
+}
 
+/**
+ * The rest of a launch, once the coin exists: pump.fun GitHub fee accounts for the recipients that
+ * don't have one yet, then pump.fun fee sharing set once to Splidev + the GitHub accounts (after
+ * which nobody can change it: pump.fun revokes the admin), with Splidev's launch fee. Also finishes
+ * a launch whose first transaction landed but whose split didn't.
+ */
+export async function finishLaunchTransactions(c: Connection, user: PublicKey, mint: PublicKey, githubIds: string[], bps: number[]): Promise<VersionedTransaction[]> {
+  if (!TREASURY) throw new Error("Splidev isn't set up yet.");
+  const shares = shareholders(githubIds, bps);
+  const txs: VersionedTransaction[] = [];
   // GitHub fee accounts that don't exist yet (pump.fun's distribution pays into existing ones).
   const missing: string[] = [];
-  const infos = await c.getMultipleAccountsInfo(input.githubIds.map(githubFeeAccount));
-  infos.forEach((info, i) => !info && missing.push(input.githubIds[i]));
+  const infos = await c.getMultipleAccountsInfo(githubIds.map(githubFeeAccount));
+  infos.forEach((info, i) => !info && missing.push(githubIds[i]));
   for (let i = 0; i < missing.length; i += 4) {
     const ixs = await Promise.all(missing.slice(i, i + 4).map((id) => PUMP_SDK.createSocialFeePda({ payer: user, userId: id, platform: Platform.GitHub })));
     txs.push(await v0(c, user, [...budget(200_000), ...ixs]));
   }
-
   const sharing = await PUMP_SDK.createFeeSharingConfig({ creator: user, mint, pool: null });
   const update = await PUMP_SDK.updateFeeSharesV2({
     authority: user,
@@ -130,10 +142,25 @@ export async function launchTransactions(c: Connection, input: LaunchInput): Pro
     quoteMint: NATIVE_MINT,
     quoteTokenProgram: TOKEN_PROGRAM_ID,
   });
-  // Splidev's launch fee rides with the fee sharing (create_v2 with a first buy fills the first transaction).
   const fee = LAUNCH_FEE_LAMPORTS > 0n ? [SystemProgram.transfer({ fromPubkey: user, toPubkey: TREASURY, lamports: LAUNCH_FEE_LAMPORTS })] : [];
   txs.push(await v0(c, user, [...budget(400_000), sharing, update, ...fee]));
   return txs;
+}
+
+/** pump.fun's starting curve (from its global config), for previews before a coin exists. */
+export function newCurvePreview(global: PumpGlobal, tokensBought: bigint) {
+  const vt0 = BigInt(global.initialVirtualTokenReserves.toString());
+  const vs0 = BigInt(global.initialVirtualSolReserves.toString());
+  const real0 = BigInt(global.initialRealTokenReserves.toString());
+  const vt1 = vt0 - tokensBought;
+  const vs1 = vt1 > 0n ? (vt0 * vs0) / vt1 : vs0;
+  const price = vt1 > 0n ? Number(vs1) / 1e9 / (Number(vt1) / 1e6) : 0;
+  return {
+    price,
+    marketCap: price * 1e9,
+    progress: real0 > 0n ? Math.min(100, (Number(tokensBought) / Number(real0)) * 100) : 0,
+    supplyShare: (Number(tokensBought) / 1e15) * 100,
+  };
 }
 
 /** Token decimals of every pump.fun coin. */
