@@ -35,7 +35,7 @@ owner's request; the old code is in git history (last SplitEarn commit: `d37e1fa
   1000 = 10% today) goes to Splidev, the rest to the GitHub accounts by their shares. Splidev launch fee:
   `launchFeeSol` (0.01 SOL).
 - **Settings:** `src/splidev.json` (`treasury`, `platformBps`, `launchFeeSol`, `hidden`, `officialToken`), checked by
-  next.config.mjs. `treasury` is EMPTY until the owner gives their Solana wallet address: launches are off until then.
+  next.config.mjs. `treasury` = `D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm` (the owner's Solana wallet, 2026-10-05).
   `NEXT_PUBLIC_SPLIDEV_TREASURY` / `_PLATFORM_BPS` / `_LAUNCH_FEE_SOL` override them (tests).
 - **No mock data, ever** (the owner's rule). Tests run pump.fun's real programs on a local
   `solana-test-validator`: `e2e/solana/fixtures` holds pump, pump AMM, pump fees and mayhem programs and the
@@ -102,8 +102,9 @@ Gotchas:
   instructions when a long name wouldn't fit. `launch-local.mjs` launches the longest allowed name.
   An address lookup table would give room back (none exists yet; it needs a one-time owner transaction).
 - The public mainnet RPC rate-limits `getTransaction` hard: scans of many transactions in `solana.yml` time out.
-- `getProgramAccounts` on pump.fun's fee program is fine (thousands of accounts); never on the pump
-  program itself (millions).
+- `getProgramAccounts` on pump.fun's fee program: ~730k SharingConfigs on mainnet (2026-10-05); an unfiltered
+  count takes ~60 s, but the site's query (discriminator + treasury at offset 80) is fast. Never run it on the
+  pump program itself (millions).
 - pump.fun pools price with virtual SOL reserves on top of the real ones (`pool.virtualQuoteReserves`):
   quotes must pass them (`poolTerms`).
 - A brand-new pump.fun fee account must exist (rent-exempt) before distributions pay into it: the launch
@@ -111,16 +112,19 @@ Gotchas:
 - The cloud container can't reach Solana RPCs, pump.fun or api.github.com (proxy 403). Use the
   `solana.yml` workflow (mainnet scripts; pump SDKs installed), `solana-fixtures.yml`, and CI; GitHub
   release downloads and npm work, so the Solana CLI installs locally.
-- Vercel deploys are **held** while `.deploy-hold` exists (scripts/vercel-ignore.sh). Remove it at cutover.
+- Vercel deploys are **held** while `.deploy-hold` exists (scripts/vercel-ignore.sh). Remove it at cutover (owner must confirm).
 
-## Deployment state (2026-10-05)
+## Deployment state (2026-10-05, Splidev ready, cutover pending)
 
-- **Vercel**: project `ponsplit` (team `akdogan1`), domain splitearn.app, auto-deploys the branch, but held
-  (.deploy-hold) so it still serves the last SplitEarn build until Splidev is ready. Env to add for Splidev:
-  `NEXT_PUBLIC_SOLANA_RPC_URL` (browser RPC, e.g. Helius/Alchemy Solana, domain-restricted), `SOLANA_RPC_URL`
-  (server RPC), `GITHUB_TOKEN` (any token, no scopes, for 5,000 GitHub lookups an hour), `BLOB_READ_WRITE_TOKEN`
-  (already set: images and metadata JSON). Old EVM env (`SIGNER_PRIVATE_KEY`, `ADMIN_ADDRESSES`,
-  `MAINNET_RPC_URL`, ...) is unused now.
-- **Owner TODO**: Solana wallet address for `treasury`; a Solana RPC key; a GitHub token; new domain/X for
-  Splidev if wanted (brand.ts `X_HANDLE` is empty, links hide).
+- **Vercel**: project `ponsplit` (`prj_K4lYPXiOoIIqWqjNvaJxqqiuBeJI`; the MCP works with the project id and no team
+  slug, the `akdogan1` slug answers 403), domain splitearn.app, auto-deploys the branch, but `.deploy-hold` still holds it on the
+  last SplitEarn build: removing it was blocked as a production deploy until the owner confirms the cutover. Env (production + preview): `NEXT_PUBLIC_SOLANA_RPC_URL` = QuickNode endpoint 671368
+  (divine-boldest-choice, referrer-locked to splitearn.app, www.splitearn.app, ponsplit.vercel.app), `SOLANA_RPC_URL`
+  (sensitive) = QuickNode endpoint 671317 (delicate-wiser-snow, token only), `BLOB_READ_WRITE_TOKEN`. Old EVM env
+  (`SIGNER_PRIVATE_KEY`, `ADMIN_ADDRESSES`, `MAINNET_RPC_URL`, `NEXT_PUBLIC_MAINNET_RPC_URL`, `NEXT_PUBLIC_CHAIN`)
+  is unused.
+- **QuickNode** (owner's account, MCP connected): 671368 and 671317 are Splidev's. 671312 (chaotic-quiet-rain) is
+  referrer-locked to siglospay.com, another project of the owner's: don't touch it. Also robinhood/arc endpoints.
+- **Owner TODO**: `GITHUB_TOKEN` (no scopes) on Vercel: without it GitHub lookups run on the 60/hour anonymous limit
+  per server IP. Claude can't mint one. New domain/X for Splidev if wanted (brand.ts `X_HANDLE` is empty, links hide).
 - SplitEarn's Robinhood contracts stay on chain; the site no longer shows them (owner accepted that).
