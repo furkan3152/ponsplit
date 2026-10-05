@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { isAddress } from "viem";
 import { coinImage } from "@/lib/coin-ui";
 import { compact } from "@/lib/format";
 import { useCoins } from "@/lib/hooks";
@@ -11,7 +10,7 @@ import { SearchIcon } from "./icons";
 import { TokenAvatar } from "./TokenAvatar";
 
 /**
- * Search across every coin on the network: name, $ticker, @account or address. Shows the best
+ * Search across every coin on the network: name, $ticker, GitHub username or mint address. Shows the best
  * matches as you type; Enter opens the full results on Explore. "/" focuses it from anywhere.
  * `compact` is the phone version: an icon that opens the field over the top bar.
  */
@@ -52,7 +51,7 @@ export function SearchBox({ className = "", compact: small = false }: { classNam
     const s = q.trim().toLowerCase().replace(/^[@$]/, "");
     if (!s) return [];
     return (coins ?? [])
-      .filter((t) => t.name.toLowerCase().includes(s) || t.symbol.toLowerCase().includes(s) || t.token.toLowerCase() === s || t.handles.some((h) => h.includes(s)))
+      .filter((t) => t.name.toLowerCase().includes(s) || t.symbol.toLowerCase().includes(s) || t.token.toLowerCase() === s || t.recipients.some((r) => r.login?.toLowerCase().includes(s)))
       .sort((a, b) => b.marketCap - a.marketCap)
       .slice(0, 6);
   }, [coins, q]);
@@ -61,7 +60,7 @@ export function SearchBox({ className = "", compact: small = false }: { classNam
     const s = q.trim();
     setOpen(false);
     setExpanded(false);
-    if (isAddress(s)) router.push(`/token/${s}`);
+    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s)) router.push(`/token/${s}`);
     else router.push(s ? `/explore?q=${encodeURIComponent(s)}` : "/explore");
   };
 
@@ -101,7 +100,7 @@ export function SearchBox({ className = "", compact: small = false }: { classNam
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={(e) => e.key === "Escape" && (setOpen(false), setExpanded(false))}
-          placeholder="Search coins, $tickers, @accounts"
+          placeholder="Search coins, $tickers, GitHub users"
           aria-label="Search coins"
           className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-ink-3"
         />
@@ -124,7 +123,7 @@ export function SearchBox({ className = "", compact: small = false }: { classNam
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] font-semibold">{t.name}</span>
                   <span className="block truncate font-mono text-[11px] text-ink-3">
-                    ${t.symbol} · {t.handles.map((h) => `@${h}`).join(" ")}
+                    ${t.symbol} · {t.recipients.map((r) => `@${r.login ?? r.githubId}`).join(" ")}
                   </span>
                 </span>
                 <span className="num text-[12px] text-ink-2">{compact(t.marketCap)} Ξ</span>

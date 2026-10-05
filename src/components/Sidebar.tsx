@@ -1,10 +1,12 @@
 "use client";
 
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useNetwork } from "@/lib/network-context";
+import { formatSol, shortAddress } from "@/lib/format";
+import { useSolBalance } from "@/lib/hooks";
 import { SIDEBAR_KEY } from "@/lib/theme";
 import { LogoMark, TokenSticker } from "./art";
 import { BookIcon, ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, WalletIcon, XLogo } from "./icons";
@@ -48,7 +50,7 @@ export function Sidebar() {
       className="sidebar fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-line bg-[var(--glass)] backdrop-blur-xl lg:flex"
     >
       <div className="flex h-16 items-center gap-2 px-4">
-        <Link href="/" className="group flex min-w-0 items-center gap-2.5" aria-label="SplitEarn home">
+        <Link href="/" className="group flex min-w-0 items-center gap-2.5" aria-label="Splidev home">
           <LogoMark size={34} className="shrink-0 transition-transform duration-500 group-hover:-rotate-12" />
           <span className="sidebar-label display truncate text-[20px] leading-none">
             Split<span className="text-neon">Earn</span>
@@ -86,18 +88,20 @@ export function Sidebar() {
       </nav>
 
       <div className="mt-auto space-y-2 p-3">
-        <a
-          href={X_URL}
-          target="_blank"
-          rel="noreferrer"
-          title={`@${X_HANDLE} on X`}
-          className="group/x flex items-center gap-3.5 rounded-2xl px-3 py-2 text-[14px] font-medium text-ink-2 transition hover:bg-card hover:text-ink"
-        >
-          <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full bg-ink text-paper transition-transform duration-300 group-hover/x:-rotate-12">
-            <XLogo size={11} />
-          </span>
-          <span className="sidebar-label truncate">@{X_HANDLE}</span>
-        </a>
+        {X_URL ? (
+          <a
+            href={X_URL}
+            target="_blank"
+            rel="noreferrer"
+            title={`@${X_HANDLE} on X`}
+            className="group/x flex items-center gap-3.5 rounded-2xl px-3 py-2 text-[14px] font-medium text-ink-2 transition hover:bg-card hover:text-ink"
+          >
+            <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full bg-ink text-paper transition-transform duration-300 group-hover/x:-rotate-12">
+              <XLogo size={11} />
+            </span>
+            <span className="sidebar-label truncate">@{X_HANDLE}</span>
+          </a>
+        ) : null}
         <SidebarAccount />
       </div>
     </aside>
@@ -106,31 +110,33 @@ export function Sidebar() {
 
 /** The wallet card at the foot of the sidebar, like a signed-in profile. */
 function SidebarAccount() {
-  const n = useNetwork();
+  const { publicKey, connected, disconnect } = useWallet();
+  const { setVisible } = useWalletModal();
+  const balance = useSolBalance();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return <div className="h-14" aria-hidden />;
+  const address = connected && publicKey ? publicKey.toBase58() : null;
   return (
-    <ConnectButton.Custom>
-      {({ account, openAccountModal, openConnectModal, mounted }) => {
-        if (!mounted) return <div className="h-14" aria-hidden />;
-        return (
-          <button
-            type="button"
-            onClick={account ? openAccountModal : openConnectModal}
-            className="flex w-full items-center gap-3 rounded-2xl border border-line bg-card p-2.5 text-left transition hover:border-line-2"
-          >
-            {account ? (
-              <TokenSticker seed={`wallet:${account.address}`} size={36} className="shrink-0 rounded-full" />
-            ) : (
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-lime text-[var(--lime-ink)]">
-                <WalletIcon size={18} />
-              </span>
-            )}
-            <span className="sidebar-label min-w-0">
-              <span className="block truncate text-[14px] font-semibold">{account ? account.displayName : "Connect wallet"}</span>
-              <span className="block truncate font-mono text-[11px] text-ink-3">{account ? n.chain.name : "to launch, trade and claim"}</span>
-            </span>
-          </button>
-        );
-      }}
-    </ConnectButton.Custom>
+    <button
+      type="button"
+      onClick={() => (address ? void disconnect() : setVisible(true))}
+      title={address ? "Disconnect" : undefined}
+      className="flex w-full items-center gap-3 rounded-2xl border border-line bg-card p-2.5 text-left transition hover:border-line-2"
+    >
+      {address ? (
+        <TokenSticker seed={`wallet:${address}`} size={36} className="shrink-0 rounded-full" />
+      ) : (
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-lime text-[var(--lime-ink)]">
+          <WalletIcon size={18} />
+        </span>
+      )}
+      <span className="sidebar-label min-w-0">
+        <span className="block truncate text-[14px] font-semibold">{address ? shortAddress(address) : "Connect wallet"}</span>
+        <span className="block truncate font-mono text-[11px] text-ink-3">
+          {address ? (balance.data !== undefined ? `${formatSol(balance.data, 3)} SOL · Solana` : "Solana") : "to launch, trade and claim"}
+        </span>
+      </span>
+    </button>
   );
 }

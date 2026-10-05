@@ -1,17 +1,13 @@
-"use client";
-
 import Link from "next/link";
-import { coinImage } from "@/lib/coin-ui";
+import { coinImage, recipientNames } from "@/lib/coin-ui";
 import { compact, formatPrice, progressText } from "@/lib/format";
-import { useHandleChecks } from "@/lib/hooks";
 import type { Coin } from "@/lib/types";
+import { GithubAvatarStack } from "./GithubAvatar";
 import { Progress } from "./Progress";
 import { TokenAvatar } from "./TokenAvatar";
-import { XAvatarStack } from "./XAvatar";
 
 /** pump.fun's "king of the hill": the bonding coin closest to graduating, in a spotlight. */
-export function KingCard({ t, description }: { t: Coin; description?: string }) {
-  const checks = useHandleChecks(t.handles, t.xIds);
+export function KingCard({ t }: { t: Coin }) {
   return (
     <Link href={`/token/${t.token}`} className="card ring-glow group relative block rounded-[28px] p-5 sm:p-7">
       {/* Decorations are clipped in their own layer: clipping the card would hide its neon edge. */}
@@ -32,11 +28,13 @@ export function KingCard({ t, description }: { t: Coin; description?: string }) 
             <h2 className="display truncate text-[34px] leading-none sm:text-[40px]">{t.name}</h2>
             <span className="shrink-0 font-mono text-[13px] text-ink-2">${t.symbol}</span>
           </div>
-          <p className="mt-2 line-clamp-2 max-w-xl text-[15px] text-ink-2">{description || `Every trade pays ${t.handles.map((h) => `@${h}`).join(", ")}.`}</p>
+          <p className="mt-2 line-clamp-2 max-w-xl text-[15px] text-ink-2">
+            {t.description || `Every trade pays ${recipientNames(t).map((h) => `@${h}`).join(", ")} on GitHub.`}
+          </p>
           <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-[13px] text-ink-2">
-            <XAvatarStack handles={t.handles} checks={checks} size={24} />
+            <GithubAvatarStack people={t.recipients} size={24} />
             <span>
-              mcap <span className="num font-semibold text-ink">{compact(t.marketCap)} ETH</span>
+              mcap <span className="num font-semibold text-ink">{compact(t.marketCap)} SOL</span>
             </span>
             <span>
               price <span className="num font-semibold text-ink">{formatPrice(t.price)}</span>

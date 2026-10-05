@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNetwork } from "@/lib/network-context";
 
-const KEY = "ponsplit:risk-ack:v1";
+const KEY = "splidev:risk-ack:v1";
 
 function acknowledged(): boolean {
   try {
@@ -15,14 +14,13 @@ function acknowledged(): boolean {
 }
 
 /**
- * On mainnet, asks once (per browser) for an acknowledgement before the first launch or trade.
+ * Asks once (per browser) for an acknowledgement before the first launch or trade.
  * `guard(fn)` runs fn right away when already acknowledged, otherwise after the user accepts.
  */
 export function useRiskGate() {
-  const n = useNetwork();
   const [pending, setPending] = useState<(() => void) | null>(null);
   const [ack, setAck] = useState(true);
-  useEffect(() => setAck(!n.isTestnet ? acknowledged() : true), [n.isTestnet]);
+  useEffect(() => setAck(acknowledged()), []);
   const box = useRef<HTMLDivElement>(null);
   // Recorded when the gate opens: by the time an effect runs, Cancel's autoFocus has taken focus.
   const opener = useRef<HTMLElement | null>(null);
@@ -79,7 +77,7 @@ export function useRiskGate() {
             <circle cx={28} cy={39.5} r={2.8} fill="var(--outline)" />
           </svg>
           <div className="min-w-0">
-            <div className="eyebrow">{n.chain.name} · read once</div>
+            <div className="eyebrow">Solana · read once</div>
             <h2 id="risk-title" className="display mt-1.5 text-[28px] leading-none sm:text-[32px]">
               Before you continue
             </h2>
@@ -87,8 +85,8 @@ export function useRiskGate() {
         </div>
         <ul className="mt-6 divide-y divide-[var(--line)] border-y border-line text-[14px] leading-relaxed text-ink-2">
           <RiskItem n={1}>Coins here are speculative and can go to zero. Only use money you can afford to lose.</RiskItem>
-          <RiskItem n={2}>Anyone can launch a coin and list any X account. A listed account has not endorsed the coin.</RiskItem>
-          <RiskItem n={3}>Trades are final. SplitEarn&apos;s contracts are experimental and have not been audited. SplitEarn is not affiliated with pons.</RiskItem>
+          <RiskItem n={2}>Anyone can launch a coin and list any GitHub account. A listed developer has not endorsed the coin.</RiskItem>
+          <RiskItem n={3}>Trades are final. Splidev is experimental software on top of pump.fun and is not affiliated with pump.fun or GitHub.</RiskItem>
           <RiskItem n={4}>You are responsible for following the laws where you live.</RiskItem>
         </ul>
         <div className="mt-6 flex gap-2.5">
