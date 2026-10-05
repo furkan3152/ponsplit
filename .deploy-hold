@@ -1,2 +1,0 @@
-The Splidev (Solana) rebuild is in progress: Vercel skips every build while this file exists
-(scripts/vercel-ignore.sh), so splitearn.app keeps serving the last SplitEarn deploy. Delete it at cutover.

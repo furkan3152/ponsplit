@@ -3,7 +3,7 @@
 # so the logic lives here). Exit 0 skips the build, exit 1 builds.
 # Builds when the commit message says [deploy], when the previous deployed commit is unknown, or
 # when anything the site is built from changed since it.
-# While .deploy-hold exists (the Splidev rebuild), nothing deploys: the live site stays as it is.
+# While a .deploy-hold file exists nothing deploys (it held the live site during the Splidev rebuild).
 [ -e .deploy-hold ] && exit 0
 git log -1 --format=%B | grep -q '\[deploy\]' && exit 1
 [ -n "$VERCEL_GIT_PREVIOUS_SHA" ] || exit 1
