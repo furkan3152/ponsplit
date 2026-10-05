@@ -69,6 +69,7 @@ async function openAs(browser, kp, viewport = { width: 1280, height: 900 }) {
     return Array.from(tx.serialize());
   });
   page.on("pageerror", (e) => console.log("page error:", e.message));
+  page.on("console", (m) => m.type() === "error" && console.log("console error:", m.text().slice(0, 300)));
   return page;
 }
 
@@ -164,6 +165,17 @@ try {
   await tp.goto(`${BASE}/me`, { waitUntil: "networkidle" });
   await tp.getByText("E2E Dev Coin").first().waitFor({ timeout: 60_000 });
   step("the coin is listed on Explore, and the trader's portfolio holds it");
+} catch (e) {
+  // Leave a trail: a screenshot and the visible text of every open page.
+  let n = 0;
+  for (const ctx of browser.contexts())
+    for (const p of ctx.pages()) {
+      n++;
+      await p.screenshot({ path: `${OUT}/failure-${n}.png`, fullPage: true }).catch(() => {});
+      const text = await p.evaluate(() => document.querySelector("main")?.innerText ?? document.body.innerText).catch(() => "");
+      console.log(`\n── page ${n}: ${p.url()}\n${text.replace(/\n{2,}/g, "\n").slice(0, 2500)}`);
+    }
+  throw e;
 } finally {
   await browser.close();
 }

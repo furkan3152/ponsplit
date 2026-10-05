@@ -1,8 +1,7 @@
 name: Stress test
 
 # Load test of the live site (read-only: nothing is signed or sent on-chain). Many requests at once
-# to the pages and read APIs and a burst against the chain RPC the browsers use, after many real
-# browsers open the site together. See scripts/stress.mjs and e2e/stress-browser.mjs.
+# to the pages and read APIs and a burst against the chain RPC the browsers use. See scripts/stress.mjs.
 on:
   workflow_dispatch:
     inputs:
@@ -14,16 +13,13 @@ on:
         default: ""
       rpc:
         description: RPC to burst (the one browsers use)
-        default: https://rpc.mainnet.chain.robinhood.com
+        default: https://api.mainnet-beta.solana.com
       concurrency:
         description: HTTP requests at a time
         default: "40"
       requests:
         description: HTTP requests per phase
         default: "600"
-      visitors:
-        description: Browsers at once
-        default: "12"
 
 jobs:
   stress:
@@ -34,19 +30,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # Browsers first: the HTTP phase's RPC burst uses up this runner's share of the public RPC.
-      - name: Browsers
-        working-directory: e2e
-        env:
-          SITE: ${{ inputs.site }}
-          COIN: ${{ inputs.coin }}
-          VISITORS: ${{ inputs.visitors }}
-        run: |
-          npm ci --silent
-          npx playwright install --with-deps chromium > /dev/null 2>&1
-          node stress-browser.mjs
       - name: HTTP load
-        if: always()
         env:
           SITE: ${{ inputs.site }}
           COIN: ${{ inputs.coin }}
