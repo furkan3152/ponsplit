@@ -44,7 +44,7 @@ function Explore() {
   const list = useMemo(() => {
     const q = query.trim().toLowerCase().replace(/^[@$]/, "");
     const filtered = (tokens ?? []).filter(
-      (t) => !q || t.name.toLowerCase().includes(q) || t.symbol.toLowerCase().includes(q) || t.token.toLowerCase() === q || t.recipients.some((r) => r.login?.toLowerCase().includes(q))
+      (t) => !q || t.name.toLowerCase().includes(q) || t.symbol.toLowerCase().includes(q) || t.token.toLowerCase() === q || t.recipients.some((r) => r.login?.toLowerCase().includes(q) || r.githubId === q.replace(/^#/, ""))
     );
     return sortCoins(filtered, sort);
   }, [tokens, query, sort]);

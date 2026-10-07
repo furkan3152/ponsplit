@@ -140,7 +140,7 @@ function banner() {
       <div class="eyebrow mono"><b>//</b> launch a pump.fun coin · split its fees for good</div>
       <h1>Coins that pay<br/><span class="accent squiggle">GitHub</span> devs.</h1>
     </div>
-    <div class="url mono"><span class="key">$</span>splitearn.app<span class="caret"></span></div>
+    <div class="url mono"><span class="key">$</span>splitdev.app<span class="caret"></span></div>
     ${pills}
     <div class="foot mono">solana · pump.fun · not affiliated with pump.fun or GitHub</div>
   </div></body></html>`;

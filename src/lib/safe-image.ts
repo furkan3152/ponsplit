@@ -1,6 +1,8 @@
 import "server-only";
 import { lookup } from "dns/promises";
+import { lookup as lookupCb, type LookupAddress } from "dns";
 import { isIP } from "net";
+import { Agent, fetch as undiciFetch } from "undici";
 import { imageWithinLimits, satoriCanSizeJpeg, sniffImage } from "./image-bytes";
 
 /**
@@ -63,11 +65,34 @@ async function download(start: string): Promise<string | null> {
   return `data:${type};base64,${Buffer.from(bytes).toString("base64")}`;
 }
 
+/** DNS answers are capped at 2 s: a resolver that never answers must not hold the request. */
+const withTimeout = <T,>(p: Promise<T>, ms: number, fallback: T) => Promise.race([p, new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
+
 /**
- * Fetches a user-supplied https URL from a public host only (checked after DNS and on every
- * redirect), with a 3 s timeout and a size cap. Null on any problem.
+ * The connection itself is checked too: the address the socket actually dials must be public, so a
+ * name that answers "public" to the first lookup and "127.0.0.1" to the second (DNS rebinding) fails.
+ */
+const publicOnly = new Agent({
+  connect: {
+    timeout: 3_000,
+    lookup(hostname, options, cb) {
+      const done = (err: Error | null, addrs?: LookupAddress[]) => {
+        const ok = (addrs ?? []).filter((a) => isPublicIp(a.address));
+        if (err || !addrs?.length || ok.length !== addrs.length) return cb(err ?? new Error("blocked address"), "", 0);
+        if ((options as { all?: boolean }).all) return (cb as unknown as (e: null, a: LookupAddress[]) => void)(null, ok);
+        cb(null, ok[0].address, ok[0].family);
+      };
+      lookupCb(hostname, { all: true, verbatim: true }, done);
+    },
+  },
+});
+
+/**
+ * Fetches a user-supplied https URL from a public host only (checked after DNS, at connect time and
+ * on every redirect), with a 3 s timeout per hop, 6 s overall, and a size cap. Null on any problem.
  */
 export async function fetchPublicBytes(start: string, maxBytes: number): Promise<Uint8Array | null> {
+  const deadline = AbortSignal.timeout(6_000);
   let url = start;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const u = new URL(url);
@@ -75,7 +100,7 @@ export async function fetchPublicBytes(start: string, maxBytes: number): Promise
     if (u.port && u.port !== "443") return null;
     if (!(await isPublicHost(u.hostname))) return null;
 
-    const res = await fetch(u, { redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(3_000) });
+    const res = await undiciFetch(u, { redirect: "manual", dispatcher: publicOnly, signal: AbortSignal.any([AbortSignal.timeout(3_000), deadline]) });
     if (res.status >= 300 && res.status < 400) {
       const next = res.headers.get("location");
       await res.body?.cancel().catch(() => {});
@@ -88,7 +113,7 @@ export async function fetchPublicBytes(start: string, maxBytes: number): Promise
       await res.body.cancel().catch(() => {});
       return null;
     }
-    return readCapped(res.body, maxBytes);
+    return readCapped(res.body as unknown as ReadableStream<Uint8Array>, maxBytes);
   }
   return null;
 }
@@ -114,7 +139,7 @@ async function isPublicHost(hostname: string): Promise<boolean> {
   const host = hostname.replace(/^\[|\]$/g, "");
   if (isIP(host)) return isPublicIp(host);
   if (!host.includes(".") || /\.(local|internal|localhost)$/i.test(host)) return false;
-  const addrs = await lookup(host, { all: true, verbatim: true }).catch(() => []);
+  const addrs = await withTimeout(lookup(host, { all: true, verbatim: true }).catch(() => []), 2_000, []);
   return addrs.length > 0 && addrs.every((a) => isPublicIp(a.address));
 }
 

@@ -51,7 +51,7 @@ export function SearchBox({ className = "", compact: small = false }: { classNam
     const s = q.trim().toLowerCase().replace(/^[@$]/, "");
     if (!s) return [];
     return (coins ?? [])
-      .filter((t) => t.name.toLowerCase().includes(s) || t.symbol.toLowerCase().includes(s) || t.token.toLowerCase() === s || t.recipients.some((r) => r.login?.toLowerCase().includes(s)))
+      .filter((t) => t.name.toLowerCase().includes(s) || t.symbol.toLowerCase().includes(s) || t.token.toLowerCase() === s || t.recipients.some((r) => r.login?.toLowerCase().includes(s) || r.githubId === s.replace(/^#/, "")))
       .sort((a, b) => b.marketCap - a.marketCap)
       .slice(0, 6);
   }, [coins, q]);

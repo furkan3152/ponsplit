@@ -11,7 +11,7 @@ import BN from "bn.js";
 const treasury = Keypair.generate();
 process.env.NEXT_PUBLIC_SPLIDEV_TREASURY = treasury.publicKey.toBase58();
 const require = createRequire(import.meta.url);
-const { launchTransactions, createTransaction, TX_BYTES_LIMIT, buyTransaction, sellTransaction, quoteBuy, quoteSell, distributeTransaction, githubFeeAccount, listCoins, readCoin, githubClaimable, recentTrades, PUMP_FEES_PROGRAM_ID } = require("./.build/lib.cjs");
+const { launchTransactions, createTransaction, finishLaunchTransactions, launchState, TX_BYTES_LIMIT, buyTransaction, sellTransaction, quoteBuy, quoteSell, distributeTransaction, githubFeeAccount, listCoins, readCoin, githubClaimable, recentTrades, PUMP_FEES_PROGRAM_ID } = require("./.build/lib.cjs");
 const { OnlinePumpSdk, PUMP_SDK, feeSharingConfigPda } = require("@pump-fun/pump-sdk");
 
 const c = new Connection(process.env.RPC || "http://127.0.0.1:8899", "confirmed");
@@ -142,3 +142,37 @@ const longTx = await createTransaction(c, {
 if (longTx.serialize().length > TX_BYTES_LIMIT) fail(`the longest launch is ${longTx.serialize().length} bytes`);
 await send(longTx, [creator, long]);
 ok(`the longest launch fits (${longTx.serialize().length} bytes) and lands`);
+
+// A finished launch is recognised as done: nothing left to sign, so the page never offers "Finish".
+if ((await launchState(c, mint.publicKey)) !== "done") fail("a finished launch doesn't read as done");
+if ((await finishLaunchTransactions(c, creator.publicKey, mint.publicKey, githubIds, [6000, 4000])).length) fail("finishing a finished launch still builds transactions");
+ok("a finished launch reads as done and has nothing left to finish");
+
+// A coin dressed up as a Splidev coin (anyone can set pump.fun fee sharing): the treasury first with a
+// token share, a real GitHub account, and the attacker's own wallet taking half. It must not be listed.
+const { TransactionMessage, VersionedTransaction } = await import("@solana/web3.js");
+const { NATIVE_MINT, TOKEN_PROGRAM_ID } = await import("@solana/spl-token");
+const attacker = Keypair.generate();
+const fake = Keypair.generate();
+await fund(attacker.publicKey, 5);
+await send(await createTransaction(c, { user: attacker.publicKey, mint: fake.publicKey, name: "Totally Splidev", symbol: "FAKE", uri: "https://example.com/f.json", githubIds, bps: [5000, 5000], firstBuyLamports: 0n }), [attacker, fake]);
+const spoofIxs = [
+  await PUMP_SDK.createFeeSharingConfig({ creator: attacker.publicKey, mint: fake.publicKey, pool: null }),
+  await PUMP_SDK.updateFeeSharesV2({
+    authority: attacker.publicKey,
+    mint: fake.publicKey,
+    currentShareholders: [attacker.publicKey],
+    newShareholders: [
+      { address: treasury.publicKey, shareBps: 1 },
+      { address: githubFeeAccount("1024025"), shareBps: 4999 },
+      { address: attacker.publicKey, shareBps: 5000 },
+    ],
+    quoteMint: NATIVE_MINT,
+    quoteTokenProgram: TOKEN_PROGRAM_ID,
+  }),
+];
+const { blockhash } = await c.getLatestBlockhash("confirmed");
+await send(new VersionedTransaction(new TransactionMessage({ payerKey: attacker.publicKey, recentBlockhash: blockhash, instructions: spoofIxs }).compileToV0Message()), [attacker]);
+if (await readCoin(c, fake.publicKey)) fail("a coin with a hidden shareholder reads as a Splidev coin");
+if ((await listCoins(c)).some((x) => x.token === fake.publicKey.toBase58())) fail("a coin with a hidden shareholder is listed");
+ok("a coin whose split hides another wallet (treasury first, 1 bps) is not listed or shown");

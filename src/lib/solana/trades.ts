@@ -23,6 +23,9 @@ export type Trade = {
   creatorFee: bigint;
 };
 
+const PUMP_PROGRAM = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
+const PUMP_AMM_PROGRAM = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA";
+
 /** Anchor's event-CPI tag (sha256("anchor:event")[0..8], little endian). */
 const EVENT_TAG = "e445a52e51cb9a1d";
 // sha256("event:<Name>")[0..8]
@@ -39,8 +42,20 @@ export function tradesIn(tx: VersionedTransactionResponse, mint: string): Trade[
   if (!tx.meta || tx.meta.err) return [];
   const out: Trade[] = [];
   const signature = tx.transaction.signatures[0];
+  // Only events pump.fun's own programs emitted count: any program can emit bytes that look like a
+  // trade event, so the inner instruction must run in pump (curve) or pump AMM (pool), and a pool
+  // event must be this coin's pool (a swap route can touch several pools in one transaction).
+  let keys: { get(i: number): PublicKey | undefined };
+  try {
+    keys = tx.transaction.message.getAccountKeys({ accountKeysFromLookups: tx.meta.loadedAddresses ?? undefined });
+  } catch {
+    return [];
+  }
+  const pool = canonicalPumpPoolPda(new PublicKey(mint)).toBase58();
   for (const group of tx.meta.innerInstructions ?? []) {
     for (const ix of group.instructions) {
+      const program = keys.get(ix.programIdIndex)?.toBase58();
+      if (program !== PUMP_PROGRAM && program !== PUMP_AMM_PROGRAM) continue;
       let data: Buffer;
       try {
         data = Buffer.from(bs58.decode(ix.data));
@@ -50,9 +65,12 @@ export function tradesIn(tx: VersionedTransactionResponse, mint: string): Trade[
       if (data.length < 16 || data.subarray(0, 8).toString("hex") !== EVENT_TAG) continue;
       const disc = data.subarray(8, 16).toString("hex");
       try {
-        if (disc === TRADE_EVENT) {
+        if (disc === TRADE_EVENT && program === PUMP_PROGRAM) {
           const e = PUMP_SDK.decodeTradeEventBc(data.subarray(16));
           if (e.mint.toBase58() !== mint) continue;
+          // What the trader paid or got: the event's amount is before pump.fun's and the creator's fees.
+          const fees = n(e.fee) + n(e.creatorFee);
+          const sol = e.isBuy ? n(e.solAmount) + fees : n(e.solAmount) - fees;
           out.push({
             signature,
             slot: tx.slot,
@@ -60,17 +78,19 @@ export function tradesIn(tx: VersionedTransactionResponse, mint: string): Trade[
             kind: e.isBuy ? "buy" : "sell",
             venue: "curve",
             trader: e.user.toBase58(),
-            sol: n(e.solAmount),
+            sol,
             tokens: n(e.tokenAmount),
-            price: execPrice(n(e.solAmount), n(e.tokenAmount)),
+            price: execPrice(sol, n(e.tokenAmount)),
             creatorFee: n(e.creatorFee),
           });
-        } else if (disc === AMM_BUY_EVENT || disc === AMM_SELL_EVENT) {
+        } else if ((disc === AMM_BUY_EVENT || disc === AMM_SELL_EVENT) && program === PUMP_AMM_PROGRAM) {
           const buy = disc === AMM_BUY_EVENT;
           const e = buy ? PUMP_SDK.decodeBuyEventAmm(data.subarray(16)) : PUMP_SDK.decodeSellEventAmm(data.subarray(16));
           const ev = e as unknown as Record<string, { toString(): string; toBase58?: () => string }>;
+          if (ev.pool?.toBase58?.() !== pool) continue;
           const base = n(buy ? ev.baseAmountOut : ev.baseAmountIn);
-          const quote = n(buy ? ev.quoteAmountIn : ev.quoteAmountOut);
+          // the trader's side, fees included
+          const quote = n(buy ? ev.userQuoteAmountIn ?? ev.quoteAmountIn : ev.userQuoteAmountOut ?? ev.quoteAmountOut);
           out.push({
             signature,
             slot: tx.slot,

@@ -13,7 +13,7 @@ import {
 } from "@solana/web3.js";
 import { NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import BN from "bn.js";
-import { OnlinePumpSdk, PUMP_SDK, Platform, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, socialFeePda } from "@pump-fun/pump-sdk";
+import { OnlinePumpSdk, PUMP_SDK, Platform, feeSharingConfigPda, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, socialFeePda } from "@pump-fun/pump-sdk";
 import { OnlinePumpAmmSdk, PUMP_AMM_SDK, buyQuoteInput, canonicalPumpPoolPda, sellBaseInput } from "@pump-fun/pump-swap-sdk";
 import { LAUNCH_FEE_LAMPORTS, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
 
@@ -139,6 +139,11 @@ export async function createTransaction(c: Connection, input: LaunchInput): Prom
 export async function finishLaunchTransactions(c: Connection, user: PublicKey, mint: PublicKey, githubIds: string[], bps: number[]): Promise<VersionedTransaction[]> {
   if (!TREASURY) throw new Error("Splidev isn't set up yet.");
   const shares = shareholders(githubIds, bps);
+  // A split already on chain: final means there is nothing left to do; a config that exists but
+  // isn't final yet is updated instead of created again (creating it twice fails).
+  const cfgInfo = await c.getAccountInfo(feeSharingConfigPda(mint), "confirmed");
+  const cfg = cfgInfo ? PUMP_SDK.decodeSharingConfig(cfgInfo) : null;
+  if (cfg?.adminRevoked) return [];
   const txs: VersionedTransaction[] = [];
   // GitHub fee accounts that don't exist yet (pump.fun's distribution pays into existing ones).
   const missing: string[] = [];
@@ -148,18 +153,29 @@ export async function finishLaunchTransactions(c: Connection, user: PublicKey, m
     const ixs = await Promise.all(missing.slice(i, i + 4).map((id) => PUMP_SDK.createSocialFeePda({ payer: user, userId: id, platform: Platform.GitHub })));
     txs.push(await v0(c, user, [...budget(200_000), ...ixs]));
   }
-  const sharing = await PUMP_SDK.createFeeSharingConfig({ creator: user, mint, pool: null });
+  const sharing = cfg ? null : await PUMP_SDK.createFeeSharingConfig({ creator: user, mint, pool: null });
   const update = await PUMP_SDK.updateFeeSharesV2({
     authority: user,
     mint,
-    currentShareholders: [user],
+    currentShareholders: cfg ? cfg.shareholders.map((h: { address: PublicKey }) => h.address) : [user],
     newShareholders: shares,
     quoteMint: NATIVE_MINT,
     quoteTokenProgram: TOKEN_PROGRAM_ID,
   });
   const fee = LAUNCH_FEE_LAMPORTS > 0n ? [SystemProgram.transfer({ fromPubkey: user, toPubkey: TREASURY, lamports: LAUNCH_FEE_LAMPORTS })] : [];
-  txs.push(await v0(c, user, [...budget(400_000), sharing, update, ...fee]));
+  txs.push(await v0(c, user, [...budget(400_000), ...(sharing ? [sharing] : []), update, ...fee]));
   return txs;
+}
+
+/**
+ * Where a launch stands on chain: "missing" (the coin doesn't exist, yet or ever), "needs-split"
+ * (the coin exists, its fee split isn't final), or "done".
+ */
+export async function launchState(c: Connection, mint: PublicKey): Promise<"missing" | "needs-split" | "done"> {
+  const [mintInfo, cfgInfo] = await c.getMultipleAccountsInfo([mint, feeSharingConfigPda(mint)], "confirmed");
+  if (!mintInfo) return "missing";
+  if (cfgInfo && PUMP_SDK.decodeSharingConfig(cfgInfo).adminRevoked) return "done";
+  return "needs-split";
 }
 
 /** pump.fun's starting curve (from its global config), for previews before a coin exists. */
@@ -229,9 +245,10 @@ export async function quoteSell(c: Connection, mint: PublicKey, tokens: bigint):
 }
 
 /**
- * A buy: spend `lamports` (fees included) on the curve, or on pump.fun's pool once the coin has
- * graduated, accepting at worst `slippageBps` fewer tokens than quoted now. Returns the
- * transaction and the quoted token amount (raw, 6 decimals).
+ * A buy on the curve, or on pump.fun's pool once the coin has graduated: the tokens `lamports`
+ * (fees included) buy right now, for at most `lamports` plus `slippageBps` (pump.fun's buys are
+ * "this many tokens, SOL capped"; the trade panel shows that cap). Returns the transaction and the
+ * token amount (raw, 6 decimals).
  */
 export async function buyTransaction(c: Connection, user: PublicKey, mint: PublicKey, lamports: bigint, slippageBps = 200) {
   const sdk = new OnlinePumpSdk(c);

@@ -168,7 +168,7 @@ export function EarnedTotal({ earners, coins }: { earners?: Earner[]; coins?: nu
         <div className="num mt-2 text-[40px] font-semibold leading-none tracking-tight">
           <CountUp value={earned !== undefined ? Number(earned) / 1e9 : undefined} format={(v) => `${v.toFixed(3)} SOL`} />
         </div>
-        <p className="mt-2 text-[13px] text-ink-2">In their pump.fun GitHub accounts: claimed plus waiting, from every coin that pays them.</p>
+        <p className="mt-2 text-[13px] text-ink-2">Everything in their pump.fun GitHub accounts, claimed plus waiting: Splidev coins and any other pump.fun coin that pays them.</p>
       </div>
       <dl className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl bg-card-2 px-3 py-2.5">
@@ -217,7 +217,7 @@ export function TopEarners({ earners }: { earners: Earner[] }) {
       </a>
       <div className="num text-[30px] font-semibold leading-none">{formatSol(top.claimable + top.claimed, 4)} SOL</div>
       <div className="text-[12.5px] text-ink-2">
-        earned on pump.fun · {top.coins} Splidev coin{top.coins === 1 ? "" : "s"}
+        in their pump.fun GitHub account · {top.coins} Splidev coin{top.coins === 1 ? "" : "s"}
       </div>
       {rest.length ? (
         <ul className="space-y-1.5 border-t border-line pt-3">

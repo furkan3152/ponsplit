@@ -260,7 +260,7 @@ function FeeFlow({ accountsPct: ACCOUNTS_PCT }: { accountsPct: number }) {
             <span className={`aspect-square animate-pulse-dot rounded-[3px] border border-outline bg-lime ${FADE}`} style={{ transitionDelay: "440ms" }} />
           </div>
           <div className="mt-2.5 flex items-center justify-between gap-3 font-mono text-[11px]">
-            <span className="text-ink-3">99% · the trade itself</span>
+            <span className="text-ink-3">98.75% · the trade itself</span>
             <span className="text-ink-2">
               <span className="text-neon font-semibold">1.25%</span> · pump.fun&apos;s fee
             </span>

@@ -2,11 +2,12 @@
 // whose fee sharing is final (admin revoked) and lists Splidev's treasury first. pump.fun's fee
 // program keeps that list in one account per coin, so one getProgramAccounts call finds them all.
 import { PublicKey, type AccountInfo, type Connection } from "@solana/web3.js";
+import { NATIVE_MINT, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { ExtensionType, TOKEN_2022_PROGRAM_ID, getExtensionData, unpackAccount, unpackMint } from "@solana/spl-token";
 import { unpack as unpackMetadata } from "@solana/spl-token-metadata";
 import { PUMP_SDK, bondingCurvePda, creatorVaultPda, socialFeePda, Platform } from "@pump-fun/pump-sdk";
-import { canonicalPumpPoolPda, PUMP_AMM_SDK } from "@pump-fun/pump-swap-sdk";
-import { HIDDEN, SHARES_TOTAL, TREASURY } from "./config";
+import { canonicalPumpPoolPda, coinCreatorVaultAtaPda, coinCreatorVaultAuthorityPda, PUMP_AMM_SDK } from "@pump-fun/pump-swap-sdk";
+import { ALLOWED_PLATFORM_BPS, HIDDEN, SHARES_TOTAL, TREASURY } from "./config";
 import { PUMP_FEES_PROGRAM_ID } from "./pump";
 
 /** One GitHub account's part of a coin's creator fees. */
@@ -129,6 +130,14 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
     const curveInfo = curveInfos[i];
     if (!md || !curveInfo) return;
     const curve = PUMP_SDK.decodeBondingCurve(curveInfo);
+    // Only what Splidev's own launch makes is a Splidev coin, so nobody can dress a coin up as one
+    // (fee sharing can be set by anyone): Splidev's share first, every other shareholder a pump.fun
+    // GitHub fee account (no hidden wallet taking a cut), a plain SOL curve, no mayhem or cashback mode.
+    const treasuryShare0 = s.shareholders[0]?.shareBps ?? 0;
+    if (!ALLOWED_PLATFORM_BPS.has(treasuryShare0)) return;
+    if (s.shareholders.length < 2 || !s.shareholders.slice(1).every((h) => githubOf.has(h.address.toBase58()))) return;
+    if (curve.isMayhemMode || curve.isCashbackCoin) return;
+    if (curve.quoteMint && !curve.quoteMint.equals(NATIVE_MINT) && !curve.quoteMint.equals(PublicKey.default)) return;
     const vt = Number(curve.virtualTokenReserves.toString());
     const vs = Number(curve.virtualQuoteReserves.toString());
     const rt = Number(curve.realTokenReserves.toString());
@@ -159,8 +168,16 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
     if (curve.complete) graduated.push(coins.length - 1);
   });
 
-  // Graduated coins trade on pump.fun's pool: price from its reserves.
+  // Graduated coins trade on pump.fun's pool: price from its reserves, and creator fees also pile up
+  // in the pool's creator vault (wrapped SOL owned by the coin's creator, here its sharing config),
+  // which a distribution sweeps too, so they count as waiting.
   if (graduated.length) {
+    const configOf = new Map(sharings.map((s) => [s.mint.toBase58(), s.config]));
+    const poolVaults = graduated.map((i) => coinCreatorVaultAtaPda(coinCreatorVaultAuthorityPda(configOf.get(coins[i].token)!), NATIVE_MINT, TOKEN_PROGRAM_ID));
+    const poolVaultInfos = await many(c, poolVaults);
+    graduated.forEach((i, j) => {
+      coins[i].pendingFees += BigInt(tokenAmount(poolVaultInfos[j], poolVaults[j]));
+    });
     const pools = await many(c, graduated.map((i) => canonicalPumpPoolPda(new PublicKey(coins[i].token))));
     const decoded = pools.map((p) => (p ? PUMP_AMM_SDK.decodePoolNullable(p) : null));
     const reserves = await many(c, decoded.flatMap((p) => (p ? [p.poolBaseTokenAccount, p.poolQuoteTokenAccount] : [])));
@@ -210,7 +227,8 @@ export async function readCoin(c: Connection, mint: PublicKey): Promise<Coin | n
   const info = await c.getAccountInfo(cfgKey, "confirmed");
   if (!info) return null;
   const cfg = PUMP_SDK.decodeSharingConfig(info);
-  if (!cfg.adminRevoked || !cfg.shareholders[0]?.address.equals(TREASURY) || HIDDEN.has(mint.toBase58())) return null;
+  // Final (admin revoked), Active (status byte 1, as findSharings checks), treasury first.
+  if (!cfg.adminRevoked || info.data[10] !== 1 || !cfg.shareholders[0]?.address.equals(TREASURY) || HIDDEN.has(mint.toBase58())) return null;
   const [coin] = await readCoins(c, [{ mint, config: cfgKey, admin: cfg.admin, shareholders: cfg.shareholders }]);
   return coin ?? null;
 }
