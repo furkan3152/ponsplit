@@ -2,11 +2,11 @@ import { PublicKey } from "@solana/web3.js";
 import settings from "../../splidev.json";
 
 /**
- * Splidev's settings (src/splidev.json, overridable with NEXT_PUBLIC_* variables for tests):
- * - treasury: Splidev's wallet. It is the first shareholder of every Splidev coin's pump.fun fee
- *   sharing, receives the launch fee, and is how the site finds Splidev coins on chain.
- * - platformBps: Splidev's share of a new coin's creator fees (the GitHub accounts share the rest).
- * - launchFeeSol: what a launch pays Splidev, in SOL.
+ * Splitdev's settings (src/splidev.json, overridable with NEXT_PUBLIC_* variables for tests):
+ * - treasury: Splitdev's wallet. It is the first shareholder of every Splitdev coin's pump.fun fee
+ *   sharing, receives the launch fee, and is how the site finds Splitdev coins on chain.
+ * - platformBps: Splitdev's share of a new coin's creator fees (the GitHub accounts share the rest).
+ * - launchFeeSol: what a launch pays Splitdev, in SOL.
  */
 type Settings = { treasury: string; platformBps: number; pastPlatformBps?: number[]; launchFeeSol: string; hidden: string[]; officialToken: string };
 const s = settings as Settings;
@@ -22,7 +22,7 @@ function key(value: string | undefined): PublicKey | null {
 export const TREASURY = key(process.env.NEXT_PUBLIC_SPLIDEV_TREASURY || s.treasury);
 export const PLATFORM_BPS = Number(process.env.NEXT_PUBLIC_SPLIDEV_PLATFORM_BPS || s.platformBps);
 /**
- * Splidev shares a listed coin may carry: today's, plus any earlier value (add the old one to
+ * Splitdev shares a listed coin may carry: today's, plus any earlier value (add the old one to
  * `pastPlatformBps` when changing `platformBps`, or coins launched before the change drop off the site).
  */
 export const ALLOWED_PLATFORM_BPS = new Set([PLATFORM_BPS, ...(s.pastPlatformBps ?? [])]);
@@ -31,7 +31,7 @@ export const LAUNCH_FEE_LAMPORTS = BigInt(Math.round(Number(process.env.NEXT_PUB
 export const HIDDEN = new Set(s.hidden.map((m) => m.trim()).filter(Boolean));
 export const OFFICIAL_TOKEN = key(s.officialToken);
 
-/** Whether launches can happen: Splidev's treasury is set. */
+/** Whether launches can happen: Splitdev's treasury is set. */
 export const isLive = () => Boolean(TREASURY);
 
 /** RPC endpoints, tried in order: NEXT_PUBLIC_SOLANA_RPC_URL (comma list), then the public one. */
@@ -44,6 +44,6 @@ export function rpcUrls(): string[] {
   return [...own, "https://api.mainnet-beta.solana.com"];
 }
 
-/** Each GitHub account can hold at most this many shares: pump.fun allows 10 shareholders and Splidev is one. */
+/** Each GitHub account can hold at most this many shares: pump.fun allows 10 shareholders and Splitdev is one. */
 export const MAX_RECIPIENTS = 9;
 export const SHARES_TOTAL = 10_000;

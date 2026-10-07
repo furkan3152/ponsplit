@@ -11,7 +11,7 @@ export function Footer() {
           <div className="max-w-sm space-y-3">
             <Wordmark size={30} />
             <p className="text-[14px] leading-relaxed text-ink-2">
-              Coins that pay developers. Every Splidev coin is a pump.fun coin whose creator fees go, for good, to the GitHub accounts it names, on the curve and after it graduates.
+              Coins that pay developers. Every Splitdev coin is a pump.fun coin whose creator fees go, for good, to the GitHub accounts it names, on the curve and after it graduates.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <FollowX />
@@ -42,7 +42,7 @@ export function Footer() {
         </div>
         <div className="mt-8 space-y-2 text-[12px] leading-relaxed text-ink-3">
           <p>
-            Splidev is an independent app built on pump.fun&apos;s public programs (
+            Splitdev is an independent app built on pump.fun&apos;s public programs (
             <a href="https://pump.fun" target="_blank" rel="noreferrer" className="underline-offset-2 hover:text-ink-2 hover:underline">
               pump.fun
             </a>
@@ -57,7 +57,7 @@ export function Footer() {
           className="display pointer-events-none mt-4 select-none whitespace-nowrap bg-clip-text text-[21vw] leading-[0.84] text-transparent sm:text-[168px]"
           style={{ backgroundImage: "linear-gradient(to bottom, var(--line-2) 10%, transparent 92%)" }}
         >
-          Splidev
+          Splitdev
         </div>
       </div>
     </footer>

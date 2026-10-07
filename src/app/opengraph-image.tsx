@@ -3,7 +3,7 @@ import { join } from "path";
 import { ImageResponse } from "next/og";
 
 export const runtime = "nodejs";
-export const alt = "Splidev: pump.fun coins that pay GitHub developers";
+export const alt = "Splitdev: pump.fun coins that pay GitHub developers";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -26,7 +26,7 @@ export default function OgImage() {
       >
         <div style={{ display: "flex", flexDirection: "column", width: 640 }}>
           <div style={{ display: "flex", fontSize: 44, fontWeight: 700, color: "#f6f1ff", letterSpacing: -2 }}>
-            spli<span style={{ color: "#ff7a3d" }}>dev</span>
+            split<span style={{ color: "#ff7a3d" }}>dev</span>
             <span style={{ color: "#ff7a3d" }}>_</span>
           </div>
           <div style={{ fontSize: 76, fontWeight: 800, color: "#f6f1ff", lineHeight: 1.02, marginTop: 40, letterSpacing: -3 }}>Coins that pay GitHub devs.</div>

@@ -207,7 +207,7 @@ export default function CreatePage() {
     if (new Set(handles).size !== handles.length) add(2, "Each GitHub account can only appear once.");
     const ids = handles.map((h) => profiles.data?.[h]?.id).filter(Boolean);
     if (new Set(ids).size !== ids.length) add(2, "Two usernames point to the same GitHub account.");
-    // After Splidev's cut each share must still be at least one basis point of the creator fee.
+    // After Splitdev's cut each share must still be at least one basis point of the creator fee.
     if (bps.some((b) => Number.isNaN(b) || b <= 0)) add(2, "Every share must be above 0% (2 decimals max).");
     else if (bps.some((b) => Math.floor((b * (SHARES_TOTAL - PLATFORM_BPS)) / SHARES_TOTAL) < 1)) add(2, "Every share must be at least 0.02%.");
     else if (totalBps !== SHARES_TOTAL) add(2, `Shares add up to ${pct(totalBps)}; they need to total 100%.`);
@@ -773,7 +773,7 @@ export default function CreatePage() {
                   <p className="mt-1.5 text-[14px] leading-relaxed text-ink-2">
                     A normal pump.fun coin whose creator fees are shared for good through pump.fun&apos;s own fee sharing:{" "}
                     <b className="font-semibold text-ink">{accountsPct.toLocaleString("en-US", { maximumFractionDigits: 2 })}% to your GitHub developers</b>,{" "}
-                    {PLATFORM_BPS / 100}% to Splidev. Once set, nobody can change it, not even you.
+                    {PLATFORM_BPS / 100}% to Splitdev. Once set, nobody can change it, not even you.
                   </p>
                 </div>
               </div>
@@ -781,7 +781,7 @@ export default function CreatePage() {
               <dl className="space-y-2 border-t border-dashed border-line-2 pt-4 font-mono text-[12px]">
                 {LAUNCH_FEE_LAMPORTS > 0n ? (
                   <div className="flex items-baseline justify-between gap-3">
-                    <dt className="text-ink-3">Splidev launch fee</dt>
+                    <dt className="text-ink-3">Splitdev launch fee</dt>
                     <dd className="text-ink">{formatSol(LAUNCH_FEE_LAMPORTS)} SOL</dd>
                   </div>
                 ) : null}
@@ -804,7 +804,7 @@ export default function CreatePage() {
                 <div className="rounded-2xl border border-sun bg-card-2 p-4 text-[13px] leading-relaxed text-ink-2">
                   <div className="eyebrow !text-ink">Unfinished launch</div>
                   <p className="mt-1.5">
-                    ${pending.symbol} was created but its fee split isn&apos;t set yet, so it isn&apos;t a Splidev coin and its fees go to you. Finish it now to lock the split.
+                    ${pending.symbol} was created but its fee split isn&apos;t set yet, so it isn&apos;t a Splitdev coin and its fees go to you. Finish it now to lock the split.
                   </p>
                   <button type="button" className="btn-secondary mt-3 px-4 py-2 text-[14px]" disabled={Boolean(status)} onClick={finishPending}>
                     Finish ${pending.symbol}&apos;s launch
@@ -840,7 +840,7 @@ export default function CreatePage() {
               {!live ? (
                 <p className="flex items-start gap-2.5 rounded-2xl bg-card-2 px-4 py-3 text-[13px] text-ink-2">
                   <AlertIcon />
-                  <span>Splidev isn&apos;t set up yet, so launches are off.</span>
+                  <span>Splitdev isn&apos;t set up yet, so launches are off.</span>
                 </p>
               ) : null}
 

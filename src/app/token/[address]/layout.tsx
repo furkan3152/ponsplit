@@ -10,8 +10,8 @@ export async function generateMetadata({ params }: { params: { address: string }
   return {
     title,
     description,
-    openGraph: { title: `${title} on Splidev`, description },
-    twitter: { card: "summary_large_image", title: `${title} on Splidev`, description },
+    openGraph: { title: `${title} on Splitdev`, description },
+    twitter: { card: "summary_large_image", title: `${title} on Splitdev`, description },
   };
 }
 

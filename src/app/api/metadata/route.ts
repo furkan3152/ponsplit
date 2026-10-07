@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     description: str("description", 500),
     image: link("image") ?? "",
     showName: true,
-    createdOn: "https://splidev.app",
+    createdOn: "https://splitdev.app",
     ...(link("website") ? { website: link("website") } : {}),
     ...(link("twitter") ? { twitter: link("twitter") } : {}),
     ...(link("telegram") ? { telegram: link("telegram") } : {}),

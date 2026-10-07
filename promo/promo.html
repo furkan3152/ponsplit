@@ -12,7 +12,7 @@
 <body>
 <canvas id="c" width="1920" height="1080"></canvas>
 <script>
-// Splidev promo: a deterministic canvas animation. renderFrame(t) draws the frame at t seconds;
+// Splitdev promo: a deterministic canvas animation. renderFrame(t) draws the frame at t seconds;
 // render.mjs steps it frame by frame and encodes the video. Bug images are injected as window.BUGS.
 const W = 1920, H = 1080, CX = W / 2;
 const cv = document.getElementById("c");
@@ -109,7 +109,7 @@ const CAPS = [
   [8.0, 11.4, "// and gets none of the trading fees", 900],
   [33.0, 36.0, "// up to 9 GitHub accounts per coin · keyed by their permanent GitHub id", 900],
   [37.4, 41.0, "// split fixed at launch · admin revoked · nobody can change it, not even us", 900],
-  [42.6, 46.0, "// Splidev never holds the money · fees sit in their pump.fun GitHub account", 930],
+  [42.6, 46.0, "// Splitdev never holds the money · fees sit in their pump.fun GitHub account", 930],
 ];
 
 let READY = false;
@@ -243,9 +243,9 @@ function caret(t, x, y, h = 70) {
 }
 function wordmark(cx, y, size, t) {
   g.font = `700 ${size}px "Space Grotesk"`; g.textBaseline = "alphabetic"; g.textAlign = "left";
-  const w1 = g.measureText("spli").width, w2 = g.measureText("dev").width;
+  const w1 = g.measureText("split").width, w2 = g.measureText("dev").width;
   const x = cx - (w1 + w2 + size * 0.5) / 2;
-  g.fillStyle = COL.ink; g.fillText("spli", x, y);
+  g.fillStyle = COL.ink; g.fillText("split", x, y);
   g.fillStyle = COL.tang; g.shadowColor = "rgba(255,122,61,0.6)"; g.shadowBlur = 28; g.fillText("dev", x + w1, y); g.shadowBlur = 0;
   if (Math.floor(t * 2) % 2 === 0) { g.fillStyle = COL.tang; g.fillRect(x + w1 + w2 + size * 0.06, y - size * 0.02, size * 0.42, size * 0.1); }
   g.textAlign = "center";
@@ -280,14 +280,14 @@ function keycap(x, y, w, h, label, pressed, color = COL.tang, edge = COL.deep, t
 
 // ── scenes ───────────────────────────────────────────────────────────────────────────────
 function sceneIntro(t) {
-  // 0–2.6: a blinking caret, then "$ splidev" types itself
+  // 0–2.6: a blinking caret, then "$ splitdev" types itself
   const al = clamp((2.6 - t) / 0.3);
   if (al <= 0) return;
   g.globalAlpha = al;
   g.font = `600 64px "JetBrains Mono"`; g.textBaseline = "middle"; g.textAlign = "left";
-  const s = typed("$ splidev", t, 0.7, 11);
+  const s = typed("$ splitdev", t, 0.7, 11);
   const w = g.measureText(s).width;
-  const x0 = CX - 190;
+  const x0 = CX - 215;
   g.fillStyle = COL.tang; g.fillText(s.slice(0, 1), x0, H / 2);
   g.fillStyle = COL.ink; g.fillText(s.slice(1), x0 + g.measureText("$").width, H / 2);
   caret(t, x0 + w + 8, H / 2 + 22, 64);
@@ -350,7 +350,7 @@ function sceneSplit(t) {
   const nodes = [
     { x: CX - 520, key: "torvalds", c: COL.sky, pct: "54%", label: "@torvalds", li: "LT" },
     { x: CX, key: "gaearon", c: COL.pink, pct: "36%", label: "@gaearon", li: "DA" },
-    { x: CX + 520, key: null, c: COL.tang, pct: "10%", label: "splidev", li: "S" },
+    { x: CX + 520, key: null, c: COL.tang, pct: "10%", label: "splitdev", li: "S" },
   ];
   const path = (n) => { g.beginPath(); g.moveTo(CX, 480); g.lineTo(CX, forkY); if (n.x === CX) { g.lineTo(CX, 760); } else { g.bezierCurveTo(CX, forkY + 70, n.x, forkY + 50, n.x, forkY + 150); g.lineTo(n.x, 760); } };
   const pointOn = (n, u) => {

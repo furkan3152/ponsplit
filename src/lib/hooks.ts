@@ -26,7 +26,7 @@ async function getJson<T>(url: string): Promise<T> {
   return decode<T>(text);
 }
 
-/** Every Splidev coin and the GitHub accounts they pay, as one shared server read (refreshed every 10 s). */
+/** Every Splitdev coin and the GitHub accounts they pay, as one shared server read (refreshed every 10 s). */
 export function useSnapshot() {
   return useQuery({ queryKey: ["snapshot"], queryFn: () => getJson<Snapshot>("/api/snapshot"), refetchInterval: 10_000, retry: 2 });
 }
@@ -36,7 +36,7 @@ export function useCoins() {
   return { ...q, data: q.data?.coins };
 }
 
-/** One coin (null when the mint isn't a Splidev coin). */
+/** One coin (null when the mint isn't a Splitdev coin). */
 export function useCoin(mint: string | undefined) {
   return useQuery({
     queryKey: ["coin", mint],
@@ -109,7 +109,7 @@ export function useTokenBalance(mint: string | undefined) {
   });
 }
 
-/** The Splidev coins a wallet holds (raw balances, 6 decimals). */
+/** The Splitdev coins a wallet holds (raw balances, 6 decimals). */
 export function useHoldings(owner: string | undefined) {
   const { connection } = useConnection();
   const { data: coins } = useCoins();

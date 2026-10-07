@@ -1,4 +1,4 @@
-// Bitbug, Splidev's mascot: a little beetle (every developer's oldest friend, the bug) whose
+// Bitbug, Splitdev's mascot: a little beetle (every developer's oldest friend, the bug) whose
 // tangerine shell is split down the middle. When it opens its shell, the fees fly out to the
 // developers. Pure SVG drawn in a 120×120 box; all colors are CSS variables, so it follows the theme.
 import { C, INK, SHINE } from "./parts";

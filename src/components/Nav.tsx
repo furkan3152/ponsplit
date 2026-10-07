@@ -18,7 +18,7 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-[var(--glass)] backdrop-blur-xl backdrop-saturate-150">
       <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-2 px-4 sm:gap-3 sm:px-6">
-        <Link href="/" className="group shrink-0 lg:hidden" aria-label="Splidev home">
+        <Link href="/" className="group shrink-0 lg:hidden" aria-label="Splitdev home">
           <Wordmark textClassName="hidden min-[440px]:inline" />
         </Link>
         <SearchBox className="hidden flex-1 md:block lg:mx-auto lg:max-w-[560px]" />

@@ -33,7 +33,7 @@ const toText = (raw: bigint, decimals: number) => {
 /**
  * Buys and sells a coin where it trades right now: on its pump.fun bonding curve, then on
  * pump.fun's pool once it has graduated. pump.fun's fees apply as on pump.fun itself; the
- * creator's part of them goes to the coin's GitHub accounts and Splidev.
+ * creator's part of them goes to the coin's GitHub accounts and Splitdev.
  */
 export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => void }) {
   const [side, setSide] = useState<"buy" | "sell">("buy");
@@ -207,7 +207,7 @@ export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => voi
             className="!mt-2.5 border-t border-dashed border-line pt-2.5"
           />
           {buying && maxPay !== undefined ? <Row label="You pay at most" value={`${formatSol(maxPay, 6)} SOL`} /> : null}
-          <Row label="Creator fee goes to" value={`${coin.recipients.length} GitHub dev${coin.recipients.length === 1 ? "" : "s"} + Splidev`} />
+          <Row label="Creator fee goes to" value={`${coin.recipients.length} GitHub dev${coin.recipients.length === 1 ? "" : "s"} + Splitdev`} />
         </dl>
         <div aria-hidden className="relative mx-4 border-t border-dashed border-line-2">
           <span className="absolute -left-[23px] -top-[7px] h-3.5 w-3.5 rounded-full bg-card" />

@@ -1,6 +1,6 @@
-// pump.fun as Splidev uses it: the launch transactions, trades and fee distribution, built with
-// pump.fun's own SDK. Splidev has no program of its own: a coin is a normal pump.fun coin whose
-// creator fees are shared, permanently, through pump.fun's fee sharing between Splidev's treasury
+// pump.fun as Splitdev uses it: the launch transactions, trades and fee distribution, built with
+// pump.fun's own SDK. Splitdev has no program of its own: a coin is a normal pump.fun coin whose
+// creator fees are shared, permanently, through pump.fun's fee sharing between Splitdev's treasury
 // (first) and pump.fun's GitHub fee accounts of the chosen GitHub users.
 import {
   ComputeBudgetProgram,
@@ -22,14 +22,14 @@ export const PUMP_PROGRAM_ID = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14
 export const PUMP_AMM_PROGRAM_ID = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
 export const PUMP_FEES_PROGRAM_ID = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
 
-/** pump.fun's GitHub fee account for a GitHub user id (where that user's share of every Splidev coin lands). */
+/** pump.fun's GitHub fee account for a GitHub user id (where that user's share of every Splitdev coin lands). */
 export const githubFeeAccount = (githubId: string) => socialFeePda(githubId, Platform.GitHub);
 
 export type Share = { address: PublicKey; shareBps: number };
 
 /**
- * The permanent shareholder list of a new coin: Splidev's treasury first (that is how the site finds
- * Splidev coins), then each GitHub account with its part of the rest. `bps` are the accounts' shares
+ * The permanent shareholder list of a new coin: Splitdev's treasury first (that is how the site finds
+ * Splitdev coins), then each GitHub account with its part of the rest. `bps` are the accounts' shares
  * of their part and add up to 10,000; rounding goes to the first account.
  */
 export function shareholders(githubIds: string[], bps: number[], treasury: PublicKey = TREASURY!, platformBps = PLATFORM_BPS): Share[] {
@@ -85,7 +85,7 @@ export const TX_BYTES_LIMIT = 1232;
  * The mint keypair signs the first transaction too.
  */
 export async function launchTransactions(c: Connection, input: LaunchInput): Promise<VersionedTransaction[]> {
-  if (!TREASURY) throw new Error("Splidev isn't set up yet.");
+  if (!TREASURY) throw new Error("Splitdev isn't set up yet.");
   shareholders(input.githubIds, input.bps); // fail before anything is sent
   return [await createTransaction(c, input), ...(await finishLaunchTransactions(c, input.user, input.mint, input.githubIds, input.bps))];
 }
@@ -132,12 +132,12 @@ export async function createTransaction(c: Connection, input: LaunchInput): Prom
 
 /**
  * The rest of a launch, once the coin exists: pump.fun GitHub fee accounts for the recipients that
- * don't have one yet, then pump.fun fee sharing set once to Splidev + the GitHub accounts (after
- * which nobody can change it: pump.fun revokes the admin), with Splidev's launch fee. Also finishes
+ * don't have one yet, then pump.fun fee sharing set once to Splitdev + the GitHub accounts (after
+ * which nobody can change it: pump.fun revokes the admin), with Splitdev's launch fee. Also finishes
  * a launch whose first transaction landed but whose split didn't.
  */
 export async function finishLaunchTransactions(c: Connection, user: PublicKey, mint: PublicKey, githubIds: string[], bps: number[]): Promise<VersionedTransaction[]> {
-  if (!TREASURY) throw new Error("Splidev isn't set up yet.");
+  if (!TREASURY) throw new Error("Splitdev isn't set up yet.");
   const shares = shareholders(githubIds, bps);
   // A split already on chain: final means there is nothing left to do; a config that exists but
   // isn't final yet is updated instead of created again (creating it twice fails).
@@ -322,7 +322,7 @@ export async function sellTransaction(c: Connection, user: PublicKey, mint: Publ
 }
 
 /**
- * Moves a coin's accumulated creator fees to its shareholders (Splidev and the GitHub fee accounts),
+ * Moves a coin's accumulated creator fees to its shareholders (Splitdev and the GitHub fee accounts),
  * through pump.fun's permissionless distribution; for a graduated coin it first sweeps the pool's
  * creator fees. Anyone can send it and pays only the network fee.
  */

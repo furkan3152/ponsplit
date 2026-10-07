@@ -1,8 +1,8 @@
-name: Splidev
+name: Splitdev
 
 # The Solana side on pump.fun's real programs (e2e/solana/fixtures, dumped from mainnet): a local
 # solana-test-validator, a launch through the site's own transaction builder, trades and pump.fun's
-# fee distribution to Splidev and the GitHub accounts.
+# fee distribution to Splitdev and the GitHub accounts.
 on:
   push:
   workflow_dispatch:

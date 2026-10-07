@@ -1,18 +1,18 @@
 import { BugMark } from "./Bug";
 
 /**
- * Splidev brand mark: Bitbug, the split-shell beetle. `public/logo.svg` and `src/app/icon.svg` are
+ * Splitdev brand mark: Bitbug, the split-shell beetle. `public/logo.svg` and `src/app/icon.svg` are
  * rendered from this (scripts/render-logo.mjs).
  */
 export function LogoMark({ size = 32, className }: { size?: number; className?: string }) {
   return <BugMark size={size} className={className} />;
 }
 
-/** The wordmark text alone: "splidev" in lowercase like a command, "dev" in tangerine, a blinking caret. */
+/** The wordmark text alone: "splitdev" in lowercase like a command, "dev" in tangerine, a blinking caret. */
 export function WordmarkText({ className = "" }: { className?: string }) {
   return (
     <span className={`display whitespace-nowrap leading-none tracking-[-0.05em] ${className}`}>
-      spli<span className="text-neon">dev</span>
+      split<span className="text-neon">dev</span>
       <span aria-hidden className="caret ml-[1px] inline-block h-[0.14em] w-[0.5em] translate-y-[0.02em] rounded-[1px] bg-lime align-baseline" />
     </span>
   );

@@ -1,6 +1,6 @@
-// Launches a Splidev coin on a local solana-test-validator running pump.fun's real programs (see
+// Launches a Splitdev coin on a local solana-test-validator running pump.fun's real programs (see
 // fixtures/), through the site's own transaction builder, then checks pump.fun's fee sharing:
-// Splidev's treasury first, then the GitHub fee accounts, admin revoked. Trades, distributes the
+// Splitdev's treasury first, then the GitHub fee accounts, admin revoked. Trades, distributes the
 // creator fees and checks every shareholder got its share.
 //   node e2e/solana/build-lib.mjs && RPC=http://127.0.0.1:8899 node e2e/solana/launch-local.mjs
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
@@ -39,7 +39,7 @@ const before = await c.getBalance(treasury.publicKey);
 const txs = await launchTransactions(c, {
   user: creator.publicKey,
   mint: mint.publicKey,
-  name: "Splidev Local",
+  name: "Splitdev Local",
   symbol: "SPLD",
   uri: "https://example.com/meta.json",
   githubIds,
@@ -57,7 +57,7 @@ console.log(JSON.stringify(cfg, (_, v) => (v && v.toBase58 ? v.toBase58() : v), 
 if (!cfg.adminRevoked) fail("fee sharing admin not revoked");
 if (!cfg.shareholders[0].address.equals(treasury.publicKey)) fail("treasury isn't the first shareholder");
 if (!cfg.shareholders[1].address.equals(githubFeeAccount("1024025"))) fail("GitHub account 1 missing");
-// The treasury filter the site uses to list Splidev coins.
+// The treasury filter the site uses to list Splitdev coins.
 const raw = await c.getAccountInfo(cfgKey);
 if (!new PublicKey(raw.data.subarray(80, 112)).equals(treasury.publicKey)) fail("treasury not at offset 80");
 const listed = await c.getProgramAccounts(PUMP_FEES_PROGRAM_ID, { filters: [{ memcmp: { offset: 80, bytes: treasury.publicKey.toBase58() } }] });
@@ -66,7 +66,7 @@ ok("fee sharing is set: treasury first, GitHub accounts after, admin revoked, fi
 const coins = await listCoins(c);
 const coin = coins.find((x) => x.token === mint.publicKey.toBase58());
 if (coins.length !== 1 || !coin) fail(`the site's coin list found ${coins.length} coins`);
-if (coin.name !== "Splidev Local" || coin.symbol !== "SPLD" || coin.platformBps !== 1000) fail(`unexpected coin ${JSON.stringify(coin, (_, v) => (typeof v === "bigint" ? v.toString() : v))}`);
+if (coin.name !== "Splitdev Local" || coin.symbol !== "SPLD" || coin.platformBps !== 1000) fail(`unexpected coin ${JSON.stringify(coin, (_, v) => (typeof v === "bigint" ? v.toString() : v))}`);
 if (coin.recipients.map((r) => r.githubId).join() !== githubIds.join() || coin.recipients.map((r) => r.shareBps).join() !== "5400,3600") fail(`unexpected recipients ${JSON.stringify(coin.recipients)}`);
 if (!(coin.price > 0) || !(coin.progress > 0.1)) fail(`no price or progress after the first buy (${coin.progress}%)`);
 const { getAssociatedTokenAddressSync: ataOf } = require("@solana/spl-token");
@@ -121,7 +121,7 @@ for (const [i, g] of gains.entries()) {
   const expected = (total * cfg.shareholders[i].shareBps) / 10_000;
   if (Math.abs(g - expected) > 2) fail(`shareholder ${i} got ${g}, expected about ${expected}`);
 }
-ok(`creator fees distributed by share: Splidev ${gains[0]}, GitHub ${gains.slice(1).join(" / ")} lamports`);
+ok(`creator fees distributed by share: Splitdev ${gains[0]}, GitHub ${gains.slice(1).join(" / ")} lamports`);
 const claim = await githubClaimable(c, "1024025");
 if (claim.claimable < BigInt(gains[1])) fail(`GitHub 1024025 shows ${claim.claimable} claimable, expected at least ${gains[1]}`);
 ok(`the claim page sees ${Number(claim.claimable) / LAMPORTS_PER_SOL} SOL waiting for GitHub user 1024025 on pump.fun`);
@@ -148,14 +148,14 @@ if ((await launchState(c, mint.publicKey)) !== "done") fail("a finished launch d
 if ((await finishLaunchTransactions(c, creator.publicKey, mint.publicKey, githubIds, [6000, 4000])).length) fail("finishing a finished launch still builds transactions");
 ok("a finished launch reads as done and has nothing left to finish");
 
-// A coin dressed up as a Splidev coin (anyone can set pump.fun fee sharing): the treasury first with a
+// A coin dressed up as a Splitdev coin (anyone can set pump.fun fee sharing): the treasury first with a
 // token share, a real GitHub account, and the attacker's own wallet taking half. It must not be listed.
 const { TransactionMessage, VersionedTransaction } = await import("@solana/web3.js");
 const { NATIVE_MINT, TOKEN_PROGRAM_ID } = await import("@solana/spl-token");
 const attacker = Keypair.generate();
 const fake = Keypair.generate();
 await fund(attacker.publicKey, 5);
-await send(await createTransaction(c, { user: attacker.publicKey, mint: fake.publicKey, name: "Totally Splidev", symbol: "FAKE", uri: "https://example.com/f.json", githubIds, bps: [5000, 5000], firstBuyLamports: 0n }), [attacker, fake]);
+await send(await createTransaction(c, { user: attacker.publicKey, mint: fake.publicKey, name: "Totally Splitdev", symbol: "FAKE", uri: "https://example.com/f.json", githubIds, bps: [5000, 5000], firstBuyLamports: 0n }), [attacker, fake]);
 const spoofIxs = [
   await PUMP_SDK.createFeeSharingConfig({ creator: attacker.publicKey, mint: fake.publicKey, pool: null }),
   await PUMP_SDK.updateFeeSharesV2({
@@ -173,6 +173,6 @@ const spoofIxs = [
 ];
 const { blockhash } = await c.getLatestBlockhash("confirmed");
 await send(new VersionedTransaction(new TransactionMessage({ payerKey: attacker.publicKey, recentBlockhash: blockhash, instructions: spoofIxs }).compileToV0Message()), [attacker]);
-if (await readCoin(c, fake.publicKey)) fail("a coin with a hidden shareholder reads as a Splidev coin");
+if (await readCoin(c, fake.publicKey)) fail("a coin with a hidden shareholder reads as a Splitdev coin");
 if ((await listCoins(c)).some((x) => x.token === fake.publicKey.toBase58())) fail("a coin with a hidden shareholder is listed");
 ok("a coin whose split hides another wallet (treasury first, 1 bps) is not listed or shown");

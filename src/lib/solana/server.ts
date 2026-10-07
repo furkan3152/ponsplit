@@ -11,7 +11,7 @@ import { listCoins, many, readCoin, type Coin } from "./reads";
 import { recentTrades, type Trade } from "./trades";
 
 /**
- * The server's side of Splidev's chain reads. However many visitors ask, the coin list is read at
+ * The server's side of Splitdev's chain reads. However many visitors ask, the coin list is read at
  * most once per FRESH_MS per server instance (concurrent requests share one read) and the CDN in
  * front keeps each answer a few seconds on top of that.
  */
@@ -150,7 +150,7 @@ async function earnersOf(c: Connection, coins: CoinView[]): Promise<Earner[]> {
 }
 
 const snap: Memo<Snapshot> = { at: 0 };
-/** Every Splidev coin (with metadata, GitHub profiles and age) and the GitHub accounts they pay. */
+/** Every Splitdev coin (with metadata, GitHub profiles and age) and the GitHub accounts they pay. */
 export function snapshot(): Promise<Snapshot> {
   return memo(snap, async () => {
     const c = serverConnection();
@@ -160,7 +160,7 @@ export function snapshot(): Promise<Snapshot> {
   });
 }
 
-/** One coin (from the snapshot when it's there, else read directly), or null if it isn't a Splidev coin. */
+/** One coin (from the snapshot when it's there, else read directly), or null if it isn't a Splitdev coin. */
 export async function coinView(mint: string): Promise<CoinView | null> {
   let key: PublicKey;
   try {
@@ -170,7 +170,7 @@ export async function coinView(mint: string): Promise<CoinView | null> {
   }
   const listed = (await snapshot().catch(() => null))?.coins.find((x) => x.token === mint);
   if (listed) return listed;
-  // Not in the list (brand new, or not a Splidev coin at all): one direct read, but a miss is
+  // Not in the list (brand new, or not a Splitdev coin at all): one direct read, but a miss is
   // remembered for 30 s and direct reads have a site-wide budget, so looping over random addresses
   // can't spend the RPC.
   if ((notACoin.get(mint) ?? 0) > Date.now()) return null;
