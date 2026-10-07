@@ -2,7 +2,7 @@
 
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, type Connection } from "@solana/web3.js";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { errorMessage, formatSol, formatTokens } from "@/lib/format";
@@ -60,8 +60,12 @@ export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => voi
   });
 
   const balance = side === "buy" ? sol.data : tokens.data;
-  const insufficient = parsed !== undefined && balance !== undefined && parsed > balance;
-  const noFeesLeft = side === "buy" && !insufficient && parsed !== undefined && balance !== undefined && parsed + FEE_RESERVE > balance;
+  // A buy is "these tokens for at most this much SOL": with the slippage allowance the wallet may pay
+  // up to `maxPay`, so balance checks use that, not the typed amount.
+  const maxPay = side === "buy" && parsed !== undefined ? (parsed * BigInt(10_000 + slippage)) / 10_000n : undefined;
+  const spend = side === "buy" ? maxPay : parsed;
+  const insufficient = spend !== undefined && balance !== undefined && spend > balance;
+  const noFeesLeft = side === "buy" && !insufficient && spend !== undefined && balance !== undefined && spend + FEE_RESERVE > balance;
 
   const presets =
     side === "buy"
@@ -73,16 +77,22 @@ export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => voi
     if (!connected || !publicKey) return setVisible(true);
     if (!parsed || lock.current) return;
     lock.current = true;
+    const seen = quote.data;
     try {
       setBusy("Checking the price…");
-      // Built on the chain's current state; the slippage setting bounds the price against this quote.
+      // Built on the chain's current state; the slippage setting bounds the price against that.
       const built = side === "buy" ? await buyTransaction(connection, publicKey, mint, parsed, slippage) : await sellTransaction(connection, publicKey, mint, parsed, slippage);
+      // ...and against the quote the visitor saw: if the price moved past their slippage since, stop
+      // and show the new quote instead of sending a worse trade than the one on screen.
+      const now = "tokens" in built ? built.tokens : built.lamports;
+      if (seen !== undefined && now * 10_000n < seen * BigInt(10_000 - slippage)) {
+        void quote.refetch();
+        throw new Error(`The price moved: you'd now get about ${"tokens" in built ? `${formatTokens(now)} ${coin.symbol}` : `${formatSol(now, 6)} SOL`}. Check the new quote and try again.`);
+      }
       setBusy("Confirm in your wallet…");
       const sig = await sendTransaction(built.tx, connection, { maxRetries: 3 });
       setBusy("Confirming…");
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-      const res = await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
-      if (res.value.err) throw new Error("The transaction failed on chain.");
+      await confirmSignature(connection, sig);
       setMsg({
         kind: "ok",
         text: side === "buy" ? `Bought about ${formatTokens("tokens" in built ? built.tokens : 0n)} ${coin.symbol}` : `Sold for about ${formatSol("lamports" in built ? built.lamports : 0n)} SOL`,
@@ -138,7 +148,8 @@ export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => voi
               className="num -mr-2 min-w-0 truncate rounded-full px-2 py-1 text-[11px] text-ink-2 transition hover:bg-card-2 hover:text-ink"
               onClick={() => {
                 if (balance === undefined) return;
-                const usable = side === "buy" ? (balance > FEE_RESERVE ? balance - FEE_RESERVE : 0n) : balance;
+                // A buy may cost up to the slippage allowance more, so "Balance" leaves room for it.
+                const usable = side === "buy" ? (balance > FEE_RESERVE ? ((balance - FEE_RESERVE) * 10_000n) / BigInt(10_000 + slippage) : 0n) : balance;
                 setAmount(usable > 0n ? toText(usable, side === "buy" ? 9 : 6) : "");
               }}
             >
@@ -195,6 +206,7 @@ export function TradePanel({ coin, onTraded }: { coin: Coin; onTraded: () => voi
             value="included"
             className="!mt-2.5 border-t border-dashed border-line pt-2.5"
           />
+          {buying && maxPay !== undefined ? <Row label="You pay at most" value={`${formatSol(maxPay, 6)} SOL`} /> : null}
           <Row label="Creator fee goes to" value={`${coin.recipients.length} GitHub dev${coin.recipients.length === 1 ? "" : "s"} + Splidev`} />
         </dl>
         <div aria-hidden className="relative mx-4 border-t border-dashed border-line-2">
@@ -294,4 +306,15 @@ function StatusIcon({ ok }: { ok: boolean }) {
       {ok ? <path d="m5 12.5 4.5 4.5L19 7.5" /> : <path d="M12 7.5v6M12 17.2v.3M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z" />}
     </svg>
   );
+}
+
+/** Waits for a signature by polling its status, so a dropped websocket doesn't fail a trade that landed. */
+async function confirmSignature(connection: Connection, sig: string) {
+  for (let k = 0; k < 50; k++) {
+    const st = (await connection.getSignatureStatuses([sig]).catch(() => null))?.value[0];
+    if (st?.err) throw new Error("The transaction failed on chain.");
+    if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) return;
+    await new Promise((r) => setTimeout(r, 1_500));
+  }
+  throw new Error("The network was slow to confirm. Check your wallet before trying again.");
 }

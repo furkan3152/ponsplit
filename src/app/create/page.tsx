@@ -19,7 +19,7 @@ import { isValidLogin, normalizeLogin } from "@/lib/github-handles";
 import { useDebounced, useGithubProfiles, useSolBalance } from "@/lib/hooks";
 import { safeUrl } from "@/lib/metadata";
 import { LAUNCH_FEE_LAMPORTS, MAX_RECIPIENTS, PLATFORM_BPS, SHARES_TOTAL, isLive } from "@/lib/solana/config";
-import { createTransaction, finishLaunchTransactions, firstBuyTokens, newCurvePreview } from "@/lib/solana/pump";
+import { createTransaction, finishLaunchTransactions, firstBuyTokens, launchState, newCurvePreview } from "@/lib/solana/pump";
 
 type Row = { handle: string; percent: string };
 
@@ -75,25 +75,42 @@ type Issue = { step: 1 | 2 | 3; text: string };
 const HANDLE_STATUS =
   "pointer-events-none mt-1.5 block w-fit max-w-full truncate rounded-full px-2 py-0.5 text-[12px] font-medium sm:absolute sm:right-2.5 sm:top-1/2 sm:mt-0 sm:max-w-[8rem] sm:-translate-y-1/2";
 
-/** A launch whose coin exists but whose split hasn't been set yet (kept per wallet to finish it). */
-type Pending = { mint: string; symbol: string; githubIds: string[]; bps: number[] };
-const PENDING_KEY = "splidev:pending-launch:v1";
-function readPending(wallet: string): Pending | null {
+/**
+ * A launch that was signed but may not have finished: its coin could exist without its split. Kept
+ * per wallet (several per wallet) from the moment the wallet signs, and checked against the chain
+ * before the page offers to finish it.
+ */
+type Pending = { mint: string; symbol: string; githubIds: string[]; bps: number[]; at: number };
+const PENDING_KEY = "splidev:pending-launch:v2";
+function readAll(): Record<string, Pending[]> {
   try {
-    const all = JSON.parse(localStorage.getItem(PENDING_KEY) ?? "{}") as Record<string, Pending>;
-    return all[wallet] ?? null;
+    const all = JSON.parse(localStorage.getItem(PENDING_KEY) ?? "{}") as Record<string, Pending[]>;
+    return all && typeof all === "object" ? all : {};
   } catch {
-    return null;
+    return {};
   }
 }
-function writePending(wallet: string, p: Pending | null) {
+function readPending(wallet: string): Pending[] {
+  const list = readAll()[wallet];
+  return Array.isArray(list) ? list : [];
+}
+function savePending(wallet: string, p: Pending) {
   try {
-    const all = JSON.parse(localStorage.getItem(PENDING_KEY) ?? "{}") as Record<string, Pending>;
-    if (p) all[wallet] = p;
-    else delete all[wallet];
+    const all = readAll();
+    all[wallet] = [...readPending(wallet).filter((x) => x.mint !== p.mint), p];
     localStorage.setItem(PENDING_KEY, JSON.stringify(all));
   } catch {
     // storage unavailable: an interrupted launch can't be resumed from this browser
+  }
+}
+function dropPending(wallet: string, mint: string) {
+  try {
+    const all = readAll();
+    all[wallet] = readPending(wallet).filter((x) => x.mint !== mint);
+    if (!all[wallet].length) delete all[wallet];
+    localStorage.setItem(PENDING_KEY, JSON.stringify(all));
+  } catch {
+    // storage unavailable
   }
 }
 
@@ -138,7 +155,23 @@ export default function CreatePage() {
   // The account being edited or pointed at, so its slice of the split lights up in the preview.
   const [hot, setHot] = useState<number | null>(null);
   const [pendingTick, setPendingTick] = useState(0);
-  const pending = useMemo(() => (address ? readPending(address) : null), [address, pendingTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const stored = useMemo(() => (address ? readPending(address) : []), [address, pendingTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  // What the chain says about each stored launch: finished ones and ones whose coin never landed
+  // are forgotten; only a coin that exists without its final split is offered for finishing.
+  const pendingState = useQuery({
+    queryKey: ["pending-launches", address, stored.map((p) => p.mint).join(",")],
+    enabled: Boolean(address && stored.length),
+    queryFn: async () => {
+      const open: Pending[] = [];
+      for (const p of stored) {
+        const state = await launchState(connection, new PublicKey(p.mint));
+        if (state === "done" || (state === "missing" && Date.now() - p.at > 3 * 60_000)) dropPending(address!, p.mint);
+        else if (state === "needs-split") open.push(p);
+      }
+      return open;
+    },
+  });
+  const pending = pendingState.data?.[0] ?? null;
 
   const handles = useMemo(() => rows.map((r) => normalizeLogin(r.handle)), [rows]);
   const bps = useMemo(() => rows.map((r) => toBps(r.percent)), [rows]);
@@ -174,7 +207,9 @@ export default function CreatePage() {
     if (new Set(handles).size !== handles.length) add(2, "Each GitHub account can only appear once.");
     const ids = handles.map((h) => profiles.data?.[h]?.id).filter(Boolean);
     if (new Set(ids).size !== ids.length) add(2, "Two usernames point to the same GitHub account.");
+    // After Splidev's cut each share must still be at least one basis point of the creator fee.
     if (bps.some((b) => Number.isNaN(b) || b <= 0)) add(2, "Every share must be above 0% (2 decimals max).");
+    else if (bps.some((b) => Math.floor((b * (SHARES_TOTAL - PLATFORM_BPS)) / SHARES_TOTAL) < 1)) add(2, "Every share must be at least 0.02%.");
     else if (totalBps !== SHARES_TOTAL) add(2, `Shares add up to ${pct(totalBps)}; they need to total 100%.`);
     if (firstBuy === undefined) add(3, "First buy must be a SOL amount.");
     return p;
@@ -200,22 +235,38 @@ export default function CreatePage() {
     }
   }
 
-  /** Signs every transaction at once (one wallet prompt), then sends them in order. */
-  async function signAndSend(txs: VersionedTransaction[], afterFirst?: () => void) {
+  /**
+   * Signs every transaction at once (one wallet prompt), then sends them in order. `onSigned` runs
+   * as soon as the wallet signed, before anything is sent, so an interrupted launch is always on record.
+   */
+  async function signAndSend(txs: VersionedTransaction[], onSigned?: () => void, afterFirst?: () => void) {
     if (!signAllTransactions) throw new Error("This wallet can't sign several transactions at once. Try Phantom, Solflare or Backpack.");
     setStatus("Confirm in your wallet…");
     const signed = await signAllTransactions(txs);
+    onSigned?.();
     for (const [i, tx] of signed.entries()) {
       const sig = await connection.sendRawTransaction(tx.serialize(), { maxRetries: 3 }).catch((e: { logs?: string[] }) => {
         // The program logs are what explain a rejected launch; keep them in the console.
         console.error(`Launch transaction ${i + 1} of ${signed.length} was rejected`, e, e?.logs?.join("\n") ?? "");
         throw e;
       });
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-      const r = await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
-      if (r.value.err) throw new Error(i === 0 ? "Creating the coin failed on chain." : "Setting the fee split failed on chain.");
+      await confirmed(sig, i === 0 ? "Creating the coin failed on chain." : "Setting the fee split failed on chain.");
       if (i === 0) afterFirst?.();
     }
+  }
+
+  /**
+   * Waits for a signature by polling its status (up to ~75 s, past a blockhash's lifetime): a dropped
+   * websocket or one failed request doesn't turn a landed transaction into an error.
+   */
+  async function confirmed(sig: string, failure: string) {
+    for (let k = 0; k < 50; k++) {
+      const st = (await connection.getSignatureStatuses([sig]).catch(() => null))?.value[0];
+      if (st?.err) throw new Error(failure);
+      if (st && (st.confirmationStatus === "confirmed" || st.confirmationStatus === "finalized")) return;
+      await new Promise((r) => setTimeout(r, 1_500));
+    }
+    throw new Error("The network was slow to confirm. Reload this page in a minute: an unfinished launch shows up here to finish.");
   }
 
   async function submit() {
@@ -249,13 +300,14 @@ export default function CreatePage() {
       const create = await createTransaction(connection, input);
       create.sign([mint]);
       const finish = await finishLaunchTransactions(connection, publicKey, mint.publicKey, input.githubIds, bps);
-      const record: Pending = { mint: mint.publicKey.toBase58(), symbol: input.symbol, githubIds: input.githubIds, bps };
-      await signAndSend([create, ...finish], () => {
-        // The coin exists now; until its split is set, remember it so the launch can be finished.
-        writePending(address, record);
-        setStatus(STAGES[3][0]);
-      });
-      writePending(address, null);
+      const record: Pending = { mint: mint.publicKey.toBase58(), symbol: input.symbol, githubIds: input.githubIds, bps, at: Date.now() };
+      await signAndSend(
+        [create, ...finish],
+        // Signed: from here the coin may land, so remember the launch until its split is confirmed.
+        () => savePending(address, record),
+        () => setStatus(STAGES[3][0])
+      );
+      dropPending(address, record.mint);
       router.push(`/token/${mint.publicKey.toBase58()}?launched=1`);
     } catch (e) {
       setError(errorMessage(e));
@@ -274,12 +326,13 @@ export default function CreatePage() {
     try {
       const mint = new PublicKey(pending.mint);
       const txs = await finishLaunchTransactions(connection, publicKey, mint, pending.githubIds, pending.bps);
-      await signAndSend(txs);
-      writePending(address, null);
+      if (txs.length) await signAndSend(txs);
+      dropPending(address, pending.mint);
       router.push(`/token/${pending.mint}?launched=1`);
     } catch (e) {
       setError(errorMessage(e));
       setStatus(null);
+      setPendingTick((t) => t + 1);
     } finally {
       inFlight.current = false;
     }

@@ -3,6 +3,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { PUMP_SDK } from "@pump-fun/pump-sdk";
 import { resolveIds } from "../github";
 import { parseMetadata, safeUrl, type TokenMetadata } from "../metadata";
+import { rateLimit } from "../ratelimit";
 import { fetchPublicBytes } from "../safe-image";
 import { rpcUrls } from "./config";
 import { PUMP_FEES_PROGRAM_ID } from "./pump";
@@ -44,30 +45,55 @@ async function memo<T>(m: Memo<T>, read: () => Promise<T>, fresh = FRESH_MS): Pr
 }
 
 // ── Metadata JSON (name, description, image, links), fetched once per URI ─────────────────────
+// Metadata URIs are immutable, so good answers are kept for good; failures are kept for 5 minutes,
+// and no fetch may hold the snapshot longer than 2.5 s (a coin whose metadata host is slow or never
+// answers must not slow the whole site down; its details fill in on a later refresh).
 const metaCache = new Map<string, TokenMetadata>();
+const metaMiss = new Map<string, number>();
+const metaInflight = new Map<string, Promise<TokenMetadata | null>>();
 async function metadataFor(uri: string): Promise<TokenMetadata> {
   const hit = metaCache.get(uri);
   if (hit) return hit;
-  const url = safeUrl(uri);
-  const bytes = url ? await fetchPublicBytes(url, 64 * 1024).catch(() => null) : null;
-  const meta = bytes ? parseMetadata(Buffer.from(bytes).toString("utf8")) : {};
-  if (bytes) {
-    if (metaCache.size > 5_000) metaCache.delete(metaCache.keys().next().value as string);
-    metaCache.set(uri, meta); // metadata URIs are immutable; failures are retried next time
+  if ((metaMiss.get(uri) ?? 0) > Date.now()) return {};
+  let job = metaInflight.get(uri);
+  if (!job) {
+    const url = safeUrl(uri);
+    job = (url ? fetchPublicBytes(url, 64 * 1024).catch(() => null) : Promise.resolve(null))
+      .then((bytes) => {
+        if (!bytes) {
+          if (metaMiss.size > 5_000) metaMiss.delete(metaMiss.keys().next().value as string);
+          metaMiss.set(uri, Date.now() + 5 * 60_000);
+          return null;
+        }
+        const meta = parseMetadata(Buffer.from(bytes).toString("utf8"));
+        if (metaCache.size > 5_000) metaCache.delete(metaCache.keys().next().value as string);
+        metaCache.set(uri, meta);
+        return meta;
+      })
+      .finally(() => metaInflight.delete(uri));
+    metaInflight.set(uri, job);
   }
-  return meta;
+  const meta = await Promise.race([job, new Promise<null>((r) => setTimeout(() => r(null), 2_500))]);
+  return meta ?? {};
 }
 
 // ── A coin's age: the block time of its first transaction, found once ─────────────────────────
+// Found once and kept. Past 4,000 transactions the launch time is unknown (null, also kept): the
+// 4,000th-newest transaction would make an old, busy coin look new. A failed read retries after a minute.
 const created = new Map<string, number | null>();
+const createdMiss = new Map<string, number>();
 async function createdAt(c: Connection, mint: string): Promise<number | null> {
   if (created.has(mint)) return created.get(mint)!;
+  if ((createdMiss.get(mint) ?? 0) > Date.now()) return null;
   let before: string | undefined;
   let oldest: { blockTime?: number | null } | undefined;
   // The mint is in every transaction of the coin; its oldest one is the launch.
   for (let page = 0; page < 4; page++) {
     const sigs = await c.getSignaturesForAddress(new PublicKey(mint), { limit: 1000, before }, "confirmed").catch(() => null);
-    if (!sigs) return null;
+    if (!sigs) {
+      createdMiss.set(mint, Date.now() + 60_000);
+      return null;
+    }
     if (sigs.length) oldest = sigs[sigs.length - 1];
     if (sigs.length < 1000) {
       const t = oldest?.blockTime ?? null;
@@ -76,7 +102,8 @@ async function createdAt(c: Connection, mint: string): Promise<number | null> {
     }
     before = sigs[sigs.length - 1].signature;
   }
-  return oldest?.blockTime ?? null; // older than 4,000 transactions: an upper bound, not remembered
+  created.set(mint, null);
+  return null;
 }
 
 async function enrich(c: Connection, coins: Coin[]): Promise<CoinView[]> {
@@ -143,10 +170,21 @@ export async function coinView(mint: string): Promise<CoinView | null> {
   }
   const listed = (await snapshot().catch(() => null))?.coins.find((x) => x.token === mint);
   if (listed) return listed;
+  // Not in the list (brand new, or not a Splidev coin at all): one direct read, but a miss is
+  // remembered for 30 s and direct reads have a site-wide budget, so looping over random addresses
+  // can't spend the RPC.
+  if ((notACoin.get(mint) ?? 0) > Date.now()) return null;
+  if (!rateLimit("coin-read:*", 120, 60_000)) return null;
   const c = serverConnection();
   const coin = await readCoin(c, key);
-  return coin ? (await enrich(c, [coin]))[0] : null;
+  if (!coin) {
+    if (notACoin.size > 5_000) notACoin.delete(notACoin.keys().next().value as string);
+    notACoin.set(mint, Date.now() + 30_000);
+    return null;
+  }
+  return (await enrich(c, [coin]))[0];
 }
+const notACoin = new Map<string, number>();
 
 const tradeMemos = new Map<string, Memo<Trade[]>>();
 /** A coin's latest trades, shared by every visitor of its page. */

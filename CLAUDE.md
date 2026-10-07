@@ -22,7 +22,17 @@ owner's request; the old code is in git history (last SplitEarn commit: `d37e1fa
   doesn't, /create remembers it and offers "Finish $X's launch" (`finishLaunchTransactions`).
 - **Discovery.** The treasury is the first shareholder, so one `getProgramAccounts` on pump.fun's fee
   program (SharingConfig discriminator + treasury at offset 80) lists every Splidev coin (src/lib/solana/reads.ts).
-  Coins whose split isn't final or isn't treasury-first aren't listed.
+  Anyone can set fee sharing, so a coin is listed only with Splidev's exact shape: final and Active, treasury
+  first at an allowed share (`platformBps`, plus `pastPlatformBps` in splidev.json: add the old value there
+  when changing it), every other shareholder a pump.fun GitHub fee account, a SOL curve, not mayhem/cashback.
+  `launch-local.mjs` checks a spoofed coin (treasury 1 bps + hidden wallet) stays unlisted.
+- **Trades** come only from events emitted by the pump or pump AMM program (inner instruction program checked)
+  and, for the pool, this coin's canonical pool; SOL amounts include fees.
+- **Unfinished launches** are saved per wallet+mint in localStorage (`splidev:pending-launch:v2`) as soon as the
+  wallet signs, and /create checks each against the chain (`launchState`) before offering "Finish";
+  `finishLaunchTransactions` returns nothing for a final split and only updates a half-set one.
+- **Trades in the panel** are checked against the quote on screen (abort if worse than slippage) and show
+  "You pay at most" (pump.fun buys are token-exact with a SOL cap).
 - **Claims happen on pump.fun.** Developers sign in with GitHub on pump.fun and claim from their GitHub fee
   account (pump.fun's `social_claim_authority` signs). Splidev never holds money. /claim shows what a username has
   waiting (fee account balance - rent) and can distribute pending fees. Owner's choice (2026-10-05): pump.fun's
@@ -117,13 +127,20 @@ Gotchas:
 ## Deployment state (2026-10-05, Splidev live)
 
 - **Vercel**: project `ponsplit` (`prj_K4lYPXiOoIIqWqjNvaJxqqiuBeJI`; the MCP works with the project id and no team
-  slug, the `akdogan1` slug answers 403), domain splitearn.app, auto-deploys the branch (`.deploy-hold` removed at cutover, owner confirmed). Env (production + preview): `NEXT_PUBLIC_SOLANA_RPC_URL` = QuickNode endpoint 671368
-  (divine-boldest-choice, referrer-locked to splitearn.app, www.splitearn.app, ponsplit.vercel.app), `SOLANA_RPC_URL`
+  slug, the `akdogan1` slug answers 403), domain **splitdev.app** (bought by the owner 2026-10-07; www redirects to it;
+  `SITE_URL=https://splitdev.app`), splitearn.app still serves too, auto-deploys the branch (`.deploy-hold` removed at cutover, owner confirmed). Env (production + preview): `NEXT_PUBLIC_SOLANA_RPC_URL` = QuickNode endpoint 671368
+  (divine-boldest-choice, referrer-locked to splitdev.app, www.splitdev.app, splitearn.app, www.splitearn.app,
+  ponsplit.vercel.app; per-method rate limits need a paid QuickNode plan), `SOLANA_RPC_URL`
   (sensitive) = QuickNode endpoint 671317 (delicate-wiser-snow, token only), `BLOB_READ_WRITE_TOKEN`. Old EVM env
   (`SIGNER_PRIVATE_KEY`, `ADMIN_ADDRESSES`, `MAINNET_RPC_URL`, `NEXT_PUBLIC_MAINNET_RPC_URL`, `NEXT_PUBLIC_CHAIN`)
-  is unused.
+  is unused; the MCP has no delete for env vars, so the owner deletes them in the dashboard.
 - **QuickNode** (owner's account, MCP connected): 671368 and 671317 are Splidev's. 671312 (chaotic-quiet-rain) is
   referrer-locked to siglospay.com, another project of the owner's: don't touch it. Also robinhood/arc endpoints.
 - **Owner TODO**: `GITHUB_TOKEN` (no scopes) on Vercel: without it GitHub lookups run on the 60/hour anonymous limit
-  per server IP. Claude can't mint one. New domain/X for Splidev if wanted (brand.ts `X_HANDLE` is empty, links hide).
+  per server IP (src/lib/github.ts keeps its own hourly budget below that: 30 username + 20 id lookups, ids cached a
+  day, stale profiles served when busy). Claude can't mint one.
+- **Review round (2026-10-07)**: four parallel reviews (money logic, UI flows, server security, displayed numbers);
+  fixed: listing spoofing, fake trade events, unfinished-launch recovery, buy slippage vs the shown quote,
+  GitHub quota exhaustion, slow metadata hosts stalling the snapshot (2.5 s cap, failures cached), DNS rebinding
+  (undici connect-time check), RPC cost of random /token addresses, pool-side pending fees, coin ages, upload caps. New domain/X for Splidev if wanted (brand.ts `X_HANDLE` is empty, links hide).
 - SplitEarn's Robinhood contracts stay on chain; the site no longer shows them (owner accepted that).
