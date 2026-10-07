@@ -1,4 +1,4 @@
-// A Splidev coin leaves pump.fun's curve for its pool on a local validator with pump.fun's real
+// A Splitdev coin leaves pump.fun's curve for its pool on a local validator with pump.fun's real
 // programs: buys until the curve completes, pump.fun's (permissionless) migration, then buys and
 // sells on the pool through the site's builders, and the pool's creator fees reach the GitHub accounts.
 //   node e2e/solana/build-lib.mjs && RPC=http://127.0.0.1:8899 node e2e/solana/graduate-local.mjs
@@ -31,7 +31,7 @@ const mint = Keypair.generate();
 await fund(creator.publicKey, 5);
 await fund(whale.publicKey, 200);
 // Launched in two parts, as when the split step fails and the creator finishes it later.
-const input = { user: creator.publicKey, mint: mint.publicKey, name: "Splidev Grad", symbol: "GRAD", uri: "https://example.com/g.json", githubIds: ["1024025", "810438"], bps: [5000, 5000], firstBuyLamports: 0n };
+const input = { user: creator.publicKey, mint: mint.publicKey, name: "Splitdev Grad", symbol: "GRAD", uri: "https://example.com/g.json", githubIds: ["1024025", "810438"], bps: [5000, 5000], firstBuyLamports: 0n };
 await send(await lib.createTransaction(c, input), [creator, mint]);
 if (await lib.readCoin(c, mint.publicKey)) fail("a coin without its split is listed");
 for (const tx of await lib.finishLaunchTransactions(c, creator.publicKey, mint.publicKey, input.githubIds, input.bps)) await send(tx, [creator]);
@@ -83,4 +83,4 @@ await send(await lib.distributeTransaction(c, payer.publicKey, mint.publicKey), 
 const gains = (await Promise.all(holders.map((h) => c.getBalance(h)))).map((b, i) => b - before[i]);
 console.log("distributed after graduation (lamports):", gains.join(", "));
 if (gains.slice(1).some((g) => g <= 0)) fail("a GitHub account got nothing from the pool's fees");
-ok("the pool's creator fees reached Splidev and both GitHub accounts");
+ok("the pool's creator fees reached Splitdev and both GitHub accounts");

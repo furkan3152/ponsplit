@@ -9,7 +9,7 @@ import { FeeExample, FeeTable, LaunchFee } from "./LiveTerms";
 
 export const metadata: Metadata = {
   title: "Docs",
-  description: "How Splidev works on Solana: launching a pump.fun coin, trading, where every fee goes, and how GitHub developers get paid.",
+  description: "How Splitdev works on Solana: launching a pump.fun coin, trading, where every fee goes, and how GitHub developers get paid.",
 };
 
 const SECTIONS = [
@@ -59,7 +59,7 @@ export default function DocsPage() {
       <header className="max-w-2xl">
         <div className="eyebrow">Docs</div>
         <h1 className="display mt-2 flex items-center gap-2 text-[44px] leading-[0.95] sm:text-[60px]">
-          Splidev docs <HeadingDoodle kind="coin" className="h-10 w-10" />
+          Splitdev docs <HeadingDoodle kind="coin" className="h-10 w-10" />
         </h1>
         <p className="mt-4 text-[17px] leading-relaxed text-ink-2">
           Everything about launching a coin whose trading fees pay GitHub developers: how it works on pump.fun, what it costs, where every fee goes and how
@@ -92,7 +92,7 @@ export default function DocsPage() {
         <div className="min-w-0 max-w-3xl space-y-12">
           <Section id="overview" n={1} title="Overview">
             <p>
-              Splidev launches coins on {b("pump.fun")}, on Solana, with one difference: the coin&apos;s creator fees don&apos;t go to a single wallet. They
+              Splitdev launches coins on {b("pump.fun")}, on Solana, with one difference: the coin&apos;s creator fees don&apos;t go to a single wallet. They
               are split between up to {b(`${MAX_RECIPIENTS} GitHub developers`)}, by shares chosen at launch, on every buy and sell, before and after the
               coin graduates.
             </p>
@@ -100,7 +100,7 @@ export default function DocsPage() {
               The coins are ordinary pump.fun coins: pump.fun mints them, runs their bonding curve and moves them to its pool. The split is pump.fun&apos;s
               own fee sharing, set once at launch; each developer&apos;s share goes to pump.fun&apos;s fee account for their GitHub account, where they claim it.
             </p>
-            <Note>Splidev is an independent app built on pump.fun&apos;s public programs. It is not affiliated with, endorsed by or operated by pump.fun or GitHub.</Note>
+            <Note>Splitdev is an independent app built on pump.fun&apos;s public programs. It is not affiliated with, endorsed by or operated by pump.fun or GitHub.</Note>
           </Section>
 
           <Section id="start" n={2} title="Getting started">
@@ -108,7 +108,7 @@ export default function DocsPage() {
               items={[
                 <>Use a Solana wallet such as Phantom, Solflare or Backpack (on a phone, open the site in the wallet app&apos;s browser).</>,
                 <>Tap {b("Connect")} and pick your wallet.</>,
-                <>Have some SOL for trades, the launch and network fees. Everything on Splidev is paid in SOL.</>,
+                <>Have some SOL for trades, the launch and network fees. Everything on Splitdev is paid in SOL.</>,
               ]}
             />
           </Section>
@@ -123,14 +123,14 @@ export default function DocsPage() {
                 </>,
                 <>Optionally make a {b("first buy")}: it happens in the same transaction that creates the coin, before anyone else can trade.</>,
                 <>
-                  Confirm in your wallet (one prompt for all the transactions). You pay Splidev&apos;s launch fee (<LaunchFee />), your first buy if any, and
+                  Confirm in your wallet (one prompt for all the transactions). You pay Splitdev&apos;s launch fee (<LaunchFee />), your first buy if any, and
                   about 0.04 SOL of network fees and account rent.
                 </>,
               ]}
             />
             <Note>
               {b("The split is permanent.")} pump.fun revokes the right to change a coin&apos;s fee sharing once it is set: nobody, not the creator and not
-              Splidev, can move its fees afterwards. Developers are stored by their permanent GitHub id, so a rename keeps their earnings.
+              Splitdev, can move its fees afterwards. Developers are stored by their permanent GitHub id, so a rename keeps their earnings.
             </Note>
           </Section>
 
@@ -150,7 +150,7 @@ export default function DocsPage() {
             <FeeTable />
             <FeeExample />
             <p>
-              Splidev&apos;s share is fixed for each coin at launch. Apart from it and the launch fee there are no other fees: Splidev takes nothing from the
+              Splitdev&apos;s share is fixed for each coin at launch. Apart from it and the launch fee there are no other fees: Splitdev takes nothing from the
               developers&apos; balances and nothing when they claim.
             </p>
           </Section>
@@ -172,9 +172,9 @@ export default function DocsPage() {
           <Section id="safety" n={7} title="Safety">
             <ul className="list-disc space-y-2 pl-5 marker:text-ink-3">
               <li>Only the owner of a GitHub account can claim its fees: pump.fun asks them to sign in with GitHub first.</li>
-              <li>A coin&apos;s fees can&apos;t be redirected: the split is fixed at launch and no one, Splidev included, can change it.</li>
+              <li>A coin&apos;s fees can&apos;t be redirected: the split is fixed at launch and no one, Splitdev included, can change it.</li>
               <li>Anyone can list any GitHub account. Being listed doesn&apos;t mean the developer endorses the coin.</li>
-              <li>The only official Splidev token is the one shown on the home page. Anything else is not us.</li>
+              <li>The only official Splitdev token is the one shown on the home page. Anything else is not us.</li>
               <li>Coins can lose all their value. Trade only what you can afford to lose; this is experimental software on a live network.</li>
             </ul>
             <div className="flex flex-wrap items-center gap-3 pt-2">

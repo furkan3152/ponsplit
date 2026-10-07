@@ -6,7 +6,7 @@ import { fetchImageDataUrl } from "@/lib/safe-image";
 import { coinView } from "@/lib/solana/server";
 
 export const runtime = "nodejs";
-export const alt = "Coin on Splidev";
+export const alt = "Coin on Splitdev";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -31,7 +31,7 @@ export default async function TokenOgImage({ params }: { params: { address: stri
         <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#0d0a1a", fontSize: 64, fontWeight: 800, color: "#f6f1ff", gap: 24 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={logo} width={96} height={96} alt="" />
-          Splidev
+          Splitdev
         </div>
       ),
       { ...size, headers: MISS }
@@ -48,7 +48,7 @@ export default async function TokenOgImage({ params }: { params: { address: stri
       <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 30, fontWeight: 700 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logo} width={48} height={48} alt="" />
-        Splidev
+        Splitdev
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 36, marginTop: 44 }}>
         {image ? (

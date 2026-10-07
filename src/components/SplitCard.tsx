@@ -26,7 +26,7 @@ function solText(n: number, digits = 4) {
 export function SplitCard({ t }: { t: Coin }) {
   const [barRef, barIn] = useInView<HTMLDivElement>();
   const accountsBps = 10_000 - t.platformBps;
-  // Shares of the accounts' part, for the bar (Splidev's cut is said below).
+  // Shares of the accounts' part, for the bar (Splitdev's cut is said below).
   const shares = t.recipients.map((r) => (r.shareBps / accountsBps) * 100);
   const count = shares.length;
   const pendingToAccounts = (t.pendingFees * BigInt(accountsBps)) / 10_000n;
@@ -55,7 +55,7 @@ export function SplitCard({ t }: { t: Coin }) {
       </div>
       <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
         {pct(accountsBps)} of this coin&apos;s pump.fun creator fee goes to these developers, set for good at launch: nobody, not even the
-        creator or Splidev, can change it.{" "}
+        creator or Splitdev, can change it.{" "}
         <Link href="/claim" className="font-medium text-ink underline-offset-2 hover:underline">
           Claim with GitHub →
         </Link>
@@ -79,7 +79,7 @@ export function SplitCard({ t }: { t: Coin }) {
         ))}
       </ul>
       <p className="mt-4 border-t border-dashed border-line-2 pt-3 text-[11px] leading-relaxed text-ink-3">
-        Fees go to each developer&apos;s pump.fun GitHub account, keyed by the permanent GitHub id, so a rename never moves them. Splidev keeps{" "}
+        Fees go to each developer&apos;s pump.fun GitHub account, keyed by the permanent GitHub id, so a rename never moves them. Splitdev keeps{" "}
         {pct(t.platformBps)} of the creator fee.
       </p>
     </section>

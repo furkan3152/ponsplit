@@ -26,7 +26,7 @@ function siteUrl(): string {
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
-  title: { default: "Splidev · Coins that pay GitHub devs", template: "%s · Splidev" },
+  title: { default: "Splitdev · Coins that pay GitHub devs", template: "%s · Splitdev" },
   description: "Launch a pump.fun coin on Solana whose trading fees go, for good, to the GitHub accounts you choose.",
 };
 

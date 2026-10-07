@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Splidev",
-    short_name: "Splidev",
+    name: "Splitdev",
+    short_name: "Splitdev",
     description: "pump.fun coins whose trading fees pay GitHub developers, on Solana.",
     start_url: "/",
     display: "standalone",

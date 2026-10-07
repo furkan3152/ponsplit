@@ -49,7 +49,7 @@ export default function Home() {
             <span className="text-lime" aria-hidden>
               $
             </span>
-            splidev <span className="text-ink-3">--status</span>
+            splitdev <span className="text-ink-3">--status</span>
             <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--lime-soft)] px-1.5 py-0.5 text-lime">
               <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" aria-hidden />
               {live ? "live" : "soon"}

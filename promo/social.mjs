@@ -1,4 +1,4 @@
-// X (Twitter) profile pictures and header banner for Splidev, in the "night shift" look. Bitbug comes from
+// X (Twitter) profile pictures and header banner for Splitdev, in the "night shift" look. Bitbug comes from
 // src/components/art/Bug.tsx; Chromium renders the HTML below and screenshots it.
 //
 //   CHROMIUM=… OUTDIR=dir node promo/social.mjs
@@ -88,7 +88,7 @@ function banner() {
     { x: 1540, label: "@you", pct: "40%", c: "#66c7ff" },
     { x: 1900, label: "@fav-dev", pct: "30%", c: "#ff8ccf" },
     { x: 2260, label: "@maintainer", pct: "20%", c: "#ffd45c" },
-    { x: 2620, label: "splidev", pct: "10%", c: "#ff7a3d" },
+    { x: 2620, label: "splitdev", pct: "10%", c: "#ff7a3d" },
   ];
   const trunkX = 2620, forkY = 470, endY = 760;
   // a point along a branch (0 = the fork, 1 = the commit): drops ride the actual curves

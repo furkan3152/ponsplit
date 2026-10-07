@@ -1,4 +1,4 @@
-// The whole Splidev site in a real browser, on a local solana-test-validator running pump.fun's own
+// The whole Splitdev site in a real browser, on a local solana-test-validator running pump.fun's own
 // programs (e2e/solana/fixtures): a creator launches a coin for two real GitHub accounts through
 // /create, traders buy and sell on the coin page, anyone distributes the creator fees, and the
 // claim page shows what the developers have waiting. Wallets are throwaway local keypairs behind a
@@ -181,4 +181,4 @@ try {
 } finally {
   await browser.close();
 }
-console.log("\nAll Splidev browser checks passed.");
+console.log("\nAll Splitdev browser checks passed.");

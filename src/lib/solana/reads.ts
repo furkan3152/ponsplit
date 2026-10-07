@@ -1,5 +1,5 @@
-// Reading Splidev coins from Solana. There is no Splidev registry: a Splidev coin is a pump.fun coin
-// whose fee sharing is final (admin revoked) and lists Splidev's treasury first. pump.fun's fee
+// Reading Splitdev coins from Solana. There is no Splitdev registry: a Splitdev coin is a pump.fun coin
+// whose fee sharing is final (admin revoked) and lists Splitdev's treasury first. pump.fun's fee
 // program keeps that list in one account per coin, so one getProgramAccounts call finds them all.
 import { PublicKey, type AccountInfo, type Connection } from "@solana/web3.js";
 import { NATIVE_MINT, TOKEN_PROGRAM_ID } from "@solana/spl-token";
@@ -21,7 +21,7 @@ export type Coin = {
   /** The metadata JSON's URL. */
   uri: string;
   creator: string;
-  /** Splidev's part of the creator fees, in bps. */
+  /** Splitdev's part of the creator fees, in bps. */
   platformBps: number;
   recipients: Recipient[];
   /** Off the curve: pump.fun moved it to its pool. */
@@ -50,7 +50,7 @@ const INITIAL_REAL_TOKENS = 793_100_000 * TOKEN_UNITS;
 
 type Sharing = { mint: PublicKey; config: PublicKey; /** the wallet that launched the coin and set the split */ admin: PublicKey; shareholders: { address: PublicKey; shareBps: number }[] };
 
-/** Every Splidev coin's fee sharing: pump.fun SharingConfig accounts that list `treasury` first and are final. */
+/** Every Splitdev coin's fee sharing: pump.fun SharingConfig accounts that list `treasury` first and are final. */
 export async function findSharings(c: Connection, treasury: PublicKey | null = TREASURY): Promise<Sharing[]> {
   if (!treasury) return [];
   const accounts = await c.getProgramAccounts(PUMP_FEES_PROGRAM_ID, {
@@ -130,8 +130,8 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
     const curveInfo = curveInfos[i];
     if (!md || !curveInfo) return;
     const curve = PUMP_SDK.decodeBondingCurve(curveInfo);
-    // Only what Splidev's own launch makes is a Splidev coin, so nobody can dress a coin up as one
-    // (fee sharing can be set by anyone): Splidev's share first, every other shareholder a pump.fun
+    // Only what Splitdev's own launch makes is a Splitdev coin, so nobody can dress a coin up as one
+    // (fee sharing can be set by anyone): Splitdev's share first, every other shareholder a pump.fun
     // GitHub fee account (no hidden wallet taking a cut), a plain SOL curve, no mayhem or cashback mode.
     const treasuryShare0 = s.shareholders[0]?.shareBps ?? 0;
     if (!ALLOWED_PLATFORM_BPS.has(treasuryShare0)) return;
@@ -215,12 +215,12 @@ export async function many(c: Connection, keys: PublicKey[]): Promise<(AccountIn
   return out;
 }
 
-/** Every Splidev coin, read fresh from the chain. */
+/** Every Splitdev coin, read fresh from the chain. */
 export async function listCoins(c: Connection): Promise<Coin[]> {
   return readCoins(c, await findSharings(c));
 }
 
-/** One coin, or null when the mint isn't a Splidev coin. */
+/** One coin, or null when the mint isn't a Splitdev coin. */
 export async function readCoin(c: Connection, mint: PublicKey): Promise<Coin | null> {
   if (!TREASURY) return null;
   const [cfgKey] = [feeSharingConfig(mint)];

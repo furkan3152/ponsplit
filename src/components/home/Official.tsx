@@ -9,7 +9,7 @@ import { OFFICIAL_TOKEN, X_HANDLE, X_URL, isOfficial } from "@/lib/brand";
 import { coinImage, pumpUrl } from "@/lib/coin-ui";
 import { useCoins } from "@/lib/hooks";
 
-/** Follow Splidev on X: a small sticker button (hidden until the account exists). */
+/** Follow Splitdev on X: a small sticker button (hidden until the account exists). */
 export function FollowX({ className = "" }: { className?: string }) {
   if (!X_URL) return null;
   return (
@@ -28,8 +28,8 @@ export function FollowX({ className = "" }: { className?: string }) {
 }
 
 /**
- * The official Splidev token on the home page: its mint address (CA) with a copy button once it's
- * launched, "coming soon" until then. A Splidev coin trades here; any other pump.fun coin on pump.fun.
+ * The official Splitdev token on the home page: its mint address (CA) with a copy button once it's
+ * launched, "coming soon" until then. A Splitdev coin trades here; any other pump.fun coin on pump.fun.
  */
 export function OfficialToken() {
   const { data: coins } = useCoins();
@@ -62,7 +62,7 @@ export function OfficialToken() {
         )}
         <div className="min-w-0 flex-1">
           <div className="eyebrow">Official token</div>
-          <div className="display truncate text-[22px] leading-tight">{symbol ? `$${symbol}` : "Splidev"}</div>
+          <div className="display truncate text-[22px] leading-tight">{symbol ? `$${symbol}` : "Splitdev"}</div>
         </div>
         <FollowX />
       </div>

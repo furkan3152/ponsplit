@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 /**
- * Every Splidev coin and the GitHub accounts they pay, read once on the server. The CDN keeps each
+ * Every Splitdev coin and the GitHub accounts they pay, read once on the server. The CDN keeps each
  * answer a few seconds, so a crowd costs the Solana RPC one read, not one each.
  */
 export async function GET() {

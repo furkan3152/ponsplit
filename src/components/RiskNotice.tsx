@@ -86,7 +86,7 @@ export function useRiskGate() {
         <ul className="mt-6 divide-y divide-[var(--line)] border-y border-line text-[14px] leading-relaxed text-ink-2">
           <RiskItem n={1}>Coins here are speculative and can go to zero. Only use money you can afford to lose.</RiskItem>
           <RiskItem n={2}>Anyone can launch a coin and list any GitHub account. A listed developer has not endorsed the coin.</RiskItem>
-          <RiskItem n={3}>Trades are final. Splidev is experimental software on top of pump.fun and is not affiliated with pump.fun or GitHub.</RiskItem>
+          <RiskItem n={3}>Trades are final. Splitdev is experimental software on top of pump.fun and is not affiliated with pump.fun or GitHub.</RiskItem>
           <RiskItem n={4}>You are responsible for following the laws where you live.</RiskItem>
         </ul>
         <div className="mt-6 flex gap-2.5">

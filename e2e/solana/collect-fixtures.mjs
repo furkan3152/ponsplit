@@ -1,4 +1,4 @@
-// Collects the real mainnet state a local solana-test-validator needs to run pump.fun as Splidev uses
+// Collects the real mainnet state a local solana-test-validator needs to run pump.fun as Splitdev uses
 // it: every account the launch, trade and fee-sharing instructions touch that already exists on
 // mainnet (pump's globals, fee configs, ...), plus the list of programs to dump. Writes
 // <out>/accounts/<pubkey>.json (solana-test-validator --account format) and <out>/programs.txt.

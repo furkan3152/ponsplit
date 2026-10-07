@@ -15,19 +15,19 @@ const SPLIDEV_PCT = PLATFORM_BPS / 100;
 const FAQ: { q: string; a: React.ReactNode }[] = [
   {
     q: "Where does the coin live?",
-    a: "On pump.fun, on Solana. Splidev builds the launch with pump.fun's own instructions, so it is a regular pump.fun coin: pump.fun mints it, runs its bonding curve and moves it to its pool when the curve sells out. It trades on pump.fun too. The only difference is who receives its creator fees.",
+    a: "On pump.fun, on Solana. Splitdev builds the launch with pump.fun's own instructions, so it is a regular pump.fun coin: pump.fun mints it, runs its bonding curve and moves it to its pool when the curve sells out. It trades on pump.fun too. The only difference is who receives its creator fees.",
   },
   {
     q: "Where do the fees come from?",
-    a: `Every trade pays pump.fun's fee. On the bonding curve that is 1.25%: 0.95% to pump.fun and 0.30% to the coin's creator. After graduation pump.fun's pool sets the creator's part by market cap (from 0.95% down to 0.05% for the largest coins). Of the creator's part, ${100 - SPLIDEV_PCT}% goes to the coin's GitHub developers by the shares set at launch and ${SPLIDEV_PCT}% to Splidev.`,
+    a: `Every trade pays pump.fun's fee. On the bonding curve that is 1.25%: 0.95% to pump.fun and 0.30% to the coin's creator. After graduation pump.fun's pool sets the creator's part by market cap (from 0.95% down to 0.05% for the largest coins). Of the creator's part, ${100 - SPLIDEV_PCT}% goes to the coin's GitHub developers by the shares set at launch and ${SPLIDEV_PCT}% to Splitdev.`,
   },
   {
     q: "Can anyone change the split later?",
-    a: "No. The split is pump.fun's own fee sharing, set once at launch, after which pump.fun revokes the right to change it. Not the creator, not Splidev, nobody can move a coin's fees afterwards.",
+    a: "No. The split is pump.fun's own fee sharing, set once at launch, after which pump.fun revokes the right to change it. Not the creator, not Splitdev, nobody can move a coin's fees afterwards.",
   },
   {
     q: "How do GitHub developers get paid?",
-    a: "Each developer's share lands in pump.fun's fee account for their GitHub account, keyed by the permanent GitHub user id, so a rename never loses it. They sign in with GitHub on pump.fun and claim it to any Solana wallet. Splidev never holds the money.",
+    a: "Each developer's share lands in pump.fun's fee account for their GitHub account, keyed by the permanent GitHub user id, so a rename never loses it. They sign in with GitHub on pump.fun and claim it to any Solana wallet. Splitdev never holds the money.",
   },
   {
     q: "Why do I see “waiting to split”?",
@@ -38,8 +38,8 @@ const FAQ: { q: string; a: React.ReactNode }[] = [
     a: `No. Any personal GitHub account can be added, up to ${MAX_RECIPIENTS} per coin. Their earnings wait in pump.fun until they choose to claim. Being listed doesn't mean they endorse the coin.`,
   },
   {
-    q: "Is Splidev part of pump.fun or GitHub?",
-    a: "No. Splidev is an independent app built on pump.fun's public programs. It is not affiliated with, endorsed by or operated by pump.fun or GitHub.",
+    q: "Is Splitdev part of pump.fun or GitHub?",
+    a: "No. Splitdev is an independent app built on pump.fun's public programs. It is not affiliated with, endorsed by or operated by pump.fun or GitHub.",
   },
   {
     q: "Which network is this?",
@@ -65,7 +65,7 @@ const ACCOUNTS: Account[] = [
 ];
 
 // The same numbers the FAQ states, on the bonding curve: pump.fun's 1.25% fee, 0.30 of it the
-// creator's (24% of the fee), and the developers' part of that (the rest is Splidev's).
+// creator's (24% of the fee), and the developers' part of that (the rest is Splitdev's).
 const TRADE_SOL = 1;
 const FEE_PCT = 1.25;
 const CREATOR_PCT = 24;
@@ -102,7 +102,7 @@ export default function HowPage() {
               </span>
             </Reveal>
             <Reveal as="h1" delay={60} className="display mt-6 text-[52px] leading-[0.9] sm:text-[84px]">
-              How Splidev <span className="accent text-neon pr-2">works.</span>
+              How Splitdev <span className="accent text-neon pr-2">works.</span>
             </Reveal>
             <Reveal delay={140}>
               <p className="mt-6 max-w-lg text-[17px] leading-relaxed text-ink-2 sm:text-[18px]">
@@ -281,7 +281,7 @@ function FeeFlow({ accountsPct: ACCOUNTS_PCT }: { accountsPct: number }) {
           <SplitBar left={ACCOUNTS_PCT} leftLabel="GitHub devs" rightLabel={`${100 - ACCOUNTS_PCT}%`} delay={1020} />
           <div className="mt-2.5 flex items-center justify-between gap-3 font-mono text-[11px] text-ink-3">
             <span>to the GitHub developers</span>
-            <span>to Splidev</span>
+            <span>to Splitdev</span>
           </div>
 
           <Wedge id="how-wedge-accounts" from={[0, ACCOUNTS_PCT]} delay={1300} />
@@ -393,7 +393,7 @@ function Receipt({ fee, toPons, creator, toPlatform, toAccounts, accountsPct: AC
           <ReceiptLine label={`pump.fun (${100 - CREATOR_PCT}%)`} value={sol(toPons)} delay={340} />
           <ReceiptLine label={`Creator (${CREATOR_PCT}%)`} value={sol(creator)} delay={380} strong />
           <div className="space-y-2.5 border-l border-line-2 pl-3">
-            <ReceiptLine label={`Splidev (${100 - ACCOUNTS_PCT}%)`} value={sol(toPlatform)} delay={420} />
+            <ReceiptLine label={`Splitdev (${100 - ACCOUNTS_PCT}%)`} value={sol(toPlatform)} delay={420} />
             <ReceiptLine label={`GitHub devs (${ACCOUNTS_PCT}%)`} value={sol(toAccounts)} delay={460} strong />
             <div className="space-y-2 border-l border-line-2 pl-3">
               {ACCOUNTS.map((a, i) => (

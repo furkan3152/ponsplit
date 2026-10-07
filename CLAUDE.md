@@ -1,28 +1,32 @@
-# Splidev (repo: ponsplit): working notes for Claude
+# Splitdev (repo: ponsplit): working notes for Claude
+
+The brand is **Splitdev** (domain splitdev.app; renamed from "Splidev" on 2026-10-07 at the owner's request).
+Internal identifiers keep the old spelling on purpose, so settings and saved state survive: `src/splidev.json`,
+`NEXT_PUBLIC_SPLIDEV_*` / `SPLIDEV_METADATA_STORE` env vars, localStorage keys `splidev:*`, `splidev.yml`, `e2e/splidev.mjs`.
 
 The owner (GitHub: furkan3152) writes in Turkish, so answer in Turkish. They often work from a
 phone and can't edit environments by hand. Keep instructions to taps and copy/paste.
 
 ## What this is
 
-Splidev is a launchpad on **pump.fun (Solana)** where a coin's creator fees are split, for good,
-between up to 9 **GitHub accounts** (plus Splidev). The site is not affiliated with pump.fun or
+Splitdev is a launchpad on **pump.fun (Solana)** where a coin's creator fees are split, for good,
+between up to 9 **GitHub accounts** (plus Splitdev). The site is not affiliated with pump.fun or
 GitHub, and says so. It replaced SplitEarn (Robinhood Chain, X accounts) on 2026-10-05 at the
 owner's request; the old code is in git history (last SplitEarn commit: `d37e1fa`).
 
-- **No Splidev program.** A Splidev coin is a normal pump.fun coin. The launch (src/lib/solana/pump.ts),
+- **No Splitdev program.** A Splitdev coin is a normal pump.fun coin. The launch (src/lib/solana/pump.ts),
   built with pump.fun's SDK (`@pump-fun/pump-sdk` v2, `@pump-fun/pump-swap-sdk`):
   1. `create_v2` with the creator's wallet as creator, plus the first buy in the same transaction;
   2. `create_social_fee_pda` for each GitHub id that has no pump.fun GitHub fee account yet
      (platform 2 = GitHub; the account is keyed by the numeric GitHub user id);
   3. `create_fee_sharing_config` + `update_fee_shares_v2` with shareholders
-     **[Splidev treasury (platformBps), GitHub fee accounts...]** (admin revoked: permanent), and the launch fee
+     **[Splitdev treasury (platformBps), GitHub fee accounts...]** (admin revoked: permanent), and the launch fee
      (a SOL transfer to the treasury).
   All signed in one wallet prompt (`signAllTransactions`), sent in order. If (1) lands and the rest
   doesn't, /create remembers it and offers "Finish $X's launch" (`finishLaunchTransactions`).
 - **Discovery.** The treasury is the first shareholder, so one `getProgramAccounts` on pump.fun's fee
-  program (SharingConfig discriminator + treasury at offset 80) lists every Splidev coin (src/lib/solana/reads.ts).
-  Anyone can set fee sharing, so a coin is listed only with Splidev's exact shape: final and Active, treasury
+  program (SharingConfig discriminator + treasury at offset 80) lists every Splitdev coin (src/lib/solana/reads.ts).
+  Anyone can set fee sharing, so a coin is listed only with Splitdev's exact shape: final and Active, treasury
   first at an allowed share (`platformBps`, plus `pastPlatformBps` in splidev.json: add the old value there
   when changing it), every other shareholder a pump.fun GitHub fee account, a SOL curve, not mayhem/cashback.
   `launch-local.mjs` checks a spoofed coin (treasury 1 bps + hidden wallet) stays unlisted.
@@ -34,7 +38,7 @@ owner's request; the old code is in git history (last SplitEarn commit: `d37e1fa
 - **Trades in the panel** are checked against the quote on screen (abort if worse than slippage) and show
   "You pay at most" (pump.fun buys are token-exact with a SOL cap).
 - **Claims happen on pump.fun.** Developers sign in with GitHub on pump.fun and claim from their GitHub fee
-  account (pump.fun's `social_claim_authority` signs). Splidev never holds money. /claim shows what a username has
+  account (pump.fun's `social_claim_authority` signs). Splitdev never holds money. /claim shows what a username has
   waiting (fee account balance - rent) and can distribute pending fees. Owner's choice (2026-10-05): pump.fun's
   built-in GitHub fee sharing instead of an own program.
 - **Distribution.** pump.fun keeps creator fees in the coin's creator vault until someone calls the
@@ -42,7 +46,7 @@ owner's request; the old code is in git history (last SplitEarn commit: `d37e1fa
   The coin page and /claim have buttons for it.
 - **Fees (pump.fun, mainnet, 2026-10-05).** Curve: 1.25% (0.95% pump.fun, 0.30% creator). Pool after graduation:
   creator part by market cap, 0.95% down to 0.05%. Of the creator part, `platformBps` (src/splidev.json,
-  1000 = 10% today) goes to Splidev, the rest to the GitHub accounts by their shares. Splidev launch fee:
+  1000 = 10% today) goes to Splitdev, the rest to the GitHub accounts by their shares. Splitdev launch fee:
   `launchFeeSol` (0.01 SOL).
 - **Settings:** `src/splidev.json` (`treasury`, `platformBps`, `launchFeeSol`, `hidden`, `officialToken`), checked by
   next.config.mjs. `treasury` = `D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm` (the owner's Solana wallet, 2026-10-05).
@@ -60,7 +64,7 @@ github-types.ts), `src/lib/hooks.ts`, `src/app` pages (/, /explore, /create, /to
 
 ## Design system ("night shift", 2026-10-05)
 
-The owner asked for a completely new, original look for Splidev (colors, mascot, everything). Keep new work in it:
+The owner asked for a completely new, original look for Splitdev (colors, mascot, everything). Keep new work in it:
 - **Theme.** A code editor after midnight: deep violet paper (`#0d0a1a`) with a dot matrix (`body::after`) and
   ambient tangerine/violet/mint light; light "daylight" edition on warm cream (`<ThemeToggle>`, `data-theme` set by
   `THEME_SCRIPT`). House color **tangerine `#ff7a3d`** (token still named `--lime` / `bg-lime` / `text-neon`;
@@ -70,7 +74,7 @@ The owner asked for a completely new, original look for Splidev (colors, mascot,
   antenna tips. `<Bug face open flap />` poses it (faces happy/joy/sleepy/wow/wink; `flap` opens the shell via CSS).
   It is the logo (`LogoMark` = `BugMark`), the hero (`SplitMachine`: it opens its shell and fees run down a git graph
   to the developers), and every state illustration (steps, empty, 404, claim, graduated).
-- **Dev details.** Eyebrows read as code comments (`// label`, `.eyebrow::before`), wordmark `splidev` with a blinking
+- **Dev details.** Eyebrows read as code comments (`// label`, `.eyebrow::before`), wordmark `splitdev` with a blinking
   caret (`WordmarkText`), buttons are keycaps (solid bottom edge, press travels down), bento panels are editor panes
   (window dots + `name.sol` tab), doodles are `</>`, `{ }`, a little git graph (`parts.tsx`: CodeTag, Braces, Commits).
 - **Fonts.** Space Grotesk (`display`), Figtree (body), Fraunces soft wonky italic (`accent`, one word per page, with a
@@ -124,7 +128,7 @@ Gotchas:
   release downloads and npm work, so the Solana CLI installs locally.
 - Creating a `.deploy-hold` file holds Vercel deploys (scripts/vercel-ignore.sh skips every build while it exists).
 
-## Deployment state (2026-10-05, Splidev live)
+## Deployment state (2026-10-05, Splitdev live)
 
 - **Vercel**: project `ponsplit` (`prj_K4lYPXiOoIIqWqjNvaJxqqiuBeJI`; the MCP works with the project id and no team
   slug, the `akdogan1` slug answers 403), domain **splitdev.app** (bought by the owner 2026-10-07; www redirects to it;
@@ -134,7 +138,7 @@ Gotchas:
   (sensitive) = QuickNode endpoint 671317 (delicate-wiser-snow, token only), `BLOB_READ_WRITE_TOKEN`. Old EVM env
   (`SIGNER_PRIVATE_KEY`, `ADMIN_ADDRESSES`, `MAINNET_RPC_URL`, `NEXT_PUBLIC_MAINNET_RPC_URL`, `NEXT_PUBLIC_CHAIN`)
   is unused; the MCP has no delete for env vars, so the owner deletes them in the dashboard.
-- **QuickNode** (owner's account, MCP connected): 671368 and 671317 are Splidev's. 671312 (chaotic-quiet-rain) is
+- **QuickNode** (owner's account, MCP connected): 671368 and 671317 are Splitdev's. 671312 (chaotic-quiet-rain) is
   referrer-locked to siglospay.com, another project of the owner's: don't touch it. Also robinhood/arc endpoints.
 - **Owner TODO**: `GITHUB_TOKEN` (no scopes) on Vercel: without it GitHub lookups run on the 60/hour anonymous limit
   per server IP (src/lib/github.ts keeps its own hourly budget below that: 30 username + 20 id lookups, ids cached a
@@ -142,5 +146,5 @@ Gotchas:
 - **Review round (2026-10-07)**: four parallel reviews (money logic, UI flows, server security, displayed numbers);
   fixed: listing spoofing, fake trade events, unfinished-launch recovery, buy slippage vs the shown quote,
   GitHub quota exhaustion, slow metadata hosts stalling the snapshot (2.5 s cap, failures cached), DNS rebinding
-  (undici connect-time check), RPC cost of random /token addresses, pool-side pending fees, coin ages, upload caps. New domain/X for Splidev if wanted (brand.ts `X_HANDLE` is empty, links hide).
+  (undici connect-time check), RPC cost of random /token addresses, pool-side pending fees, coin ages, upload caps. New domain/X for Splitdev if wanted (brand.ts `X_HANDLE` is empty, links hide).
 - SplitEarn's Robinhood contracts stay on chain; the site no longer shows them (owner accepted that).

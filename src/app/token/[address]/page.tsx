@@ -56,7 +56,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   if (isLoading) return <PageSkeleton />;
   // A failed read is a network problem, not proof the coin doesn't exist.
   if (t === undefined && isError) return <Missing text="Couldn't load this coin right now. Retrying…" />;
-  if (!t) return <Missing text="This coin wasn't launched on Splidev." />;
+  if (!t) return <Missing text="This coin wasn't launched on Splitdev." />;
 
   const links = [
     { label: "Website", href: safeUrl(t.website) },
@@ -95,7 +95,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
             {/* x-clip: the stamp starts at 1.8x scale, which must not widen the page next to a long ticker. */}
             <div className="mt-3 flex flex-wrap items-center gap-2 overflow-x-clip sm:mt-4">
               <span className="num inline-flex items-center rounded-full border border-line-2 bg-card px-2.5 py-1 text-[12px] font-semibold text-ink">${t.symbol}</span>
-              {isOfficial(t.token) ? <span className="chip border-lime bg-lime font-semibold text-[var(--lime-ink)]">✓ Official Splidev token</span> : null}
+              {isOfficial(t.token) ? <span className="chip border-lime bg-lime font-semibold text-[var(--lime-ink)]">✓ Official Splitdev token</span> : null}
               {graduated ? (
                 <span
                   className="inline-flex animate-stamp items-center gap-1.5 rounded-lg border-2 border-up bg-up-soft px-2.5 py-0.5 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-up-ink"
@@ -255,7 +255,7 @@ function DistributeCard({ t, onDone }: { t: Coin; onDone: () => void }) {
         <span className="num shrink-0 text-[18px] font-semibold text-up-ink">{formatSol(t.pendingFees, 4)} SOL</span>
       </div>
       <p className="text-[13px] leading-relaxed text-ink-2">
-        pump.fun holds this coin&apos;s creator fees until someone distributes them to the GitHub accounts and Splidev. Anyone can; it costs only the network fee.
+        pump.fun holds this coin&apos;s creator fees until someone distributes them to the GitHub accounts and Splitdev. Anyone can; it costs only the network fee.
       </p>
       <button className="btn-secondary w-full py-2.5 text-[14px]" disabled={Boolean(busy) || (connected && t.pendingFees === 0n && !t.graduated)} onClick={distribute}>
         {busy ?? (connected ? "Distribute now" : "Connect wallet")}
@@ -503,7 +503,7 @@ function ShareButton({
 }) {
   function share() {
     const who = t.recipients.map((r) => (r.login ? `github.com/${r.login}` : `GitHub #${r.githubId}`)).join(", ");
-    const text = `${t.name} ($${t.symbol}) on Splidev: every trade pays ${who}`;
+    const text = `${t.name} ($${t.symbol}) on Splitdev: every trade pays ${who}`;
     const url = `${location.origin}/token/${t.token}`;
     window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, "_blank", "noopener,noreferrer");
   }
