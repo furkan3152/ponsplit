@@ -3,7 +3,7 @@ import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { readJson } from "@/lib/body";
 import { safeUrl } from "@/lib/metadata";
-import { clientIp, limitClient } from "@/lib/ratelimit";
+import { clientIp, limitClient, rateLimit } from "@/lib/ratelimit";
 import { memoryMetadata } from "./store";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +20,7 @@ export async function POST(req: Request) {
   const memory = process.env.SPLIDEV_METADATA_STORE === "memory";
   if (!jwt && !blob && !memory) return NextResponse.json({ error: "Metadata storage is not configured on this server." }, { status: 501 });
   if (!limitClient("metadata", clientIp(req), 10)) return NextResponse.json({ error: "Too many requests, try again in a minute." }, { status: 429 });
+  if (!rateLimit("metadata:*", 1_000, 86_400_000)) return NextResponse.json({ error: "Launches are paused for today. Try again tomorrow." }, { status: 429 });
   const body = await readJson<Record<string, unknown>>(req);
   const str = (k: string, max: number) => (typeof body?.[k] === "string" ? (body[k] as string).trim().slice(0, max) : "");
   const name = str("name", 32);

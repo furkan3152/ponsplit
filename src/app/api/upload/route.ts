@@ -3,7 +3,7 @@ import { put } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { readBody } from "@/lib/body";
 import { MAX_IMAGE_SIDE, imageSize, imageWithinLimits, sniffImage } from "@/lib/image-bytes";
-import { clientIp, limitClient } from "@/lib/ratelimit";
+import { clientIp, limitClient, rateLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +23,8 @@ export async function POST(req: Request) {
   if (!limitClient("upload", clientIp(req), 10)) {
     return NextResponse.json({ error: "Too many uploads, try again in a minute." }, { status: 429 });
   }
+  // A site-wide daily cap (per server instance), so nobody can use the owner's storage as free hosting.
+  if (!rateLimit("upload:*", 500, 86_400_000)) return NextResponse.json({ error: "Uploads are paused for today. Paste an image link instead." }, { status: 429 });
 
   const raw = await readBody(req, MAX_REQUEST_BYTES).catch(() => null);
   if (!raw) return NextResponse.json({ error: "Images must be under 2 MB." }, { status: 413 });
