@@ -152,7 +152,7 @@ try {
   await tp.getByRole("button", { name: "Distribute now" }).click();
   await tp.getByText(/^Distributed\./).waitFor({ timeout: 120_000 });
   step("anyone can distribute the creator fees from the coin page");
-  await tp.goto(`${BASE}/claim`, { waitUntil: "networkidle" });
+  await tp.goto(`${BASE}/claim`, { waitUntil: "load" }); // pages that poll the chain never go network-idle; the waits below are explicit
   await tp.getByLabel("GitHub username").fill("torvalds");
   await tp.getByText("Ready to claim on pump.fun").waitFor({ timeout: 60_000 });
   await tp.getByText("E2E Dev Coin").first().waitFor({ timeout: 60_000 });
@@ -162,9 +162,9 @@ try {
   await tp.screenshot({ path: `${OUT}/claim.png`, fullPage: true });
 
   // ── Lists ──────────────────────────────────────────────────────────────────────────────
-  await tp.goto(`${BASE}/explore`, { waitUntil: "networkidle" });
+  await tp.goto(`${BASE}/explore`, { waitUntil: "load" });
   await tp.getByText("E2E Dev Coin").first().waitFor({ timeout: 60_000 });
-  await tp.goto(`${BASE}/me`, { waitUntil: "networkidle" });
+  await tp.goto(`${BASE}/me`, { waitUntil: "load" });
   await tp.getByText("E2E Dev Coin").first().waitFor({ timeout: 60_000 });
   step("the coin is listed on Explore, and the trader's portfolio holds it");
 } catch (e) {
