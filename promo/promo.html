@@ -1,0 +1,445 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600;700&family=Figtree:wght@400;600;700&family=Fraunces:ital,opsz,wght@1,9..144,600&display=block" rel="stylesheet" />
+<style>
+  html, body { margin: 0; background: #0d0a1a; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// Splidev promo: a deterministic canvas animation. renderFrame(t) draws the frame at t seconds;
+// render.mjs steps it frame by frame and encodes the video. Bug images are injected as window.BUGS.
+const W = 1920, H = 1080, CX = W / 2;
+const cv = document.getElementById("c");
+const g = cv.getContext("2d");
+const COL = {
+  paper: "#0d0a1a", card: "#15112a", card2: "#1d1836", line: "rgba(196,181,253,0.16)",
+  ink: "#f6f1ff", ink2: "#b6acd2", ink3: "#9087b0", tang: "#ff7a3d", deep: "#c94a14",
+  mint: "#3ddc97", red: "#ff5c7a", sky: "#66c7ff", pink: "#ff8ccf", sun: "#ffd45c", lilac: "#a98dff",
+};
+const DUR = 53;
+
+// ── deterministic noise ──────────────────────────────────────────────────────────────────
+function hash(n) { n = (n ^ 61) ^ (n >>> 16); n = n + (n << 3); n ^= n >>> 4; n = Math.imul(n, 0x27d4eb2d); n ^= n >>> 15; return (n >>> 0) / 4294967296; }
+const rnd = (i, k = 0) => hash(i * 7919 + k * 104729 + 13);
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+const lerp = (a, b, k) => a + (b - a) * k;
+const fadeWin = (t, a, b, f = 0.35) => clamp(Math.min((t - a) / f, (b - t) / f));
+
+// ── particle targets ─────────────────────────────────────────────────────────────────────
+const N = 3200;
+const off = document.createElement("canvas"); off.width = W; off.height = H;
+const og = off.getContext("2d", { willReadFrequently: true });
+
+function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+/** Samples the offscreen canvas on a grid: points where something is drawn, with its color. */
+function sample(step, minAlpha = 140, skipDark = false) {
+  const d = og.getImageData(0, 0, W, H).data;
+  const pts = [];
+  for (let y = step / 2; y < H; y += step)
+    for (let x = step / 2; x < W; x += step) {
+      const i = (Math.floor(y) * W + Math.floor(x)) * 4;
+      if (d[i + 3] < minAlpha) continue;
+      const r = d[i], gg = d[i + 1], b = d[i + 2];
+      if (skipDark && r + gg + b < 150) continue;
+      pts.push({ x, y, c: [r, gg, b], a: 1 });
+    }
+  return pts;
+}
+/** Dust: where spare particles rest, dim, all over the frame. */
+const dust = Array.from({ length: N }, (_, i) => ({ x: rnd(i, 1) * W, y: rnd(i, 2) * H, c: [196, 181, 253], a: 0.07 + rnd(i, 3) * 0.1 }));
+/** Fits a point list to N particles: shuffled, extras rest as dust. */
+function fit(pts) {
+  const order = pts.map((p, i) => [rnd(i, 9), p]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+  const out = new Array(N);
+  for (let i = 0; i < N; i++) out[i] = i < order.length ? order[i] : dust[i];
+  // shuffle which particle takes which point, so morphs swirl instead of sliding
+  const idx = Array.from({ length: N }, (_, i) => i).sort((a, b) => rnd(a, 11) - rnd(b, 11));
+  return idx.map((k) => out[k]);
+}
+function textSet(text, font, color, y = H / 2, step = 9) {
+  og.clearRect(0, 0, W, H);
+  og.font = font; og.textAlign = "center"; og.textBaseline = "middle"; og.fillStyle = color;
+  og.fillText(text, CX, y);
+  return fit(sample(step));
+}
+function imageSet(img, cx, cy, w, step = 8) {
+  og.clearRect(0, 0, W, H);
+  const h = (img.height / img.width) * w;
+  og.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+  return fit(sample(step, 140, true));
+}
+function lockSet() {
+  og.clearRect(0, 0, W, H);
+  og.fillStyle = COL.tang;
+  og.strokeStyle = COL.tang; og.lineWidth = 46; og.lineCap = "round";
+  og.beginPath(); og.arc(CX, 470, 110, Math.PI, 0); og.lineTo(CX + 110, 540); og.moveTo(CX - 110, 540); og.lineTo(CX - 110, 470); og.stroke();
+  roundRect(og, CX - 190, 530, 380, 290, 46); og.fill();
+  og.globalCompositeOperation = "destination-out";
+  og.beginPath(); og.arc(CX, 640, 34, 0, Math.PI * 2); og.fill(); og.fillRect(CX - 14, 650, 28, 90);
+  og.globalCompositeOperation = "source-over";
+  return fit(sample(9));
+}
+function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+
+// ── timeline ─────────────────────────────────────────────────────────────────────────────
+// Particle keyframes: the swarm starts moving to `set` at `at` and settles over `d` seconds.
+let KF = [];
+// Headlines: [from, to, text, accent words]
+const HEAD = [
+  [2.6, 7.0, "DEVS WRITE THE CODE.", ["THE", "CODE."]],
+  [7.2, 11.4, "COINS KEEP THE FEES.", ["THE", "FEES."]],
+  [11.6, 16.0, "UNTIL NOW.", ["NOW."]],
+  [16.4, 23.2, "LAUNCH A COIN FOR YOUR DEVS.", ["YOUR", "DEVS."]],
+  [23.4, 31.0, "EVERY TRADE PAYS THEM.", ["PAYS", "THEM."]],
+  [31.2, 36.0, "ANY GITHUB DEV.", ["GITHUB", "DEV."]],
+  [36.2, 41.0, "LOCKED FOR GOOD.", ["FOR", "GOOD."]],
+  [41.2, 46.0, "THEY CLAIM WITH GITHUB.", ["WITH", "GITHUB."]],
+];
+// Little "// comment" captions under the scenes: [from, to, text, y]
+const CAPS = [
+  [3.4, 7.0, "// open source runs the world", 900],
+  [8.0, 11.4, "// and gets none of the trading fees", 900],
+  [33.0, 36.0, "// up to 9 GitHub accounts per coin · keyed by their permanent GitHub id", 900],
+  [37.4, 41.0, "// split fixed at launch · admin revoked · nobody can change it, not even us", 900],
+  [42.6, 46.0, "// Splidev never holds the money · fees sit in their pump.fun GitHub account", 930],
+];
+
+let READY = false;
+async function setup() {
+  await document.fonts.ready;
+  await Promise.all(["700 40px 'Space Grotesk'", "600 40px 'JetBrains Mono'"].map((f) => document.fonts.load(f)));
+  const load = (src) => new Promise((r) => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
+  const bugClosed = await load(window.BUGS.closed);
+  const bugOpen = await load(window.BUGS.open);
+  window.AV = {};
+  for (const [k, src] of Object.entries(window.AVATARS || {})) window.AV[k] = await load(src);
+  const mono = (s, w = 700) => `${w} ${s}px "JetBrains Mono"`;
+  const disp = (s) => `700 ${s}px "Space Grotesk"`;
+  KF = [
+    { at: 0, d: 0.01, set: dust },
+    { at: 2.8, d: 1.6, set: textSet("<\u200b/\u200b>", mono(330), COL.tang, 560, 10) },
+    { at: 7.4, d: 1.6, set: textSet("%", disp(420), COL.ink2, 580, 10) },
+    { at: 11.8, d: 1.8, set: imageSet(bugClosed, CX, 560, 470, 9) },
+    { at: 14.2, d: 1.2, set: imageSet(bugOpen, CX, 560, 470, 9) },
+    { at: 16.2, d: 1.2, set: dust },
+    { at: 31.0, d: 0.9, set: textSet("@torvalds", mono(190), COL.sky, 560, 7) },
+    { at: 32.7, d: 0.8, set: textSet("@sindresorhus", mono(150), COL.sun, 560, 7) },
+    { at: 34.4, d: 0.8, set: textSet("@you", mono(230), COL.tang, 560, 7) },
+    { at: 36.2, d: 1.3, set: lockSet() },
+    { at: 41.2, d: 1.0, set: dust },
+    { at: 46.2, d: 1.8, set: imageSet(bugOpen, CX, 400, 420, 8) },
+  ];
+  window.IMG = { bugClosed, bugOpen };
+  READY = true;
+}
+
+function particlesAt(t) {
+  let k = 0;
+  while (k + 1 < KF.length && KF[k + 1].at <= t) k++;
+  const cur = KF[k], prev = KF[Math.max(0, k - 1)];
+  const out = new Array(N);
+  for (let i = 0; i < N; i++) {
+    const delay = rnd(i, 5) * 0.35;
+    const p = clamp(((t - cur.at) / cur.d - delay) / (1 - 0.35));
+    const e = ease(p);
+    const A = k === 0 ? cur.set[i] : prev.set[i], B = cur.set[i];
+    const swirl = Math.sin(p * Math.PI);
+    const ang = rnd(i, 6) * Math.PI * 2;
+    const r = 60 + rnd(i, 7) * 160;
+    const wob = 1.2;
+    out[i] = {
+      x: lerp(A.x, B.x, e) + Math.cos(ang + t) * r * swirl + Math.sin(t * 1.7 + i) * wob,
+      y: lerp(A.y, B.y, e) + Math.sin(ang + t) * r * swirl + Math.cos(t * 1.3 + i * 0.7) * wob,
+      c: [0, 1, 2].map((j) => lerp(A.c[j], B.c[j], e)),
+      a: lerp(A.a, B.a, e),
+    };
+  }
+  return out;
+}
+
+// ── drawing helpers ──────────────────────────────────────────────────────────────────────
+function background(t) {
+  g.fillStyle = COL.paper; g.fillRect(0, 0, W, H);
+  let gr = g.createRadialGradient(W * 0.12, -80, 0, W * 0.12, -80, 900);
+  gr.addColorStop(0, "rgba(255,122,61,0.16)"); gr.addColorStop(1, "rgba(255,122,61,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  gr = g.createRadialGradient(W * 1.02, 60, 0, W * 1.02, 60, 1000);
+  gr.addColorStop(0, "rgba(169,141,255,0.14)"); gr.addColorStop(1, "rgba(169,141,255,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  // dot matrix
+  g.fillStyle = "rgba(196,181,253,0.06)";
+  for (let y = 11; y < H; y += 24) for (let x = 11; x < W; x += 24) { g.fillRect(x, y, 2, 2); }
+  // vignette
+  gr = g.createRadialGradient(CX, H / 2, H * 0.35, CX, H / 2, H * 0.95);
+  gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(1, "rgba(0,0,0,0.55)");
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+}
+function drawParticles(t, alphaMul = 1) {
+  for (const p of particlesAt(t)) {
+    const a = p.a * alphaMul;
+    if (a < 0.01) continue;
+    g.fillStyle = `rgba(${p.c[0] | 0},${p.c[1] | 0},${p.c[2] | 0},${a})`;
+    g.beginPath(); g.arc(p.x, p.y, 3.1, 0, Math.PI * 2); g.fill();
+  }
+}
+/** The headline: mono caps, characters decode from binary into place, accent words in tangerine. */
+function headline(t) {
+  for (const [a, b, text, accents] of HEAD) {
+    if (t < a || t > b) continue;
+    const alpha = clamp((b - t) / 0.3);
+    g.font = `600 46px "JetBrains Mono"`; g.textBaseline = "middle";
+    const spacing = 0.18 * 46;
+    const chars = [...text];
+    const widths = chars.map((ch) => g.measureText(ch).width + spacing);
+    const total = widths.reduce((s, w) => s + w, 0) - spacing;
+    let x = CX - total / 2;
+    const words = text.split(" ");
+    let wi = 0, inWord = 0;
+    chars.forEach((ch, j) => {
+      if (ch === " ") { wi++; x += widths[j]; return; }
+      const accent = accents.includes(words[wi]);
+      const reveal = a + 0.15 + j * 0.035;
+      let shown = ch, col = accent ? COL.tang : COL.ink;
+      if (t < reveal) {
+        if (t < a + j * 0.012) { x += widths[j]; return; }
+        shown = hash(Math.floor(t * 24) * 31 + j) > 0.5 ? "1" : "0";
+        col = "rgba(255,122,61,0.55)";
+      }
+      g.globalAlpha = alpha;
+      g.fillStyle = col;
+      if (accent && t >= reveal) { g.shadowColor = "rgba(255,122,61,0.55)"; g.shadowBlur = 18; }
+      g.fillText(shown, x, 150);
+      g.shadowBlur = 0; g.globalAlpha = 1;
+      x += widths[j];
+    });
+  }
+}
+function captions(t) {
+  for (const [a, b, text, y] of CAPS) {
+    const al = fadeWin(t, a, b, 0.4);
+    if (al <= 0) continue;
+    g.globalAlpha = al;
+    g.font = `400 26px "JetBrains Mono"`; g.textAlign = "center"; g.textBaseline = "middle";
+    const [c0, ...rest] = [text.slice(0, 3), text.slice(3)];
+    const w0 = g.measureText(c0).width, w1 = g.measureText(rest.join("")).width;
+    g.textAlign = "left";
+    g.fillStyle = COL.tang; g.fillText(c0, CX - (w0 + w1) / 2, y);
+    g.fillStyle = COL.ink3; g.fillText(rest.join(""), CX - (w0 + w1) / 2 + w0, y);
+    g.textAlign = "center"; g.globalAlpha = 1;
+  }
+}
+function caret(t, x, y, h = 70) {
+  if (Math.floor(t * 2) % 2) return;
+  g.fillStyle = COL.tang; g.shadowColor = COL.tang; g.shadowBlur = 24;
+  g.fillRect(x, y, h * 0.55, h * 0.16); g.shadowBlur = 0;
+}
+function wordmark(cx, y, size, t) {
+  g.font = `700 ${size}px "Space Grotesk"`; g.textBaseline = "alphabetic"; g.textAlign = "left";
+  const w1 = g.measureText("spli").width, w2 = g.measureText("dev").width;
+  const x = cx - (w1 + w2 + size * 0.5) / 2;
+  g.fillStyle = COL.ink; g.fillText("spli", x, y);
+  g.fillStyle = COL.tang; g.shadowColor = "rgba(255,122,61,0.6)"; g.shadowBlur = 28; g.fillText("dev", x + w1, y); g.shadowBlur = 0;
+  if (Math.floor(t * 2) % 2 === 0) { g.fillStyle = COL.tang; g.fillRect(x + w1 + w2 + size * 0.06, y - size * 0.02, size * 0.42, size * 0.1); }
+  g.textAlign = "center";
+}
+function card(x, y, w, h, r = 26) {
+  g.fillStyle = COL.card; roundRect(g, x, y, w, h, r); g.fill();
+  g.strokeStyle = COL.line; g.lineWidth = 2; g.stroke();
+}
+function editorBar(x, y, w, name) {
+  g.fillStyle = COL.card2; roundRect(g, x, y, w, 58, 26); g.fill(); g.fillRect(x, y + 30, w, 28);
+  [COL.red, COL.sun, COL.mint].forEach((c, i) => { g.fillStyle = c; g.beginPath(); g.arc(x + 32 + i * 24, y + 29, 7, 0, Math.PI * 2); g.fill(); });
+  g.font = `400 22px "JetBrains Mono"`; g.textAlign = "left"; g.textBaseline = "middle";
+  g.fillStyle = COL.ink2; g.fillText(name, x + 120, y + 30);
+  g.textAlign = "center";
+}
+function typed(text, t, start, cps = 16) { const n = clamp(Math.floor((t - start) * cps), 0, text.length); return text.slice(0, n); }
+function avatar(key, x, y, r, color, letters) {
+  g.save(); g.beginPath(); g.arc(x, y, r + 5, 0, Math.PI * 2); g.fillStyle = color; g.fill();
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.clip();
+  const img = window.AV && window.AV[key];
+  if (img) g.drawImage(img, x - r, y - r, r * 2, r * 2);
+  else { g.fillStyle = COL.card2; g.fillRect(x - r, y - r, r * 2, r * 2); g.fillStyle = COL.ink; g.font = `700 ${r * 0.8}px "Space Grotesk"`; g.textBaseline = "middle"; g.fillText(letters, x, y); }
+  g.restore();
+}
+function keycap(x, y, w, h, label, pressed, color = COL.tang, edge = COL.deep, text = "#1c0c04") {
+  const dy = pressed ? 5 : 0;
+  g.fillStyle = edge; roundRect(g, x, y + 7, w, h, 20); g.fill();
+  g.fillStyle = color; roundRect(g, x, y + dy, w, h, 20); g.fill();
+  g.fillStyle = text; g.font = `700 30px "Figtree"`; g.textBaseline = "middle"; g.textAlign = "center";
+  g.fillText(label, x + w / 2, y + h / 2 + dy);
+}
+
+// ── scenes ───────────────────────────────────────────────────────────────────────────────
+function sceneIntro(t) {
+  // 0–2.6: a blinking caret, then "$ splidev" types itself
+  const al = clamp((2.6 - t) / 0.3);
+  if (al <= 0) return;
+  g.globalAlpha = al;
+  g.font = `600 64px "JetBrains Mono"`; g.textBaseline = "middle"; g.textAlign = "left";
+  const s = typed("$ splidev", t, 0.7, 11);
+  const w = g.measureText(s).width;
+  const x0 = CX - 190;
+  g.fillStyle = COL.tang; g.fillText(s.slice(0, 1), x0, H / 2);
+  g.fillStyle = COL.ink; g.fillText(s.slice(1), x0 + g.measureText("$").width, H / 2);
+  caret(t, x0 + w + 8, H / 2 + 22, 64);
+  g.textAlign = "center"; g.globalAlpha = 1;
+}
+function sceneBrandReveal(t) {
+  // 14.4–16.2: the wordmark under the bug
+  const al = fadeWin(t, 14.4, 16.2, 0.4);
+  if (al <= 0) return;
+  g.globalAlpha = al;
+  wordmark(CX, 905, 96, t);
+  g.font = `400 30px "Figtree"`; g.fillStyle = COL.ink2; g.textBaseline = "middle";
+  g.fillText("pump.fun coins that pay GitHub devs", CX, 960);
+  g.globalAlpha = 1;
+}
+function sceneLaunch(t) {
+  // 16.4–23.2: the launch form fills itself in, the keycap gets pressed
+  const al = fadeWin(t, 16.6, 23.2, 0.45);
+  if (al <= 0) return;
+  g.globalAlpha = al;
+  const rise = (1 - easeOut(clamp((t - 16.6) / 0.6))) * 40;
+  const X = CX - 520, Y = 250 + rise, Wd = 1040, Hh = 700;
+  card(X, Y, Wd, Hh); editorBar(X, Y, Wd, "launch.sol");
+  g.textAlign = "left"; g.textBaseline = "middle";
+  const label = (s, x, y) => { g.font = `600 20px "JetBrains Mono"`; g.fillStyle = COL.tang; g.fillText("// ", x, y); g.fillStyle = COL.ink3; g.fillText(s, x + g.measureText("// ").width, y); };
+  const field = (x, y, w, val, ph) => { g.fillStyle = COL.card2; roundRect(g, x, y, w, 64, 16); g.fill(); g.font = `600 30px "Figtree"`; g.fillStyle = val ? COL.ink : COL.ink3; g.fillText(val || ph, x + 22, y + 33); };
+  label("NAME", X + 50, Y + 110); label("TICKER", X + 600, Y + 110);
+  field(X + 50, Y + 135, 520, typed("Dev Coin", t, 17.3, 14), "Dev Coin");
+  field(X + 600, Y + 135, 390, typed("$DEV", t, 17.9, 10), "$TICKER");
+  label("WHO GETS THE FEES", X + 50, Y + 250);
+  const rows = [["torvalds", "60%", 18.6, COL.sky, "LT"], ["gaearon", "40%", 19.6, COL.pink, "DA"]];
+  rows.forEach(([h, pct, st, c, li], i) => {
+    const y = Y + 280 + i * 90;
+    g.fillStyle = COL.card2; roundRect(g, X + 50, y, 940, 70, 16); g.fill();
+    const s = typed("@" + h, t, st, 14);
+    if (t > st + 0.6) avatar(h, X + 92, y + 35, 22, c, li);
+    g.font = `600 30px "JetBrains Mono"`; g.fillStyle = COL.ink; g.fillText(s, X + 135, y + 36);
+    if (t > st + 0.8) { g.fillStyle = COL.mint; g.font = `700 26px "Figtree"`; g.fillText("✓ " + (h === "torvalds" ? "Linus Torvalds" : "dan"), X + 135 + g.measureText(s).width + 60, y + 36); }
+    if (t > st + 0.6) { g.fillStyle = c; roundRect(g, X + 860, y + 15, 110, 40, 20); g.fill(); g.fillStyle = "#130d26"; g.font = `700 24px "JetBrains Mono"`; g.textAlign = "center"; g.fillText(pct, X + 915, y + 36); g.textAlign = "left"; }
+  });
+  g.font = `400 22px "Figtree"`; g.fillStyle = COL.ink3; g.fillText("example developers · a coin pays them only if someone launches one", X + 50, Y + 480);
+  keycap(X + 50, Y + 560, 940, 80, "Launch coin  →", t > 21.2 && t < 21.55);
+  if (t > 21.7) {
+    const k = easeOut(clamp((t - 21.7) / 0.4));
+    g.globalAlpha = al * k;
+    g.fillStyle = COL.mint; g.font = `700 34px "Space Grotesk"`; g.textAlign = "center";
+    g.fillText("$DEV is live on pump.fun", CX, Y + Hh + 70);
+  }
+  g.textAlign = "center"; g.globalAlpha = 1;
+}
+function sceneSplit(t) {
+  // 23.4–31: Bitbug opens, a trade's fee runs down a git graph to the developers
+  const al = fadeWin(t, 23.6, 31.0, 0.45);
+  if (al <= 0) return;
+  g.globalAlpha = al;
+  const img = Math.floor(t * 1.1) % 2 ? window.IMG.bugOpen : window.IMG.bugClosed;
+  const bw = 230, bh = (img.height / img.width) * bw;
+  g.drawImage(img, CX - bw / 2, 240, bw, bh);
+  const forkY = 520;
+  const nodes = [
+    { x: CX - 520, key: "torvalds", c: COL.sky, pct: "54%", label: "@torvalds", li: "LT" },
+    { x: CX, key: "gaearon", c: COL.pink, pct: "36%", label: "@gaearon", li: "DA" },
+    { x: CX + 520, key: null, c: COL.tang, pct: "10%", label: "splidev", li: "S" },
+  ];
+  const path = (n) => { g.beginPath(); g.moveTo(CX, 480); g.lineTo(CX, forkY); if (n.x === CX) { g.lineTo(CX, 760); } else { g.bezierCurveTo(CX, forkY + 70, n.x, forkY + 50, n.x, forkY + 150); g.lineTo(n.x, 760); } };
+  const pointOn = (n, u) => {
+    // approximate position along the branch for the drops
+    if (u < 0.15) return [CX, lerp(480, forkY, u / 0.15)];
+    if (n.x === CX) return [CX, lerp(forkY, 760, (u - 0.15) / 0.85)];
+    if (u < 0.65) { const s = (u - 0.15) / 0.5, m = 1 - s; return [m * m * m * CX + 3 * m * m * s * CX + 3 * m * s * s * n.x + s * s * s * n.x, m * m * m * forkY + 3 * m * m * s * (forkY + 70) + 3 * m * s * s * (forkY + 50) + s * s * s * (forkY + 150)]; }
+    return [n.x, lerp(forkY + 150, 760, (u - 0.65) / 0.35)];
+  };
+  nodes.forEach((n, i) => {
+    g.lineCap = "round";
+    g.strokeStyle = n.c; g.globalAlpha = al * 0.22; g.lineWidth = 14; path(n); g.stroke();
+    g.globalAlpha = al; g.lineWidth = 4; g.setLineDash([8, 18]); g.lineDashOffset = -t * 60; path(n); g.stroke(); g.setLineDash([]);
+    for (let k = 0; k < 3; k++) {
+      const u = ((t * 0.45 + k / 3 + i * 0.13) % 1);
+      const [px, py] = pointOn(n, u);
+      g.fillStyle = n.c; g.beginPath(); g.arc(px, py, 10, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = "#130d26"; g.lineWidth = 3; g.stroke();
+    }
+    avatar(n.key, n.x, 830, 58, n.c, n.li);
+    if (!n.key) { g.save(); g.beginPath(); g.arc(n.x, 830, 58, 0, Math.PI * 2); g.fillStyle = COL.card2; g.fill(); g.restore(); const s = 96, bi = window.IMG.bugClosed; g.drawImage(bi, n.x - s / 2, 830 - (bi.height / bi.width) * s / 2, s, (bi.height / bi.width) * s); }
+    g.fillStyle = n.c; roundRect(g, n.x + 30, 760, 92, 40, 20); g.fill();
+    g.fillStyle = "#130d26"; g.font = `700 24px "JetBrains Mono"`; g.textBaseline = "middle"; g.fillText(n.pct, n.x + 76, 781);
+    g.fillStyle = COL.ink2; g.font = `600 28px "JetBrains Mono"`; g.fillText(n.label, n.x, 925);
+    const sol = (Math.max(0, t - 24.2) * [0.071, 0.047, 0.013][i]).toFixed(3);
+    g.fillStyle = COL.mint; g.font = `700 32px "JetBrains Mono"`; g.fillText(`+${sol} SOL`, n.x, 975);
+  });
+  g.fillStyle = COL.tang; g.beginPath(); g.arc(CX, forkY, 13, 0, Math.PI * 2); g.fill();
+  g.fillStyle = COL.ink3; g.font = `400 24px "JetBrains Mono"`; g.textAlign = "left"; g.fillText("split()", CX + 30, forkY + 2); g.textAlign = "center";
+  g.globalAlpha = 1;
+}
+function sceneClaim(t) {
+  // 41.2–46: a developer signs in with GitHub on pump.fun and claims
+  const al = fadeWin(t, 41.5, 46.0, 0.45);
+  if (al <= 0) return;
+  g.globalAlpha = al;
+  const rise = (1 - easeOut(clamp((t - 41.5) / 0.6))) * 40;
+  const X = CX - 430, Y = 300 + rise, Wd = 860, Hh = 520;
+  card(X, Y, Wd, Hh); editorBar(X, Y, Wd, "claim.sol");
+  avatar("torvalds", CX, Y + 170, 62, COL.sky, "LT");
+  g.font = `600 32px "JetBrains Mono"`; g.fillStyle = COL.ink; g.textBaseline = "middle"; g.fillText("@torvalds", CX, Y + 268);
+  const amt = (Math.min(t - 41.8, 2.4) / 2.4) * 1.284;
+  g.font = `700 76px "JetBrains Mono"`; g.fillStyle = COL.mint; g.shadowColor = "rgba(61,220,151,0.5)"; g.shadowBlur = 24;
+  g.fillText(`${Math.max(0, amt).toFixed(3)} SOL`, CX, Y + 350); g.shadowBlur = 0;
+  g.font = `400 24px "Figtree"`; g.fillStyle = COL.ink3; g.fillText("ready to claim · example amount", CX, Y + 405);
+  keycap(X + 130, Y + 440, Wd - 260, 64, "Sign in with GitHub on pump.fun", t > 44.6 && t < 44.95, "#f6f1ff", "#8d82b8", "#130d26");
+  g.globalAlpha = 1;
+}
+function sceneEnd(t) {
+  if (t < 47.4) return;
+  const al = clamp((t - 47.4) / 0.6) * clamp((DUR - t) / 0.8);
+  g.globalAlpha = al;
+  wordmark(CX, 740, 130, t);
+  g.textBaseline = "middle";
+  g.font = `500 38px "Figtree"`; const w1 = g.measureText("Coins that pay ").width;
+  g.font = `600 italic 44px "Fraunces"`; const w2 = g.measureText("GitHub").width;
+  g.font = `500 38px "Figtree"`; const w3 = g.measureText(" devs.").width;
+  const x0 = CX - (w1 + w2 + w3) / 2; g.textAlign = "left";
+  g.fillStyle = COL.ink; g.font = `500 38px "Figtree"`; g.fillText("Coins that pay ", x0, 815);
+  g.fillStyle = COL.tang; g.font = `600 italic 44px "Fraunces"`; g.fillText("GitHub", x0 + w1, 813);
+  g.fillStyle = COL.ink; g.font = `500 38px "Figtree"`; g.fillText(" devs.", x0 + w1 + w2, 815);
+  g.textAlign = "center";
+  g.font = `700 34px "JetBrains Mono"`; g.fillStyle = COL.tang; g.fillText("splitearn.app", CX, 895);
+  g.font = `400 22px "JetBrains Mono"`; g.fillStyle = COL.ink3;
+  g.fillText("pump.fun · Solana · not affiliated with pump.fun or GitHub", CX, 960);
+  g.globalAlpha = 1;
+}
+
+window.renderFrame = (t) => {
+  if (!READY) return false;
+  background(t);
+  // particles dim behind the UI scenes
+  const ui = Math.max(fadeWin(t, 16.6, 23.2, 0.5), fadeWin(t, 23.6, 31.0, 0.5), fadeWin(t, 41.5, 46.0, 0.5));
+  drawParticles(t, 1 - ui * 0.75);
+  sceneIntro(t);
+  headline(t);
+  captions(t);
+  sceneBrandReveal(t);
+  sceneLaunch(t);
+  sceneSplit(t);
+  sceneClaim(t);
+  sceneEnd(t);
+  // fade from and to black
+  const black = Math.max(clamp(1 - t / 0.6), clamp((t - (DUR - 0.6)) / 0.6));
+  if (black > 0) { g.fillStyle = `rgba(0,0,0,${black})`; g.fillRect(0, 0, W, H); }
+  return true;
+};
+window.DURATION = DUR;
+window.SETUP = setup();
+</script>
+</body>
+</html>
