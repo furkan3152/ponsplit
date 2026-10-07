@@ -1,6 +1,6 @@
-// Simulates a Splidev launch on Solana mainnet (nothing is sent, no key is used): pump.fun create_v2
+// Simulates a Splitdev launch on Solana mainnet (nothing is sent, no key is used): pump.fun create_v2
 // (+ an optional first buy), one pump.fun GitHub fee account per recipient, and pump.fun's permanent
-// fee sharing with Splidev's treasury first. Prints each transaction's size and the simulation logs.
+// fee sharing with Splitdev's treasury first. Prints each transaction's size and the simulation logs.
 import { ComputeBudgetProgram, Connection, Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import { NATIVE_MINT, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { createRequire } from "module";
@@ -21,8 +21,8 @@ const global = await online.fetchGlobal();
 
 const firstBuySol = new BN(process.env.FIRST_BUY_LAMPORTS || "0");
 const create = firstBuySol.gtn(0)
-  ? await PUMP_SDK.createV2AndBuyInstructions({ global, mint, name: "Splidev Sim", symbol: "SIM", uri: "https://example.com/m.json", creator: payer, user: payer, amount: new BN(1_000_000), solAmount: firstBuySol, mayhemMode: false })
-  : [await PUMP_SDK.createV2Instruction({ mint, name: "Splidev Sim", symbol: "SIM", uri: "https://example.com/m.json", creator: payer, user: payer, mayhemMode: false })];
+  ? await PUMP_SDK.createV2AndBuyInstructions({ global, mint, name: "Splitdev Sim", symbol: "SIM", uri: "https://example.com/m.json", creator: payer, user: payer, amount: new BN(1_000_000), solAmount: firstBuySol, mayhemMode: false })
+  : [await PUMP_SDK.createV2Instruction({ mint, name: "Splitdev Sim", symbol: "SIM", uri: "https://example.com/m.json", creator: payer, user: payer, mayhemMode: false })];
 
 const socials = [];
 for (const id of GITHUB_IDS) {

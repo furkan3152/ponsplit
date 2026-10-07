@@ -14,7 +14,7 @@ export function FeeTable() {
     { part: "↳ pump.fun", ofTrade: pct(CURVE_PROTOCOL), to: "Kept by pump.fun" },
     { part: "↳ creator fee", ofTrade: pct(CURVE_CREATOR), to: "Shared through pump.fun's fee sharing, set for good at launch" },
     { part: "   ↳ GitHub devs", ofTrade: pct((CURVE_CREATOR * devs) / 100), to: `${devs}% of the creator fee, by the shares set at launch`, strong: true },
-    { part: "   ↳ Splidev", ofTrade: pct((CURVE_CREATOR * splidev) / 100), to: `${splidev}% of the creator fee` },
+    { part: "   ↳ Splitdev", ofTrade: pct((CURVE_CREATOR * splidev) / 100), to: `${splidev}% of the creator fee` },
     { part: "after graduating", ofTrade: "0.05–0.95%", to: "pump.fun's pool sets the creator fee by market cap; same split", strong: true },
   ];
   return (
@@ -52,12 +52,12 @@ export function FeeExample() {
     <p className="text-[15px] leading-relaxed text-ink-2">
       Someone buys for <span className="num text-ink">1 SOL</span> on the curve: the trade pays <span className="num text-ink">{s(0.0125)}</span> in fees.{" "}
       <span className="num text-ink">{s(0.0095)}</span> goes to pump.fun, <span className="num text-ink">{s((0.003 * (100 - splidev)) / 100)}</span> to the coin&apos;s
-      GitHub developers and <span className="num text-ink">{s((0.003 * splidev) / 100)}</span> to Splidev.
+      GitHub developers and <span className="num text-ink">{s((0.003 * splidev) / 100)}</span> to Splitdev.
     </p>
   );
 }
 
-/** Splidev's launch fee. */
+/** Splitdev's launch fee. */
 export function LaunchFee() {
   return <span className="num text-ink">{(Number(LAUNCH_FEE_LAMPORTS) / 1e9).toLocaleString("en-US", { maximumFractionDigits: 9 })} SOL</span>;
 }

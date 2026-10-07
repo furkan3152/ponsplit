@@ -62,7 +62,7 @@ export class GithubBusyError extends Error {}
  */
 async function api(path: string, kind: Kind): Promise<GithubProfile | null> {
   if (!spend(kind)) throw new GithubBusyError("GitHub lookups are busy right now. Try again in a few minutes.");
-  const headers: Record<string, string> = { accept: "application/vnd.github+json", "user-agent": "splidev", "x-github-api-version": "2022-11-28" };
+  const headers: Record<string, string> = { accept: "application/vnd.github+json", "user-agent": "splitdev", "x-github-api-version": "2022-11-28" };
   if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
   const res = await fetch(`https://api.github.com${path}`, { headers, cache: "no-store", signal: AbortSignal.timeout(8_000) });
   if (res.status === 404) return null;

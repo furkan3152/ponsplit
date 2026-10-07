@@ -1,4 +1,4 @@
-// Shared "chunky sticker" building blocks for Splidev illustrations.
+// Shared "chunky sticker" building blocks for Splitdev illustrations.
 // Pure SVG, no ids, all colors via CSS variables.
 import type { ReactNode } from "react";
 

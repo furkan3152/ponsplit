@@ -71,7 +71,7 @@ if (process.env.STILLS) {
   process.exit(0);
 }
 
-const out = process.env.OUT || "splidev-promo.mp4";
+const out = process.env.OUT || "splitdev-promo.mp4";
 const video = out.replace(/\.mp4$/, ".video.mp4");
 const ff = process.env.AUDIO_ONLY ? { stdin: { end() {}, write: () => true } } : spawn(FFMPEG, ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(FPS), "-c:v", "mjpeg", "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", video], { stdio: ["pipe", "inherit", "inherit"] });
 const frames = process.env.AUDIO_ONLY ? 0 : Math.round(duration * FPS); // AUDIO_ONLY=1 reuses the rendered .video.mp4

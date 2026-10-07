@@ -20,7 +20,7 @@ import { distributeTransaction } from "@/lib/solana/pump";
 const PUMP_CLAIM_URL = "https://pump.fun";
 
 /**
- * GitHub developers get paid through pump.fun: each Splidev coin sends their share of its creator
+ * GitHub developers get paid through pump.fun: each Splitdev coin sends their share of its creator
  * fees to their pump.fun GitHub account, and they claim it on pump.fun after signing in with
  * GitHub. This page finds what a username has waiting, can push the coins' pending fees into it,
  * and links to pump.fun for the claim.
@@ -62,7 +62,7 @@ export default function ClaimPage() {
             </Reveal>
             <Reveal delay={120}>
               <p className="mt-4 max-w-lg text-[16px] leading-relaxed text-ink-2 sm:text-[17px]">
-                Coins on Splidev pay GitHub accounts through pump.fun. Type your username to see what&apos;s waiting, then claim it on pump.fun by
+                Coins on Splitdev pay GitHub accounts through pump.fun. Type your username to see what&apos;s waiting, then claim it on pump.fun by
                 signing in with GitHub.
               </p>
             </Reveal>
@@ -113,7 +113,7 @@ export default function ClaimPage() {
           <div className="min-w-0 space-y-5">
             <Reveal as="section" className="card p-5 sm:p-6">
               <div className="eyebrow">Step 1 · on the way</div>
-              <h2 className="display mt-1.5 text-[26px] leading-none">From Splidev coins</h2>
+              <h2 className="display mt-1.5 text-[26px] leading-none">From Splitdev coins</h2>
               <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
                 Coins keep their creator fees until someone distributes them. Distributing moves @{profile.login}&apos;s share into the pump.fun GitHub account;
                 anyone can do it, for the network fee only.
@@ -121,7 +121,7 @@ export default function ClaimPage() {
               {mine.length === 0 ? (
                 <div className="mt-5 flex flex-col items-center gap-2 py-6 text-center">
                   <EmptyArt className="h-16 w-20 animate-float" />
-                  <p className="text-[14px] text-ink-2">No Splidev coin pays @{profile.login} yet.</p>
+                  <p className="text-[14px] text-ink-2">No Splitdev coin pays @{profile.login} yet.</p>
                   <Link href="/create" className="btn-secondary mt-1 px-4 py-2 text-[14px]">
                     Launch one for them
                   </Link>
@@ -157,7 +157,7 @@ export default function ClaimPage() {
                 Claim on pump.fun ↗
               </a>
               <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
-                Splidev never holds your money: it sits in pump.fun&apos;s GitHub fee account for user #{profile.id} until you claim it there.
+                Splitdev never holds your money: it sits in pump.fun&apos;s GitHub fee account for user #{profile.id} until you claim it there.
               </p>
             </Reveal>
           </div>
@@ -181,7 +181,7 @@ export default function ClaimPage() {
                 </dd>
               </div>
               <div className="border-t border-dashed border-line-2 pt-3">
-                <dt className="eyebrow">Still in Splidev coins</dt>
+                <dt className="eyebrow">Still in Splitdev coins</dt>
                 <dd className="num mt-1 text-[18px] font-semibold">{formatSol(pendingTotal, 5)} SOL</dd>
               </div>
             </dl>

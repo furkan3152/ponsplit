@@ -52,7 +52,7 @@ async function run(name, total, concurrency, make) {
   return { statuses, errors };
 }
 
-const get = (path) => fetch(SITE + path, { signal: AbortSignal.timeout(TIMEOUT), headers: { "user-agent": "splidev-stress/1" } });
+const get = (path) => fetch(SITE + path, { signal: AbortSignal.timeout(TIMEOUT), headers: { "user-agent": "splitdev-stress/1" } });
 const pages = ["/", "/explore", "/create", "/claim", "/how", "/me", ...(COIN ? [`/token/${COIN}`] : [])];
 const results = [];
 

@@ -50,7 +50,7 @@ export function Sidebar() {
       className="sidebar fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-line bg-[var(--glass)] backdrop-blur-xl lg:flex"
     >
       <div className="flex h-16 items-center gap-2 px-4">
-        <Link href="/" className="group flex min-w-0 items-center gap-2.5" aria-label="Splidev home">
+        <Link href="/" className="group flex min-w-0 items-center gap-2.5" aria-label="Splitdev home">
           <LogoMark size={34} className="shrink-0 transition-transform duration-500 group-hover:-rotate-12" />
           <WordmarkText className="sidebar-label truncate text-[21px]" />
         </Link>
