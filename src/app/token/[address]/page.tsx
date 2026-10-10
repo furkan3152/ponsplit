@@ -182,17 +182,17 @@ export default function TokenPage({ params }: { params: { address: string } }) {
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_372px] lg:gap-6">
         <div className="min-w-0 space-y-5 lg:space-y-6">
-          {trades.error && !trades.data ? (
-            <p className="card flex items-center gap-2.5 px-4 py-3.5 text-[14px] font-medium text-down-ink">
-              <span aria-hidden className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-down" />
-              Couldn&apos;t load this coin&apos;s trades right now. Retrying…
-            </p>
+          {trades.error ? (
+            <div role="alert" className="card flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 text-[14px] font-medium text-down-ink">
+              <p>Trade history is temporarily unavailable.{trades.data?.length ? " Showing the last loaded trades." : ""}</p>
+              <button type="button" className="btn-secondary px-3 py-2 text-[12px]" disabled={trades.isFetching} onClick={() => { void trades.refetch(); }}>{trades.isFetching ? "Retrying…" : "Retry"}</button>
+            </div>
           ) : null}
           <Reveal delay={120}>
-            <PriceChart trades={chrono} loading={!trades.data} partial={(trades.data?.length ?? 0) >= 150} symbol={t.symbol} />
+            <PriceChart trades={chrono} loading={trades.isPending && !trades.data} error={trades.isError} partial={(trades.data?.length ?? 0) >= 150} symbol={t.symbol} />
           </Reveal>
           <Reveal delay={60}>
-            <TradesTable trades={trades.data} symbol={t.symbol} me={address} />
+            <TradesTable trades={trades.data} loading={trades.isPending && !trades.data} error={trades.isError} symbol={t.symbol} me={address} />
           </Reveal>
           {description ? (
             <Reveal delay={60}>

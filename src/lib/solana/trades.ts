@@ -32,6 +32,13 @@ const EVENT_TAG = "e445a52e51cb9a1d";
 const TRADE_EVENT = "bddb7fd34ee661ee";
 const AMM_BUY_EVENT = "67f4521f2cf57777";
 const AMM_SELL_EVENT = "3e2f370aa503dc2a";
+// PublicNode permits only one getTransaction per JSON-RPC request. Use bounded
+// individual reads rather than a batch the provider rejects outright.
+// Poll signatures each refresh, but reuse confirmed transaction bodies instead
+// of requesting the same history every five seconds. Failed/null reads retry.
+const CONCURRENT_TRANSACTION_READS = 4;
+const TRANSACTION_CACHE_LIMIT = 1_000;
+const transactionCaches = new WeakMap<Connection, Map<string, VersionedTransactionResponse>>();
 
 const n = (v: { toString(): string } | undefined) => BigInt(v?.toString() ?? "0");
 /** SOL per whole token paid or received in a trade. */
@@ -120,9 +127,33 @@ export async function recentTrades(c: Connection, mint: PublicKey, graduated: bo
   const venues = [bondingCurvePda(mint), ...(graduated ? [canonicalPumpPoolPda(mint)] : [])];
   const sigs = (await Promise.all(venues.map((v) => c.getSignaturesForAddress(v, { limit }, "confirmed")))).flat().filter((s) => !s.err);
   const unique = Array.from(new Set(sigs.map((s) => s.signature)));
-  const txs: (VersionedTransactionResponse | null)[] = [];
-  for (let i = 0; i < unique.length; i += 50) {
-    txs.push(...(await c.getTransactions(unique.slice(i, i + 50), { maxSupportedTransactionVersion: 0, commitment: "confirmed" })));
+  let cache = transactionCaches.get(c);
+  if (!cache) {
+    cache = new Map();
+    transactionCaches.set(c, cache);
+  }
+  const txs = unique.flatMap(signature => {
+    const tx = cache.get(signature);
+    return tx ? [tx] : [];
+  });
+  const missing = unique.filter(signature => !cache.has(signature));
+  for (let i = 0; i < missing.length; i += CONCURRENT_TRANSACTION_READS) {
+    // web3.js 1.99 supports MessageV1. Modern bot trades may be v1: asking
+    // for max version 0 rejects the entire batch, including older valid trades.
+    const fetched = await Promise.allSettled(missing.slice(i, i + CONCURRENT_TRANSACTION_READS).map(async requestedSignature => {
+      const tx = await c.getTransaction(requestedSignature, { maxSupportedTransactionVersion: 1, commitment: "confirmed" });
+      if (!tx) return;
+      // Preserve successful reads even if a sibling request fails and the
+      // caller retries or falls back to another public RPC.
+      const signature = tx.transaction.signatures[0];
+      cache!.delete(signature);
+      cache!.set(signature, tx);
+      if (cache!.size > TRANSACTION_CACHE_LIMIT) cache!.delete(cache!.keys().next().value!);
+      return tx;
+    }));
+    for (const result of fetched) if (result.status === "fulfilled" && result.value) txs.push(result.value);
+    const failed = fetched.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failed) throw failed.reason;
   }
   const key = mint.toBase58();
   return txs

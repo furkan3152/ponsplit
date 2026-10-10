@@ -27,6 +27,24 @@ export function serverConnection(): Connection {
   return conn;
 }
 
+let tradeConnections: Connection[] | undefined;
+/** Indexed account scans and transaction history have different public RPC limits. */
+function historyConnections(): Connection[] {
+  if (!tradeConnections) {
+    const endpoint = rpcUrls()[0];
+    const endpoints = endpoint === PUBLIC_MAINNET_RPC ? [PUBLIC_MAINNET_RPC, PUBLIC_INDEX_RPC] : [endpoint];
+    tradeConnections = endpoints.map((url) => new Connection(url, {
+      commitment: "confirmed",
+      disableRetryOnRateLimit: true,
+      fetch: async (input, init) => {
+        // Fail over promptly instead of keeping the chart in a rate-limit retry loop.
+        return fetch(input, { ...init, signal: AbortSignal.timeout(8_000) });
+      },
+    }));
+  }
+  return tradeConnections;
+}
+
 import type { CoinView, Earner, GithubRecipient, Snapshot } from "./server-types";
 export type { CoinView, Earner, GithubRecipient, Snapshot };
 
@@ -186,5 +204,17 @@ export function coinTrades(mint: string, graduated: boolean): Promise<Trade[]> {
     if (tradeMemos.size > 500) tradeMemos.delete(tradeMemos.keys().next().value as string);
     tradeMemos.set(mint, (m = { at: 0 }));
   }
-  return memo(m, () => recentTrades(serverConnection(), new PublicKey(mint), graduated, 150));
+  return memo(m, async () => {
+    let failure: unknown;
+    for (const connection of historyConnections()) {
+      try {
+        return await recentTrades(connection, new PublicKey(mint), graduated, 150);
+      } catch (error) {
+        failure = error;
+      }
+    }
+    // Do not turn an RPC failure into an empty trade history. The client retains
+    // any previously displayed trades and exposes retry when both providers fail.
+    throw failure ?? new Error("Trade history is temporarily unavailable.");
+  });
 }
