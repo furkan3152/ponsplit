@@ -15,6 +15,7 @@ import {
   loadEscrowArtifact,
   quoteProgramDeployment,
   remainingDeploymentBalance,
+  MAX_WALLET_PRIORITY_FEE_LAMPORTS,
   type DeployProgress,
 } from "@/lib/solana/program-deploy";
 
@@ -428,6 +429,10 @@ export function ProgramDeployment({
               SOL
             </dd>
           </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-ink-2">Maximum wallet priority-fee reserve</dt>
+            <dd className="font-mono">{formatSol(resumeBuffer && buffer.data ? MAX_WALLET_PRIORITY_FEE_LAMPORTS * BigInt(buffer.data.remainingChunks + 2) : quote.data.walletFeeReserveLamports, 6)} SOL</dd>
+          </div>
           <div className="flex justify-between gap-4 border-t border-line pt-3">
             <dt className="font-semibold">Required SOL balance</dt>
             <dd className="font-mono font-semibold text-neon">
@@ -447,7 +452,7 @@ export function ProgramDeployment({
               ? "SOL already in the upload buffer is credited toward deployment. This is the additional wallet balance needed."
               : "Upload SOL is reused to fund the deployed program, so it is counted once. A small wallet and recovery reserve is included."}{" "}
             The full workflow&apos;s final estimated cost is{" "}
-            {formatSol(quote.data.finalCostLamports, 5)} SOL. Buffer funding becomes program rent; any surplus is returned.
+            {formatSol(quote.data.finalCostLamports, 5)} SOL. Buffer funding becomes program rent; any surplus is returned. Wallet-added priority fees are capped at 0.000005 SOL per transaction. The required balance includes their maximum reserve; unused reserve stays in your wallet.
           </p>
         </dl>
       ) : null}

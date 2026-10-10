@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { build } from "esbuild";
-import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, sendAndConfirmTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, sendAndConfirmTransaction } from "@solana/web3.js";
 
 const c = new Connection(process.env.RPC || "http://127.0.0.1:8909", "confirmed");
 if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(c.rpcEndpoint).hostname)) throw new Error("Disposable deployment keys may be used only on a local validator.");
@@ -40,7 +40,7 @@ trim.sign(admin);
 const trimSignature = await c.sendRawTransaction(trim.serialize());
 await c.confirmTransaction({ signature: trimSignature, ...trimLifetime }, "confirmed");
 assert.equal(BigInt(await c.getBalance(admin.publicKey)), quote.requiredLamports);
-assert.equal(quote.requiredLamports, quote.finalCostLamports + quote.walletRentLamports + quote.recoveryFeeLamports);
+assert.equal(quote.requiredLamports, quote.finalCostLamports + quote.walletRentLamports + quote.recoveryFeeLamports + quote.walletFeeReserveLamports);
 
 let savedBuffer;
 let signingBatches = 0;
@@ -75,6 +75,7 @@ console.log("PASS interrupted writes resumable; unauthorized loader refund rejec
 
 let resumedBytes = 0;
 let singleApprovals = 0;
+let walletAddedFees = 0n;
 const singleWallet = { publicKey: admin.publicKey, signTransaction: async (tx) => {
   // Before every new approval, the previous write must already be confirmed on chain.
   if (singleApprovals > 0) {
@@ -82,6 +83,10 @@ const singleWallet = { publicKey: admin.publicKey, signTransaction: async (tx) =
     assert.ok(current.writtenBytes > interrupted.writtenBytes + (singleApprovals - 1) * lib.WRITE_CHUNK_SIZE);
   }
   singleApprovals++;
+  if (tx.instructions[0].programId.equals(lib.UPGRADEABLE_LOADER) && tx.instructions[0].data.readUInt32LE(0) === 1) {
+    tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 10000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100000 }));
+    walletAddedFees += 1000n;
+  }
   return wallet.signTransaction(tx);
 }, signAllTransactions: async () => { assert.fail("single signing must not invoke wallet batch signing"); } };
 const result = await lib.deployEscrowProgram({ connection: c, wallet: singleWallet, writeBatchSize: 1, artifact, resumeBuffer: new PublicKey(savedBuffer), onProgress: (progress) => { if (progress.phase === "writing") resumedBytes = Math.max(resumedBytes, progress.writtenBytes); } });
@@ -89,8 +94,8 @@ assert.equal(resumedBytes, artifact.bytes.length);
 assert.equal(singleApprovals, interrupted.remainingChunks + 1);
 assert.equal(await lib.inspectDeployedProgram(c, new PublicKey(result.programId), artifact), true);
 assert.ok((await c.getAccountInfo(new PublicKey(result.programId))).executable);
-assert.equal(initialAdminBalance - BigInt(await c.getBalance(admin.publicKey)), quote.finalCostLamports, "actual completed deployment costs exactly the quoted rents and fees; buffer rent is recycled");
-assert.equal(BigInt(await c.getBalance(admin.publicKey)), quote.walletRentLamports + quote.recoveryFeeLamports);
+assert.equal(initialAdminBalance - BigInt(await c.getBalance(admin.publicKey)), quote.finalCostLamports + walletAddedFees, "actual completed deployment costs exactly the quoted rents and fees; buffer rent is recycled");
+assert.equal(BigInt(await c.getBalance(admin.publicKey)), quote.walletRentLamports + quote.recoveryFeeLamports + quote.walletFeeReserveLamports - walletAddedFees);
 console.log("PASS single-transaction mobile signing, lost-confirmation recovery, exact budget and verified program", result.programId);
 // Refill only for the independent cancellation/refund scenario.
 await c.confirmTransaction(await c.requestAirdrop(admin.publicKey, 1_000_000_000), "confirmed");
@@ -99,12 +104,19 @@ let refundable;
 await assert.rejects(lib.deployEscrowProgram({ connection: c, wallet: { ...wallet, signAllTransactions: async () => { throw new Error("Stop before writes"); } }, artifact, onBufferCreated: (address) => { refundable = address; } }), /Stop before writes/);
 const info = await lib.inspectDeploymentBuffer(c, new PublicKey(refundable), artifact);
 const before = BigInt(await c.getBalance(admin.publicKey));
-await lib.closeDeploymentBuffer({ connection: c, wallet, buffer: new PublicKey(refundable) });
+await assert.rejects(lib.closeDeploymentBuffer({ connection: c, wallet: { ...wallet, signTransaction: async tx => {
+  tx.add(SystemProgram.transfer({ fromPubkey: admin.publicKey, toPubkey: attacker.publicKey, lamports: 1 }));
+  return wallet.signTransaction(tx);
+} }, buffer: new PublicKey(refundable) }), /Wallet transaction blocked/);
+await lib.closeDeploymentBuffer({ connection: c, wallet: { ...wallet, signTransaction: async tx => {
+  tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 10000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100000 }));
+  return wallet.signTransaction(tx);
+} }, buffer: new PublicKey(refundable) });
 const after = BigInt(await c.getBalance(admin.publicKey));
 assert.equal(await c.getAccountInfo(new PublicKey(refundable)), null);
-assert.equal(after - before, info.lamports - quote.recoveryFeeLamports);
+assert.equal(after - before, info.lamports - quote.recoveryFeeLamports - 1000n);
 await assert.rejects(lib.closeDeploymentBuffer({ connection: c, wallet, buffer: new PublicKey(result.programId) }), /buffer/);
-console.log("PASS admin-only close returns all buffer rent minus actual transaction fee");
+console.log("PASS wallet-added bounded priority fee accepted for refund; hidden transfer rejected");
 
 
 // Close only an unused deployment, with all refunds fixed to the admin.
@@ -117,7 +129,7 @@ assert.equal(await lib.inspectDeployedProgram(c, deployed, artifact), true);
 await assert.rejects(lib.closeUnusedProgram({ connection: c, wallet: { ...wallet, signTransaction: async (tx) => {
   tx.instructions[0].keys[1].pubkey = attacker.publicKey;
   return wallet.signTransaction(tx);
-} }, program: deployed, artifact, confirmedProgramId: deployed.toBase58() }), /wallet changed/);
+} }, program: deployed, artifact, confirmedProgramId: deployed.toBase58() }), /Wallet transaction blocked/);
 assert.equal(await lib.inspectDeployedProgram(c, deployed, artifact), true);
 await assert.rejects(lib.quoteUnusedProgramRefund(c, SystemProgram.programId, artifact), /not an active verified/);
 const beforeProgramRefund = BigInt(await c.getBalance(admin.publicKey));

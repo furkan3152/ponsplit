@@ -1,4 +1,6 @@
 import bs58 from "bs58";
+import { checkedDeploymentSignature, MAX_WALLET_PRIORITY_FEE_LAMPORTS } from "./deployment-signing";
+export { MAX_WALLET_PRIORITY_FEE_LAMPORTS } from "./deployment-signing";
 import {
   Keypair, PublicKey, SystemProgram, SYSVAR_CLOCK_PUBKEY, SYSVAR_RENT_PUBKEY,
   Transaction, TransactionInstruction, VersionedTransaction,
@@ -26,7 +28,7 @@ export type DeployWallet = {
 };
 export type DeploymentQuote = {
   binaryBytes: number; maxDataLen: number; writeTransactions: number; totalTransactions: number;
-  walletRentLamports: bigint; bufferRentLamports: bigint; programRentLamports: bigint; programDataRentLamports: bigint;
+  walletFeeReserveLamports: bigint; walletRentLamports: bigint; bufferRentLamports: bigint; programRentLamports: bigint; programDataRentLamports: bigint;
   lockedRentLamports: bigint; transactionFeesLamports: bigint; recoveryFeeLamports: bigint;
   createFeeLamports: bigint; writeFeeLamports: bigint; deployFeeLamports: bigint;
   requiredLamports: bigint; finalCostLamports: bigint; balanceLamports: bigint; sufficientBalance: boolean;
@@ -184,7 +186,7 @@ export async function quoteUnusedProgramRefund(connection: Connection, program: 
     fee(connection, ADMIN_WALLET, new Transaction().add(closeProgramInstruction(program, ADMIN_WALLET))),
   ]);
   if (!info || !data) throw new Error("Program accounts changed. Inspect the deployment again.");
-  return { programId: program.toBase58(), programData: programData.toBase58(), refundLamports: exact(data.lamports), retainedProgramLamports: exact(info.lamports), feeLamports: closeFee };
+  return { programId: program.toBase58(), programData: programData.toBase58(), refundLamports: exact(data.lamports), retainedProgramLamports: exact(info.lamports), feeLamports: closeFee + MAX_WALLET_PRIORITY_FEE_LAMPORTS };
 }
 
 /** Explicit, irreversible cancellation of an unused deployment, never a routine fee claim.
@@ -203,10 +205,10 @@ export async function closeUnusedProgram(options: {
   await simulate(connection, transaction);
   const expected = transaction.serializeMessage();
   const signed = await wallet.signTransaction(transaction);
-  if (!equal(expected, signed.serializeMessage())) throw new Error("The wallet changed the program refund transaction.");
+  checkedDeploymentSignature(expected, signed, transaction.lastValidBlockHeight);
   // Reject accounts created or a program configured/upgraded while the wallet prompt was open.
   await quoteUnusedProgramRefund(connection, program, artifact);
-  return broadcast(connection, checkedSigned(transaction, signed), options.onSent);
+  return broadcast(connection, signed, options.onSent);
 }
 
 function bufferBytes(info: AccountInfo<Buffer> | null, authority: PublicKey, length: number): Uint8Array {
@@ -287,10 +289,11 @@ export async function quoteProgramDeployment(connection: Connection, authority: 
   const finalCostLamports = lockedRentLamports + transactionFeesLamports;
   // Loader v3 drains the buffer into the payer BEFORE funding ProgramData.
   // Count that SOL once and retain a rent-exempt payer balance plus a recovery fee.
-  const requiredLamports = finalCostLamports + exact(walletRent) + recoveryFeeLamports;
+  const walletFeeReserveLamports = MAX_WALLET_PRIORITY_FEE_LAMPORTS * BigInt(writeTransactions + 3);
+  const requiredLamports = finalCostLamports + exact(walletRent) + recoveryFeeLamports + walletFeeReserveLamports;
   return { binaryBytes: artifact.bytes.length, maxDataLen, writeTransactions, totalTransactions: writeTransactions + 2,
     walletRentLamports: exact(walletRent), bufferRentLamports: exact(bufferRent), programRentLamports: exact(programRent), programDataRentLamports: exact(programDataRent),
-    lockedRentLamports, transactionFeesLamports, recoveryFeeLamports, requiredLamports, finalCostLamports,
+    lockedRentLamports, transactionFeesLamports, recoveryFeeLamports, walletFeeReserveLamports, requiredLamports, finalCostLamports,
     createFeeLamports: createFee, writeFeeLamports: writeFee, deployFeeLamports: deployFee,
     balanceLamports: exact(balance), sufficientBalance: exact(balance) >= requiredLamports };
 }
@@ -300,7 +303,7 @@ export function remainingDeploymentBalance(quote: DeploymentQuote, bufferLamport
   if (bufferLamports < 0n || !Number.isSafeInteger(remainingChunks) || remainingChunks < 0 || remainingChunks > quote.writeTransactions) throw new Error("Invalid deployment balance inputs.");
   const dataTopUp = quote.programDataRentLamports > bufferLamports ? quote.programDataRentLamports - bufferLamports : 0n;
   // The Program account is created before the loader releases buffer SOL.
-  return quote.programRentLamports + dataTopUp + quote.writeFeeLamports * BigInt(remainingChunks) + quote.deployFeeLamports + quote.walletRentLamports + quote.recoveryFeeLamports;
+  return quote.programRentLamports + dataTopUp + quote.writeFeeLamports * BigInt(remainingChunks) + quote.deployFeeLamports + quote.walletRentLamports + quote.recoveryFeeLamports + MAX_WALLET_PRIORITY_FEE_LAMPORTS * BigInt(remainingChunks + 2);
 }
 
 async function simulate(connection: Connection, transaction: Transaction): Promise<void> {
@@ -308,15 +311,6 @@ async function simulate(connection: Connection, transaction: Transaction): Promi
   if (response.value.err) throw new Error(`Program transaction simulation failed: ${JSON.stringify(response.value.err)}. ${(response.value.logs || []).slice(-4).join(" ")}`);
 }
 
-function checkedSigned(expected: Transaction, returned: Transaction): Transaction {
-  if (!equal(expected.serializeMessage(), returned.serializeMessage())) throw new Error("The wallet changed the deployment transaction.");
-  // Verifies all signatures, including ephemeral buffer/program signatures.
-  returned.serialize({ requireAllSignatures: true, verifySignatures: true });
-  // Wallet adapters often deserialize a new Transaction; block height is not
-  // serialized into it. Preserve our confirmation lifetime separately.
-  returned.lastValidBlockHeight = expected.lastValidBlockHeight;
-  return returned;
-}
 
 async function broadcast(connection: Connection, transaction: Transaction, onSent?: (signature: string) => void): Promise<string> {
   const bytes = transaction.serialize();
@@ -386,8 +380,7 @@ export async function deployEscrowProgram(options: {
     transaction.partialSign(temporary);
     const expectedMessage = transaction.serializeMessage();
     const signed = await wallet.signTransaction(transaction);
-    if (!equal(expectedMessage, signed.serializeMessage())) throw new Error("The wallet changed the buffer creation transaction.");
-    checkedSigned(transaction, signed);
+    checkedDeploymentSignature(expectedMessage, signed, transaction.lastValidBlockHeight);
     // Store the public buffer key before sending: uncertain confirmation must not lose it.
     options.onBufferCreated?.(buffer.toBase58());
     await broadcast(connection, signed, options.onTransaction);
@@ -412,8 +405,7 @@ export async function deployEscrowProgram(options: {
     else for (const transaction of transactions) signed.push(await wallet.signTransaction(transaction));
     if (signed.length !== transactions.length) throw new Error("The wallet returned an incomplete deployment batch.");
     for (let i = 0; i < signed.length; i++) {
-      if (!equal(messages[i], signed[i].serializeMessage())) throw new Error("The wallet changed a program write transaction.");
-      checkedSigned(transactions[i], signed[i]);
+      checkedDeploymentSignature(messages[i], signed[i], transactions[i].lastValidBlockHeight);
       await broadcast(connection, signed[i], options.onTransaction);
       writtenBytes += chunks[i].bytes.length;
       progress("writing");
@@ -431,8 +423,7 @@ export async function deployEscrowProgram(options: {
   transaction.partialSign(program);
   const expectedMessage = transaction.serializeMessage();
   const signed = await wallet.signTransaction(transaction);
-  if (!equal(expectedMessage, signed.serializeMessage())) throw new Error("The wallet changed the program deployment transaction.");
-  checkedSigned(transaction, signed);
+  checkedDeploymentSignature(expectedMessage, signed, transaction.lastValidBlockHeight);
   progress("deploying", { programId: program.publicKey.toBase58() });
   let signature = "";
   try {
@@ -458,6 +449,6 @@ export async function closeDeploymentBuffer(options: { connection: Connection; w
   await simulate(connection, transaction);
   const expected = transaction.serializeMessage();
   const signed = await wallet.signTransaction(transaction);
-  if (!equal(expected, signed.serializeMessage())) throw new Error("The wallet changed the buffer refund transaction.");
-  return broadcast(connection, checkedSigned(transaction, signed));
+  checkedDeploymentSignature(expected, signed, transaction.lastValidBlockHeight);
+  return broadcast(connection, signed);
 }
