@@ -6,6 +6,14 @@ import { register } from "node:module";
 const hooks = `
 export async function resolve(specifier, context, next) {
   if (specifier === "server-only") return { url: "data:text/javascript,", shortCircuit: true };
+  // The published ESM entry imports Anchor's CommonJS BN as a named export,
+  // which Node 22 cannot expose. Exercise the same SDK through its real CJS entry.
+  if (specifier === "@pump-fun/agent-payments-sdk") {
+    return next(specifier, {
+      ...context,
+      conditions: ["require", ...context.conditions.filter(condition => condition !== "import")],
+    });
+  }
   if (/^\\.\\.?\\//.test(specifier) && !/\\.[a-z]+$/i.test(specifier)) return next(specifier + ".ts", context);
   return next(specifier, context);
 }

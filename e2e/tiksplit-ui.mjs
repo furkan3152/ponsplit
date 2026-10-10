@@ -17,7 +17,7 @@ async function captureFullPage(page, path) {
   // Use the app's real reduced-motion mode so below-the-fold Reveal sections are visible in the image.
   await page.emulateMedia({ reducedMotion: 'reduce' });
   try {
-    await page.screenshot({ path, fullPage: true });
+    await page.screenshot({ path, fullPage: true, animations: 'disabled' });
   } finally {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
   }
