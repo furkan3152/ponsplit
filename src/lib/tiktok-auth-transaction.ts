@@ -3,9 +3,8 @@ import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } fr
 import { ESCROW_PROGRAM_ID, VERIFIER } from "./tiktok-config";
 import { bindCreatorInstruction, creatorVault, decodeCreatorVault, initCreatorVaultInstruction } from "./solana/tiktok-escrow";
 import { serverConnection } from "./solana/server";
+import { configuredProgramStatus } from "./admin-setup";
 import { getAttestationConfig, tiktokIdentityHash, TikTokAuthError, validateAttestedTransaction, type TikTokSession } from "./tiktok-auth";
-
-const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
 export function tikTokVerificationConfigured(): boolean {
   return Boolean(ESCROW_PROGRAM_ID && VERIFIER && !ESCROW_PROGRAM_ID.equals(PublicKey.default) && !VERIFIER.equals(PublicKey.default) && PublicKey.isOnCurve(VERIFIER.toBytes()) && getAttestationConfig());
@@ -19,13 +18,11 @@ export async function buildAttestedCreatorBind(session: TikTokSession, wallet: P
   if (wallet.equals(VERIFIER)) throw new TikTokAuthError("invalid_wallet", "The verification authority cannot be used as a creator wallet.");
   const connection = serverConnection();
   const vault = creatorVault(session.handle);
-  const [genesis, programInfo, info] = await Promise.all([
-    connection.getGenesisHash(),
-    connection.getAccountInfo(ESCROW_PROGRAM_ID, "confirmed"),
+  const [programStatus, info] = await Promise.all([
+    configuredProgramStatus(ESCROW_PROGRAM_ID).catch(() => { throw new TikTokAuthError("program_unavailable", "The reviewed creator vault program could not be confirmed on Solana mainnet.", 503); }),
     connection.getAccountInfo(vault, "confirmed"),
   ]);
-  if (genesis !== MAINNET_GENESIS_HASH) throw new TikTokAuthError("wrong_network", "Creator verification requires Solana mainnet.", 503);
-  if (!programInfo?.executable) throw new TikTokAuthError("program_unavailable", "The creator vault program has not been deployed to mainnet.", 503);
+  if (!programStatus.deployed || !programStatus.artifactMatches) throw new TikTokAuthError("unsafe_program", "The creator vault code or upgrade authority does not match the reviewed deployment.", 503);
   const decoded = decodeCreatorVault(info, vault);
   const prefunded = info?.owner.equals(SystemProgram.programId) && !info.executable && info.data.length === 0;
   if (info && !decoded && !prefunded) throw new TikTokAuthError("invalid_vault", "The creator vault could not be validated.", 409);

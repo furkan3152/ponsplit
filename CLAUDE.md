@@ -3,12 +3,21 @@
 The owner's 2026-10-10 request changes this app to a TikTok creator launchpad inspired by
 UseReels' fee-allocation logic, with an original interface on Solana mainnet / pump.fun.
 Current implementation and setup are in README.md. One TikTok handle per launch; platform
-fee + optional launcher reward + creator escrow, immutable on chain. pump.fun's TikTok
+fee 20% + creator escrow 80%, immutable on chain; no launcher reward on new launches. pump.fun's TikTok
 platform enum is inactive, so a separate `programs/tiktok-escrow` program is required.
-TikTok Login Kit verifies ownership; a remote Ed25519 verifier co-signs first wallet binding.
-No private keys belong in the web app. `.deploy-hold` preserves the existing production app
-until the escrow, verifier signer and TikTok credentials are ready. Do not remove it merely
-because the web build passes. Use `.github/workflows/splidev.yml`'s current TikTok checks.
+Default verification is a public TikTok video with the platform's full handle+beneficiary+nonce
+code, signed on-chain creator request, manual admin review pinned to the exact proof hash,
+then creator-only activation. Pending approval cannot claim. TikTok Login Kit and an external
+managed verifier remain optional for a later approved integration, not today's prerequisite.
+No owner private keys belong in the web app. The owner explicitly authorized publishing this
+new web version on 2026-10-10; `.deploy-hold` is removed for that release. Money and verification
+features must still fail closed without real configuration. `/admin` is the existing
+D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm wallet only, via a locally verified ephemeral
+signed wallet challenge and native wallet-signed transactions. Optional server hosting mutations
+require signed server sessions with durable Redis replay prevention in production. Program deployment
+uses hash-pinned public SBF, browser-memory temporary keys, and admin upgrade authority.
+The owner has no TikTok developer app yet and explicitly chose video proof to finish today.
+Use `.github/workflows/splidev.yml`'s current TikTok checks.
 Keep the existing default branch; push only there, and do not open PRs unless requested.
 Do not invent a Claude identity/session trailer when another agent makes the commit.
 

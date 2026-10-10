@@ -15,10 +15,12 @@ import { NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/sp
 import BN from "bn.js";
 import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, socialFeePda } from "@pump-fun/pump-sdk";
 import { OnlinePumpAmmSdk, PUMP_AMM_SDK, buyQuoteInput, canonicalPumpPoolPda, sellBaseInput } from "@pump-fun/pump-swap-sdk";
-import { LAUNCH_FEE_LAMPORTS, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
+import { ALLOWED_PLATFORM_BPS, LAUNCH_FEE_LAMPORTS, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
+import { ADMIN_WALLET } from "../admin-config";
 import { ESCROW_PROGRAM_ID, VERIFIER, isTikTokLaunchReady, isValidTikTokHandle, normalizeTikTokHandle } from "../tiktok-config";
 import { creatorFeeSplit } from "../tiktok-fees";
 import { creatorVault, decodeCreatorVault, initCreatorVaultInstruction } from "./tiktok-escrow";
+import { inspectDeployedProgram, loadEscrowArtifact } from "./program-deploy";
 
 export { Platform, socialFeePda };
 export const PUMP_PROGRAM_ID = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
@@ -182,12 +184,14 @@ export async function launchState(c: Connection, mint: PublicKey): Promise<"miss
 }
 
 
-/** Immutable TikTok split: treasury, creator escrow, optional launching wallet. */
-export function tikTokShareholders(handle: string, launcher: PublicKey, launcherBps: number): Share[] {
+/** New launches use exactly 20/80; the optional reward is only for historical recovery. */
+export function tikTokShareholders(handle: string, launcher: PublicKey, launcherBps: number, platformBps = PLATFORM_BPS): Share[] {
   if (!isTikTokLaunchReady() || !TREASURY) throw new Error("TikTok escrow is not configured. Launches are disabled.");
+  if (!TREASURY.equals(ADMIN_WALLET)) throw new Error("The platform recipient must be the configured admin wallet.");
+  if (!ALLOWED_PLATFORM_BPS.has(platformBps) || (platformBps === PLATFORM_BPS && launcherBps !== 0)) throw new Error("New launches allocate 20% to the platform and 80% to the creator.");
   const clean = normalizeTikTokHandle(handle);
   if (!isValidTikTokHandle(clean)) throw new Error("Enter a valid TikTok handle.");
-  const split = creatorFeeSplit(PLATFORM_BPS, launcherBps);
+  const split = creatorFeeSplit(platformBps, launcherBps);
   const vault = creatorVault(clean);
   if (launcherBps && (launcher.equals(TREASURY) || launcher.equals(vault))) throw new Error("Launcher reward needs a wallet distinct from the treasury and creator vault.");
   return [
@@ -209,10 +213,11 @@ export async function assertTikTokEscrowDeployed(c: Connection) {
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(rpc.hostname);
   if (genesis !== "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp" && !local) throw new Error("Tiksplit launches require Solana mainnet.");
   if (!program?.executable) throw new Error("The configured TikTok escrow program is not deployed on this network.");
+  if (!local && !await inspectDeployedProgram(c, ESCROW_PROGRAM_ID!, await loadEscrowArtifact())) throw new Error("The escrow code or upgrade authority does not match this deployment.");
 }
 
-export async function finishTikTokLaunchTransactions(c: Connection, user: PublicKey, mint: PublicKey, handle: string, launcherBps: number): Promise<VersionedTransaction[]> {
-  const expected = tikTokShareholders(handle, user, launcherBps);
+export async function finishTikTokLaunchTransactions(c: Connection, user: PublicKey, mint: PublicKey, handle: string, launcherBps: number, platformBps = PLATFORM_BPS): Promise<VersionedTransaction[]> {
+  const expected = tikTokShareholders(handle, user, launcherBps, platformBps);
   await assertTikTokEscrowDeployed(c);
   const vault = creatorVault(normalizeTikTokHandle(handle));
   const [vaultInfo, cfgInfo] = await c.getMultipleAccountsInfo([vault, feeSharingConfigPda(mint)], "confirmed");
@@ -221,6 +226,7 @@ export async function finishTikTokLaunchTransactions(c: Connection, user: Public
   if (vaultInfo && !initializedVault && !prefundedVault) throw new Error("The creator vault is invalid.");
   if (cfgInfo && !cfgInfo.owner.equals(PUMP_FEES_PROGRAM_ID)) throw new Error("The fee-sharing account is invalid.");
   const cfg = cfgInfo ? PUMP_SDK.decodeSharingConfig(cfgInfo) : null;
+  if (platformBps !== PLATFORM_BPS && !cfg?.adminRevoked) throw new Error("Historical fee policies may only recover an already finalized on-chain split. New finalizations use 20% platform / 80% creator.");
   if (cfg && !cfg.mint.equals(mint)) throw new Error("Fee-sharing mint does not match.");
   if (cfg && !cfg.admin.equals(user)) throw new Error("This wallet cannot finish this coin's launch.");
   if (cfg?.adminRevoked) {
@@ -241,7 +247,7 @@ export async function finishTikTokLaunchTransactions(c: Connection, user: Public
   return txs;
 }
 
-export type TikTokLaunchExpectation = { handle: string; launcher: PublicKey; launcherBps: number; metadataUri: string };
+export type TikTokLaunchExpectation = { handle: string; launcher: PublicKey; launcherBps: number; metadataUri: string; platformBps?: number };
 /** Recovery validates the original launch's mint metadata, wallet and permanent fee split. */
 export async function tikTokLaunchState(c: Connection, mint: PublicKey, expected?: TikTokLaunchExpectation): Promise<"missing" | "needs-split" | "done"> {
   const [mintInfo, cfgInfo] = await c.getMultipleAccountsInfo([mint, feeSharingConfigPda(mint)], "confirmed");
@@ -267,7 +273,7 @@ export async function tikTokLaunchState(c: Connection, mint: PublicKey, expected
   if (!cfg) return "needs-split";
   if (expected && !cfg.admin.equals(expected.launcher)) throw new Error("This wallet does not own the stored launch.");
   if (!cfg.adminRevoked) return "needs-split";
-  if (expected && (!exactTikTokSplit(cfg.shareholders, tikTokShareholders(expected.handle, expected.launcher, expected.launcherBps)) || cfgInfo!.data[10] !== 1)) throw new Error("The final fee split does not match the stored launch.");
+  if (expected && (!exactTikTokSplit(cfg.shareholders, tikTokShareholders(expected.handle, expected.launcher, expected.launcherBps, expected.platformBps)) || cfgInfo!.data[10] !== 1)) throw new Error("The final fee split does not match the stored launch.");
   if (expected) {
     const vault = creatorVault(normalizeTikTokHandle(expected.handle));
     const info = await c.getAccountInfo(vault, "confirmed");

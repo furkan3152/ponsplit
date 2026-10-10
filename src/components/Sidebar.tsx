@@ -9,8 +9,9 @@ import { formatSol, shortAddress } from "@/lib/format";
 import { useSolBalance } from "@/lib/hooks";
 import { SIDEBAR_KEY } from "@/lib/theme";
 import { isTikTokLaunchReady } from "@/lib/tiktok-config";
+import { ADMIN_WALLET } from "@/lib/admin-config";
 import { LogoMark, WordmarkText } from "./art/Logo";
-import { BookIcon, ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, WalletIcon } from "./icons";
+import { BookIcon, ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, ShieldIcon, WalletIcon } from "./icons";
 
 export const NAV = [
   { href: "/", label: "Overview", Icon: HomeIcon },
@@ -26,6 +27,8 @@ export const isActive = (pathname: string, href: string) => (href === "/" ? path
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { publicKey } = useWallet();
+  const links = [...NAV, ...(publicKey?.equals(ADMIN_WALLET) ? [{ href: "/admin", label: "Admin studio", Icon: ShieldIcon }] : [])];
   const [folded, setFolded] = useState(false);
   useEffect(() => setFolded(document.documentElement.getAttribute("data-sidebar") === "folded"), []);
   const toggle = () => {
@@ -44,9 +47,9 @@ export function Sidebar() {
         </Link>
         <button type="button" onClick={toggle} aria-label={folded ? "Expand sidebar" : "Collapse sidebar"} className="absolute -right-3 top-6 grid h-6 w-6 place-items-center rounded-md border border-line-2 bg-card text-ink-3 hover:text-ink"><CollapseIcon size={12} className={folded ? "rotate-180" : ""} /></button>
       </div>
-      <div className="sidebar-label px-6 pb-3 pt-5 text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-3">Creator hub</div>
+      <div className="sidebar-label px-6 pb-3 pt-5 text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-3">The creator space</div>
       <nav className="flex flex-col gap-1 px-3">
-        {NAV.map(({ href, label, Icon }, index) => {
+        {links.map(({ href, label, Icon }, index) => {
           const active = isActive(pathname, href);
           return (
             <Link key={href} href={href} title={label} aria-current={active ? "page" : undefined} className={`relative flex items-center gap-3 rounded-lg px-3 py-3 text-[13px] font-medium transition ${index === 5 ? "mt-5" : ""} ${active ? "bg-lime-soft text-lime" : "text-ink-2 hover:bg-card hover:text-ink"}`}>
