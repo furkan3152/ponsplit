@@ -1,7 +1,6 @@
-// pump.fun as Splitdev uses it: the launch transactions, trades and fee distribution, built with
-// pump.fun's own SDK. Splitdev has no program of its own: a coin is a normal pump.fun coin whose
-// creator fees are shared, permanently, through pump.fun's fee sharing between Splitdev's treasury
-// (first) and pump.fun's GitHub fee accounts of the chosen GitHub users.
+// pump.fun launches, trading and fee distribution. Current TikTok coins use
+// a permanent 20/80 split between the admin treasury and the Tiksplit escrow.
+// GitHub builders remain below only for historical compatibility.
 import {
   ComputeBudgetProgram,
   PublicKey,
@@ -133,6 +132,14 @@ export async function createTransaction(c: Connection, input: Omit<LaunchInput, 
     if (tx.serialize().length <= TX_BYTES_LIMIT) return tx;
   }
   throw new Error("The coin's name, ticker and details don't fit in one Solana transaction. Shorten the name or ticker.");
+}
+
+/** TikTok launches buy only after their permanent fee split has been confirmed.
+ * An inline buy would pay its creator fee to the temporary launching wallet.
+ * Keep the legacy create-and-buy builder separate from this production path.
+ */
+export async function createTikTokTransaction(c: Connection, input: Omit<LaunchInput, "githubIds" | "bps" | "firstBuyLamports">): Promise<VersionedTransaction> {
+  return createTransaction(c, { ...input, firstBuyLamports: 0n });
 }
 
 /**

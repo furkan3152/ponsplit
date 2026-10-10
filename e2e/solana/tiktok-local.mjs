@@ -16,7 +16,7 @@ process.env.NEXT_PUBLIC_TIKSPLIT_VERIFIER = verifier.publicKey.toBase58();
 process.env.NEXT_PUBLIC_SPLIDEV_TREASURY = treasury.publicKey.toBase58();
 process.env.NEXT_PUBLIC_TIKSPLIT_ADMIN_WALLET = treasury.publicKey.toBase58();
 const require = createRequire(import.meta.url);
-const { OnlinePumpSdk, PUMP_SDK } = require("@pump-fun/pump-sdk");
+const { OnlinePumpSdk, PUMP_SDK, creatorVaultPda } = require("@pump-fun/pump-sdk");
 const lib = require("./.build/lib.cjs");
 const c = new Connection(process.env.RPC || "http://127.0.0.1:8899", "confirmed");
 if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(c.rpcEndpoint).hostname)) throw new Error("Disposable test keys require a local validator.");
@@ -42,8 +42,12 @@ for (const key of [launcher, beneficiary, attacker, treasury]) {
 // Preflight before minting and safe completion after minting use the same builder.
 await assert.rejects(() => lib.finishTikTokLaunchTransactions(c, launcher.publicKey, mint.publicKey, handle, 500), /20%/);
 await lib.finishTikTokLaunchTransactions(c, launcher.publicKey, mint.publicKey, handle, 0);
-const create = await lib.createTransaction(c, { user: launcher.publicKey, mint: mint.publicKey, name: "Tiksplit Local", symbol: "TIK", uri, firstBuyLamports: 100_000_000n });
+const create = await lib.createTikTokTransaction(c, { user: launcher.publicKey, mint: mint.publicKey, name: "Tiksplit Local", symbol: "TIK", uri, firstBuyLamports: 100_000_000n });
 await send(create, [launcher, mint]);
+// Even a stale JS caller passing an inline-buy amount cannot bypass the locked split.
+assert.equal(await c.getBalance(creatorVaultPda(launcher.publicKey)), 0, "TikTok minting must not route an inline buy's creator fee to the launcher");
+assert.equal(await lib.tikTokLaunchState(c, mint.publicKey, { handle, launcher: launcher.publicKey, launcherBps: 0, metadataUri: uri }), "needs-split");
+assert.ok(!(await lib.listCoins(c)).some(x => x.token === mint.publicKey.toBase58()), "unfinished mints are not listed before their fee split is locked");
 for (const tx of await lib.finishTikTokLaunchTransactions(c, launcher.publicKey, mint.publicKey, handle, 0)) await send(tx, [launcher]);
 const expected = { handle, launcher: launcher.publicKey, launcherBps: 0, platformBps: 2000, metadataUri: uri };
 assert.equal(await lib.tikTokLaunchState(c, mint.publicKey, expected), "done");
@@ -57,7 +61,7 @@ assert.equal(coin.recipients[0].shareBps, 8000);
 assert.equal(coin.platformBps, 2000);
 assert.equal(coin.launcherBps, 0);
 assert.equal(coin.recipients[0].verified, false);
-console.log("PASS: real pump.fun creation, immutable TikTok split, listing and exact recovery");
+console.log("PASS: mint without inline buy, unfinished mint excluded, immutable TikTok split, listing and exact recovery");
 
 // A fee-policy change must not rewrite a historical interrupted launch's permanent split.
 const historicalMint = Keypair.generate();

@@ -278,8 +278,8 @@ export function PlatformFees({
           </h2>
           <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-ink-2">
             The platform receives 20% of creator fees. Collection distributes
-            every coin&apos;s fees to its fixed shareholders, including creator
-            escrow and the launching wallet.
+            every coin&apos;s fees to its fixed shareholders. New coins pay 20% to
+            the platform wallet and 80% to creator escrow.
           </p>
         </div>
         <div className="text-right">
