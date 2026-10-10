@@ -12,6 +12,8 @@ const keyOf = (t: Trade, i: number) => `${t.signature}-${t.kind}-${t.tokens}-${i
 
 export function TradesTable({
   trades,
+  loading = false,
+  error = false,
   symbol,
   me,
   hasOlder,
@@ -19,6 +21,8 @@ export function TradesTable({
   loadingOlder,
 }: {
   trades: readonly Trade[] | undefined;
+  loading?: boolean;
+  error?: boolean;
   symbol: string;
   me?: string;
   /** Older trades exist beyond what's loaded. */
@@ -43,17 +47,17 @@ export function TradesTable({
       </div>
       {!trades ? (
         <div className="border-t border-line px-4 pb-5 pt-3 sm:px-5">
-          <p className="text-[13px] text-ink-2">Loading…</p>
-          <div aria-hidden className="mt-3 space-y-2.5">
+          <p className="text-[13px] text-ink-2">{loading ? "Loading trade history…" : error ? "Trade history is temporarily unavailable." : "Trade history has not loaded."}</p>
+          {loading ? <div aria-hidden className="mt-3 space-y-2.5">
             {[0, 1, 2].map((i) => (
               <div key={i} className="h-5 animate-pulse rounded-md bg-card-2" style={{ width: `${92 - i * 14}%` }} />
             ))}
-          </div>
+          </div> : null}
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-center gap-2 border-t border-line px-4 pb-8 pt-6 text-center">
           <StateIcon kind="video" className="h-16 w-16" />
-          <p className="text-[14px] text-ink-2">No trades yet. Be the first.</p>
+          <p className="text-[14px] text-ink-2">{error ? "Trade history is temporarily unavailable." : "No trades yet. Be the first."}</p>
         </div>
       ) : (
         <div className="max-h-[440px] overflow-auto border-t border-line">
