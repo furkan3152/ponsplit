@@ -131,9 +131,12 @@ try {
           await page.getByLabel('Explore a TikTok creator', { exact: true }).fill('test.creator');
           await page.waitForTimeout(550);
         }
+        if (live) await page.getByRole('button', { name: 'Connect your payout wallet →', exact: true }).waitFor({ timeout: 15_000 }).catch(() => {});
         const proofText = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
         if (!/Verify with a TikTok video\./i.test(proofText) || !/video caption.*admin review/i.test(proofText)) failures.push(`${viewport} ${path}: missing manual proof-video instructions`);
-        const paused = proofText.includes('Video verification is paused until the reviewed mainnet escrow and admin verification authority are configured.');
+        const paused = proofText.includes('Video verification is paused until the reviewed mainnet escrow and admin verification authority are configured.')
+          || /Verification, fee distribution and withdrawals are paused/i.test(proofText)
+          || proofText.includes('Checking whether the escrow program is available');
         if (!live && !paused) failures.push(`${viewport} ${path}: missing video verification unavailable state`);
         if (live && paused) failures.push(`${viewport} ${path}: deployed verification still shows the unavailable state`);
         if (live) {
@@ -146,7 +149,7 @@ try {
           }
         }
         if (await page.locator('a[href^="/api/tiktok/"]').count() || await page.getByRole('link', { name: /Connect TikTok account|Sign in with TikTok/i }).count()) failures.push(`${viewport} ${path}: TikTok OAuth CTA exposed in manual flow`);
-        const claimButton = page.getByRole('button', { name: /^(Verify with a video to claim|Activate approved wallet to claim|Connect verified wallet)$/ });
+        const claimButton = page.getByRole('button', { name: /^(Verify with a video to claim|Activate approved wallet to claim|Connect verified wallet|Creator withdrawals paused)$/ });
         if (!await claimButton.count()) failures.push(`${viewport} ${path}: missing verification or wallet claim guard`);
         else if ((await claimButton.innerText()) === 'Connect verified wallet') {
           if (!live) failures.push(`${viewport} ${path}: unconfigured page exposes a verified claim`);

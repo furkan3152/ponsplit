@@ -721,9 +721,16 @@ export function ProgramDeployment({
       </div> : null}
       <ProgramRentRecovery wallet={wallet} artifact={artifact.data} authorize={authorize} onBusyChange={setBusy} disabled={busy}
         onClosed={(programId) => {
-          if (saved?.programId === programId) { remember(null); onProgramId(""); }
+          if (saved?.programId === programId) {
+            remember(saved.buffer ? { buffer: saved.buffer, sha256: saved.sha256 } : null);
+            onProgramId("");
+          }
           void quote.refetch();
           void queryClient.invalidateQueries({ queryKey: ["admin-deployed-program"] });
+          void queryClient.invalidateQueries({ queryKey: ["admin-status"] });
+          void queryClient.invalidateQueries({ queryKey: ["runtime-launch-readiness"] });
+          void queryClient.invalidateQueries({ queryKey: ["escrow-availability"] });
+          void queryClient.invalidateQueries({ queryKey: ["sol"] });
         }} />
     </section>
   );

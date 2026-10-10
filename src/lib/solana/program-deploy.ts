@@ -9,6 +9,7 @@ import {
 } from "@solana/web3.js";
 import { ADMIN_WALLET, MAINNET_GENESIS_HASH } from "../admin-config";
 import { ESCROW_PROGRAM_ID } from "../tiktok-config";
+import { CREATOR_VAULT_SIZE, decodeCreatorVault } from "./tiktok-escrow";
 import artifactManifest from "../../../public/programs/tiktok-escrow.manifest.json";
 
 const manifest = Object.freeze({ ...artifactManifest, sourceFiles: Object.freeze([...artifactManifest.sourceFiles]) });
@@ -48,6 +49,15 @@ export type DeployResult = { programId: string; buffer: string; signature: strin
 export type ProgramRefundQuote = {
   programId: string; programData: string; refundLamports: bigint;
   retainedProgramLamports: bigint; feeLamports: bigint;
+};
+export type ActiveProgramRefundQuote = ProgramRefundQuote & {
+  affectedAccountCount: number;
+  /** All program-owned balances, including account rent. These are not refunded. */
+  affectedLamports: bigint;
+  affectedCreatorVaultCount: number;
+  /** Existing creator funds above their vaults' rent reserve. These are not refunded. */
+  affectedCreatorFundsLamports: bigint;
+  affectedAccountsHash: string;
 };
 
 const exact = (n: number) => {
@@ -230,6 +240,98 @@ export async function closeUnusedProgram(options: {
   return broadcast(connection, signed, options.onSent);
 }
 
+async function assertConfiguredActiveProgram(connection: Connection, program: PublicKey): Promise<void> {
+  if (!ESCROW_PROGRAM_ID?.equals(program)) throw new Error("Active program closure requires the exact configured escrow program.");
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection.rpcEndpoint).hostname);
+  if (local) return;
+  const response = await fetch("/api/runtime-status", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+  if (!response.ok) throw new Error("Current site configuration could not be checked. Program closure is blocked.");
+  const status = await response.json();
+  if (status?.configuration?.escrowProgram?.address !== program.toBase58()) {
+    throw new Error("The configured escrow program changed. Refresh the dashboard before closing it.");
+  }
+}
+
+/** Read-only review for an explicitly requested shutdown of the active program.
+ * Creator accounts are disclosed, not refunded. Closing their owner can make
+ * existing and future creator payments permanently inaccessible.
+ */
+export async function quoteActiveProgramRefund(connection: Connection, program: PublicKey, artifact: ProgramArtifact): Promise<ActiveProgramRefundQuote> {
+  await assertDeploymentNetwork(connection);
+  await assertConfiguredActiveProgram(connection, program);
+  await validateEscrowArtifact(artifact);
+  const programData = programDataAddress(program);
+  const [[info, data], owned, creatorRent, closeFee] = await Promise.all([
+    connection.getMultipleAccountsInfo([program, programData], "confirmed"),
+    connection.getProgramAccounts(program, { commitment: "confirmed", dataSlice: { offset: 0, length: 0 } }),
+    connection.getMinimumBalanceForRentExemption(CREATOR_VAULT_SIZE, "confirmed"),
+    fee(connection, ADMIN_WALLET, new Transaction().add(closeProgramInstruction(program, ADMIN_WALLET))),
+  ]);
+  if (!await matchesDeployedProgram(info, data, program, artifact)) throw new Error("This is not an active verified deployment with the configured admin upgrade authority.");
+  // The browser proxy permits only a narrow zero-data ownership scan. Read the
+  // discovered accounts by address to inspect creator funds and hash their state.
+  const accounts: { pubkey: PublicKey; account: AccountInfo<Buffer> }[] = [];
+  for (let i = 0; i < owned.length; i += 100) {
+    const keys = owned.slice(i, i + 100).map(({ pubkey }) => pubkey);
+    const infos = await connection.getMultipleAccountsInfo(keys, "confirmed");
+    infos.forEach((account, index) => {
+      if (!account) throw new Error("An affected account changed during inspection. Inspect the program again.");
+      accounts.push({ pubkey: keys[index], account });
+    });
+  }
+  const rent = exact(creatorRent);
+  let affectedLamports = 0n, affectedCreatorFundsLamports = 0n, affectedCreatorVaultCount = 0;
+  const snapshot = await Promise.all(accounts.map(async ({ pubkey, account }) => {
+    if (!account.owner.equals(program)) throw new Error("RPC returned an account owned by another program.");
+    const lamports = exact(account.lamports);
+    affectedLamports += lamports;
+    if (decodeCreatorVault(account, pubkey)) {
+      affectedCreatorVaultCount++;
+      affectedCreatorFundsLamports += lamports > rent ? lamports - rent : 0n;
+    }
+    return { address: pubkey.toBase58(), lamports: lamports.toString(), executable: account.executable, dataSha256: await sha256(account.data) };
+  }));
+  snapshot.sort((a, b) => a.address.localeCompare(b.address));
+  const refundLamports = exact(data!.lamports), retainedProgramLamports = exact(info!.lamports);
+  const affectedAccountsHash = await sha256(new TextEncoder().encode(JSON.stringify({
+    program: program.toBase58(), refundLamports: refundLamports.toString(), retainedProgramLamports: retainedProgramLamports.toString(),
+    programDataSha256: await sha256(data!.data), accounts: snapshot,
+  })));
+  return { programId: program.toBase58(), programData: programData.toBase58(), refundLamports, retainedProgramLamports,
+    feeLamports: closeFee + MAX_WALLET_PRIORITY_FEE_LAMPORTS,
+    affectedAccountCount: accounts.length, affectedLamports, affectedCreatorVaultCount, affectedCreatorFundsLamports, affectedAccountsHash };
+}
+
+/** Separate from unused-deployment recovery: requires explicit acceptance of
+ * creator-fund loss and the exact account snapshot shown in the latest quote.
+ * RPC rechecks narrow races; they cannot prevent a new deposit after broadcast.
+ */
+export async function closeActiveProgram(options: {
+  connection: Connection; wallet: DeployWallet; program: PublicKey; artifact: ProgramArtifact;
+  confirmedProgramId: string; acknowledgedCreatorFundsLoss: boolean; reviewedAffectedAccountsHash: string;
+  onSent?: (signature: string) => void;
+}): Promise<string> {
+  const { connection, wallet, program, artifact } = options;
+  const authority = admin(wallet);
+  if (options.confirmedProgramId !== program.toBase58()) throw new Error("Type the exact program ID to confirm permanent closure.");
+  if (options.acknowledgedCreatorFundsLoss !== true) throw new Error("Acknowledge that closing the active program can make existing and future creator funds permanently inaccessible.");
+  if (!/^[a-f0-9]{64}$/.test(options.reviewedAffectedAccountsHash)) throw new Error("Inspect the affected accounts before closing the active program.");
+  const assertReviewed = async () => {
+    const current = await quoteActiveProgramRefund(connection, program, artifact);
+    if (current.affectedAccountsHash !== options.reviewedAffectedAccountsHash) throw new Error("Program balances or affected creator accounts changed. Inspect again and review the new shutdown amounts.");
+  };
+  await assertReviewed();
+  const transaction = await prepare(connection, authority, new Transaction().add(closeProgramInstruction(program, authority)));
+  await simulate(connection, transaction);
+  // Review checks happen after preflight and again after the wallet prompt.
+  await assertReviewed();
+  const expected = transaction.serializeMessage();
+  const expectedHeight = transaction.lastValidBlockHeight;
+  const signed = checkedDeploymentSignature(expected, await wallet.signTransaction(transaction), expectedHeight);
+  await assertReviewed();
+  return broadcast(connection, signed, options.onSent, "Check this shutdown transaction on Solscan before trying again. If confirmed, the program is closed; do not submit another closure.");
+}
+
 function bufferBytes(info: AccountInfo<Buffer> | null, authority: PublicKey, length: number): Uint8Array {
   if (!info || info.executable || !info.owner.equals(UPGRADEABLE_LOADER) || info.data.length !== BUFFER_HEADER_SIZE + length
     || info.data.readUInt32LE(0) !== 1 || info.data[4] !== 1 || !new PublicKey(info.data.subarray(5, 37)).equals(authority)) {
@@ -331,7 +433,8 @@ async function simulate(connection: Connection, transaction: Transaction): Promi
 }
 
 
-async function broadcast(connection: Connection, transaction: Transaction, onSent?: (signature: string) => void): Promise<string> {
+async function broadcast(connection: Connection, transaction: Transaction, onSent?: (signature: string) => void,
+  recoveryHint = "Check its status and resume the saved buffer; do not create another upload."): Promise<string> {
   const bytes = transaction.serialize();
   if (!transaction.signature) throw new Error("Missing deployment transaction signature.");
   const signature = bs58.encode(transaction.signature);
@@ -355,7 +458,7 @@ async function broadcast(connection: Connection, transaction: Transaction, onSen
     const value = status?.value[0];
     if (value?.err) throw new Error(`Program transaction failed: ${JSON.stringify(value.err)}. Transaction: ${signature}`);
     if (value?.confirmationStatus === "confirmed" || value?.confirmationStatus === "finalized") return signature;
-    throw new Error(`${error instanceof Error ? error.message : String(error)} Transaction: ${signature}. Check its status and resume the saved buffer; do not create another upload.`);
+    throw new Error(`${error instanceof Error ? error.message : String(error)} Transaction: ${signature}. ${recoveryHint}`);
   }
   return signature;
 }
@@ -365,6 +468,11 @@ export async function inspectDeployedProgram(connection: Connection, program: Pu
   await validateEscrowArtifact(artifact);
   const address = programDataAddress(program);
   const [info, data] = await Promise.all([connection.getAccountInfo(program, "confirmed"), connection.getAccountInfo(address, "confirmed")]);
+  return matchesDeployedProgram(info, data, program, artifact);
+}
+
+async function matchesDeployedProgram(info: AccountInfo<Buffer> | null, data: AccountInfo<Buffer> | null, program: PublicKey, artifact: ProgramArtifact): Promise<boolean> {
+  const address = programDataAddress(program);
   if (!info?.executable || !info.owner.equals(UPGRADEABLE_LOADER) || info.data.length !== PROGRAM_ACCOUNT_SIZE || info.data.readUInt32LE(0) !== 2 || !new PublicKey(info.data.subarray(4, 36)).equals(address)
     || !data || !data.owner.equals(UPGRADEABLE_LOADER) || data.executable
     || data.data.length < PROGRAM_DATA_HEADER_SIZE + artifact.bytes.length || data.data.length > PROGRAM_DATA_HEADER_SIZE + MAX_ARTIFACT_BYTES

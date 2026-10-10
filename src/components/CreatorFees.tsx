@@ -15,7 +15,7 @@ import { CreatorProof } from "@/components/CreatorProof";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { coinImage } from "@/lib/coin-ui";
 import { errorMessage, formatSol, pct, shortAddress } from "@/lib/format";
-import { useCoins, useDebounced } from "@/lib/hooks";
+import { useCoins, useDebounced, useEscrowAvailability } from "@/lib/hooks";
 import {
   isTikTokLaunchReady,
   isValidTikTokHandle,
@@ -45,6 +45,8 @@ export function CreatorFees({
   const { setVisible } = useWalletModal();
   const address = publicKey?.toBase58();
   const configured = isTikTokLaunchReady();
+  const escrow = useEscrowAvailability();
+  const ready = configured && escrow.available;
   const [input, setInput] = useState(initialHandle);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
@@ -55,15 +57,15 @@ export function CreatorFees({
   const handle = normalizeTikTokHandle(useDebounced(input, 350));
   const valid = isValidTikTokHandle(handle);
   const mounted = useRef(false);
-  const access = useRef({ address, connected, handle: normalizeTikTokHandle(input), endpoint: connection.rpcEndpoint });
-  access.current = { address, connected, handle: normalizeTikTokHandle(input), endpoint: connection.rpcEndpoint };
+  const access = useRef({ address, connected, ready, handle: normalizeTikTokHandle(input), endpoint: connection.rpcEndpoint });
+  access.current = { address, connected, ready, handle: normalizeTikTokHandle(input), endpoint: connection.rpcEndpoint };
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
   function assertContext() {
     const current = access.current;
-    if (!mounted.current || !current.connected || current.address !== address || current.handle !== handle || current.endpoint !== connection.rpcEndpoint) {
+    if (!mounted.current || !current.ready || !current.connected || current.address !== address || current.handle !== handle || current.endpoint !== connection.rpcEndpoint) {
       throw new Error("The creator, wallet or connection changed. Refresh before signing another transaction.");
     }
   }
@@ -116,14 +118,15 @@ export function CreatorFees({
   }
 
   async function assertMainnet() {
+    await escrow.assertAvailable();
     if ((await connection.getGenesisHash()) !== MAINNET_GENESIS_HASH)
       throw new Error(
         "Connect to Solana mainnet to verify, distribute or claim creator fees.",
       );
-    await assertTikTokEscrowDeployed(connection);
   }
 
   async function claim() {
+    if (!ready || inFlight.current) return;
     if (!connected || !publicKey) {
       setVisible(true);
       return;
@@ -160,9 +163,11 @@ export function CreatorFees({
         }).compileToV0Message(),
       );
       const expected = transaction.message.serialize();
+      await assertTikTokEscrowDeployed(connection);
       assertContext();
       setBusy("Approve your claim in the wallet…");
       const signed = await checkedVersionedSignature(expected, await signTransaction(transaction));
+      await assertTikTokEscrowDeployed(connection);
       assertContext();
       setBusy("Confirming the SOL payment…");
       await sendCheckedVersionedTransaction(connection, signed, recordReceipt);
@@ -180,6 +185,7 @@ export function CreatorFees({
   }
 
   async function distribute() {
+    if (!ready || inFlight.current) return;
     if (!connected || !publicKey) {
       setVisible(true);
       return;
@@ -212,6 +218,7 @@ export function CreatorFees({
           ),
         );
         const expected = transactions.map((transaction) => transaction.message.serialize());
+        await assertTikTokEscrowDeployed(connection);
         assertContext();
         setBusy("Approve fee distribution in your wallet…");
         const returned = signAllTransactions
@@ -219,6 +226,7 @@ export function CreatorFees({
           : [await signTransaction!(transactions[0])];
         if (returned.length !== transactions.length) throw new Error("The wallet returned an incomplete distribution batch. No transaction was submitted.");
         const signed = await Promise.all(returned.map((transaction, index) => checkedVersionedSignature(expected[index], transaction)));
+        await assertTikTokEscrowDeployed(connection);
         assertContext();
         // Broadcast the signed batch together to avoid expiry while another transaction confirms.
         const sent = await Promise.allSettled(
@@ -267,6 +275,12 @@ export function CreatorFees({
           {PLATFORM_BPS / 100}% for the platform.
         </p>
       </header>
+
+      {!ready ? (
+        <p role="status" className="card p-5 text-[13px] leading-relaxed text-ink-2">
+          {escrow.pausedMessage} Trading on pump.fun may continue independently.
+        </p>
+      ) : null}
 
       <section className="card p-5 sm:p-6">
         <label htmlFor="creator-search" className="label">
@@ -444,12 +458,12 @@ export function CreatorFees({
               {configured && distributable.length ? (
                 <button
                   className="btn-secondary mt-4 w-full py-3 text-[14px]"
-                  disabled={Boolean(busy)}
+                  disabled={Boolean(busy) || !ready}
                   onClick={() => {
                     void distribute();
                   }}
                 >
-                  {connected
+                  {!ready ? "Fee distribution paused" : connected
                     ? `Distribute fees from ${distributable.length} coin${distributable.length === 1 ? "" : "s"}`
                     : "Connect wallet to distribute"}
                 </button>
@@ -504,9 +518,9 @@ export function CreatorFees({
               </div>
             ) : null}
           </dl>
-          {valid && !configured ? (
+          {valid && !ready ? (
             <p className="mt-4 text-[12px] leading-relaxed text-ink-3">
-              The creator escrow is not configured on this deployment.
+              {escrow.pausedMessage}
             </p>
           ) : vault.error ? (
             <p role="alert" className="mt-4 text-[12px] text-down-ink">
@@ -537,7 +551,7 @@ export function CreatorFees({
             disabled={
               Boolean(busy) ||
               !valid ||
-              !configured ||
+              !ready ||
               !vault.data?.verified ||
               (connected &&
                 (!ownsVault || !vault.data?.claimable || !signTransaction))
@@ -546,7 +560,7 @@ export function CreatorFees({
               void claim();
             }}
           >
-            {!vault.data?.verified
+            {!ready ? "Creator withdrawals paused" : !vault.data?.verified
               ? vault.data?.approved
                 ? "Activate approved wallet to claim"
                 : "Verify with a video to claim"

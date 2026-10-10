@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ADMIN_WALLET, MAINNET_GENESIS_HASH } from "@/lib/admin-config";
 import { errorMessage } from "@/lib/format";
+import { useEscrowAvailability } from "@/lib/hooks";
 import {
   approveCreatorProofInstruction,
   creatorProofHash,
@@ -60,8 +61,9 @@ export function ReviewProofs({
   const address = publicKey?.toBase58();
   const authorized = Boolean(enabled && connected && publicKey?.equals(ADMIN_WALLET));
   const configured = isTikTokLaunchReady();
+  const escrow = useEscrowAvailability();
   const verifierMatches = Boolean(VERIFIER?.equals(ADMIN_WALLET));
-  const active = authorized && configured;
+  const active = authorized && configured && escrow.available;
   const access = useRef({ active, address, verifierMatches, endpoint: connection.rpcEndpoint });
   access.current = { active, address, verifierMatches, endpoint: connection.rpcEndpoint };
   const inFlight = useRef(false);
@@ -144,7 +146,7 @@ export function ReviewProofs({
   }, [authorized, connection, pendingSignatures, refetchQueue]);
 
   async function approve(proof: CreatorProof) {
-    if (inFlight.current || !publicKey || !signTransaction) return;
+    if (!active || inFlight.current || !publicKey || !signTransaction) return;
     const reviewedEvidence = evidenceKey(proof);
     if (checked[proof.account] !== reviewedEvidence || !proof.videoId) return;
     inFlight.current = true;
@@ -153,12 +155,14 @@ export function ReviewProofs({
     try {
       const reviewedHash = await creatorProofHash(proof);
       setBusy({ account: proof.account, text: "Checking the admin session and deployed mainnet program…" });
-      await authorize();
+      await escrow.assertAvailable();
       assertAccess();
       if ((await connection.getGenesisHash()) !== MAINNET_GENESIS_HASH) {
         throw new Error("Connect to Solana mainnet before approving creator proofs.");
       }
       await assertTikTokEscrowDeployed(connection);
+      assertAccess();
+      await authorize();
       assertAccess();
       const refreshed = await queue.refetch();
       if (refreshed.error || !refreshed.data) throw refreshed.error || new Error("The review queue could not be refreshed.");
@@ -179,8 +183,11 @@ export function ReviewProofs({
         instructions: [approveCreatorProofInstruction(current.handle, current.beneficiary, reviewedHash)],
       }).compileToV0Message());
       const expectedMessage = transaction.message.serialize();
+      await assertTikTokEscrowDeployed(connection);
+      assertAccess();
       setBusy({ account: proof.account, text: "Sign the creator proof approval in your admin wallet…" });
       const signed = await checkedVersionedSignature(expectedMessage, await signTransaction(transaction));
+      await assertTikTokEscrowDeployed(connection);
       assertAccess();
       setBusy({ account: proof.account, text: "Sending the approval to Solana mainnet…" });
       signature = await sendCheckedVersionedTransaction(connection, signed, (id) => {
@@ -221,6 +228,8 @@ export function ReviewProofs({
         <p className="p-5 text-[13px] text-ink-3">Authenticate the configured admin wallet to review creator proofs.</p>
       ) : !configured ? (
         <p className="p-5 text-[13px] leading-relaxed text-ink-3">The mainnet escrow program and verification authority must be configured before requests can be read.</p>
+      ) : !escrow.available ? (
+        <p role="status" className="p-5 text-[13px] leading-relaxed text-ink-3">{escrow.pausedMessage}</p>
       ) : queue.isLoading ? (
         <p role="status" className="p-5 text-[13px] text-ink-3">Reading signed proof requests directly from Solana mainnet…</p>
       ) : queue.error ? (

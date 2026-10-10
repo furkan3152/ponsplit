@@ -18,8 +18,15 @@ test("public account route permits only the site's fixed fee and proof scans", (
   }
   assert.equal(accountScanRequest([fees()], scope), null);
 });
-test("unfiltered recovery scans require deployment verification and cannot target configured program", () => {
+test("active and unused recovery scans require deployment verification and expose no account data", () => {
   const request = { jsonrpc: "2.0", id: 1, method: "getProgramAccounts", params: ["11111111111111111111111111111111", { commitment: "confirmed", encoding: "base64", dataSlice: { offset: 0, length: 0 } }] };
   assert.equal(accountScanRequest(request, scope)?.verifyDeployment, true);
-  assert.equal(accountScanRequest({ ...request, params: [scope.program, request.params[1]] }, scope), null);
+  assert.equal(accountScanRequest({ ...request, params: [scope.program, request.params[1]] }, scope)?.verifyDeployment, true);
+  for (const config of [
+    { commitment: "confirmed", encoding: "base64" },
+    { commitment: "confirmed", encoding: "base64", dataSlice: { offset: 0, length: 138 } },
+    { commitment: "confirmed", encoding: "base64", dataSlice: { offset: 1, length: 0 } },
+    { commitment: "confirmed", encoding: "base64", dataSlice: { offset: 0, length: 0 }, filters: [] },
+  ]) assert.equal(accountScanRequest({ ...request, params: [scope.program, config] }, scope), null);
+  assert.equal(accountScanRequest({ ...request, params: [fees().params[0], request.params[1]] }, scope), null);
 });
