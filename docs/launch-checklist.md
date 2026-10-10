@@ -14,6 +14,16 @@ UseReels'in [10 Ekim'de okunan dokümanındaki](https://www.usereels.app/docs) t
 
 Canlı program ID'si bağlanıp gerçek TikTok video kanıtı ve küçük tutarlı mainnet coin → alım → dağıtım → creator claim makbuzları doğrulanana kadar genel yayına hazır kabul etmeyin. Yayın sonrası `/api/runtime-status` içinde `launchesReady: true`, `artifactMatches: true` ve yukarıdaki program adresini kontrol edin. Eksik veya doğrulanamayan kurulumda yeni coin açılışı kapalı kalır.
 
+## Yarım kalan MASCOT açılışı — 10 Ekim 2026
+
+`H2mcB6ux2fSUNBr6xJNhUj3h93NUFcRavY3JkZqHTfAB` mint'i ve TikTok escrow'u mainnet'te başarıyla oluştu; fee-sharing config oluşmadığı için coin henüz Tiksplit listesine alınmadı. [Mint işlemi](https://solscan.io/tx/HEWahSX3a1JJoNq6L8QYLug4FY8UbGeLh4KyrXqSyJmjqJjSbTzrQVPde6WS267ybB7WMx7ngbobegNFTFLECgg) finalized. Dış alıcıların yeni `buy_exact_quote_in_v3` yoluyla işlem yapması curve üzerinde creator ücreti biriktirdi. Önceki finalize işlemi `CreatorFeesNotSwept` / `6095` ile simülasyonda reddedildi; önceki yerel testler yalnız SDK'nın eski alım yolunu kapsıyordu. Test programlarının ve global hesapların bytes'ı mainnet ile karşılaştırıldı ve eşleşti.
+
+Düzeltme, `sweep_creator_fee` talimatını paylaşımı oluşturan/kilitleyen işlemle atomik uygular. Dağıtım da curve ve PumpSwap pool creator bucket'larını aktarır; protocol fee'lerine dokunmaz. Ekrandaki bekleyen ücretler bu yeni bucket'ları da sayar. ABI kaynağı: [resmi pump IDL](https://github.com/pump-fun/pump-public-docs/blob/2293f9a66c654e9fe82dc5e8f4618538f24bb35f/idl/pump.json) ve aynı commit'teki `pump_amm.json`.
+
+[Mevcut MASCOT'u kurtar](https://www.tiksplit.com/create?recover=H2mcB6ux2fSUNBr6xJNhUj3h93NUFcRavY3JkZqHTfAB): orijinal admin cüzdanını bağlayın, restore edilen kullanıcı adı ve %20/%80 paylaşımı inceleyip **Finish fee split** işlemini imzalayın. Bu bağlantı kendi başına işlem göndermez veya yeni mint oluşturmaz. Public on-chain metadata, orijinal cüzdan ve metadata hash'i doğrulanmadan kurtarma kaydı oluşturulmaz. Aynı token için tekrar yeni launch yapmayın.
+
+Gerçek MASCOT üzerinde uygulamanın düzeltilmiş builder'ı yalnız **bir** kalan işlem üretir. Salt-okunur mainnet simülasyonu `err: null`, 1,028 byte ve 196,155 CU ile geçti. Bu simülasyon kullanıcının cüzdan imzasıyla tamamlanmış işlem değildir. Paylaşım kilitlenmeden önceki ücretler pump.fun'ın orijinal launcher creator vault'unda kalır; yeni %20/%80 politika bunları geriye dönük yeniden dağıtmaz. Sonraki işlemlerin ücretleri kilitlenen paylaşımı izler.
+
 ## Telefonda uçtan uca küçük tutarlı test
 
 İki kontrol ettiğiniz cüzdan kullanın: **A = mevcut D2Ts…Wtvm admin**, **B = TikTok sahibi creator cüzdanı**. B'yi kaybetmeyin: ilk aktivasyon kalıcıdır. Kendi TikTok hesabınızı kullanın.
