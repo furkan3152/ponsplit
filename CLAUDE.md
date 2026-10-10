@@ -5,6 +5,10 @@ UseReels' fee-allocation logic, with an original interface on Solana mainnet / p
 Current implementation and setup are in README.md. One TikTok handle per launch; platform
 fee 20% + creator escrow 80%, immutable on chain; no launcher reward on new launches. pump.fun's TikTok
 platform enum is inactive, so a separate `programs/tiktok-escrow` program is required.
+As of 2026-10-10 the owner chose public RPC: browser wallet traffic uses PublicNode mainnet; server/indexed reads use the official public Solana RPC.
+Legacy paid SOLANA_RPC_URL / NEXT_PUBLIC_SOLANA_RPC_URL settings are ignored; only
+NEXT_PUBLIC_SOLANA_LOCAL_RPC_URL permits an exact loopback validator for tests.
+Primary site: https://www.tiksplit.com (apex redirects to www).
 Default verification is a public TikTok video with the platform's full handle+beneficiary+nonce
 code, signed on-chain creator request, manual admin review pinned to the exact proof hash,
 then creator-only activation. Pending approval cannot claim. TikTok Login Kit and an external
