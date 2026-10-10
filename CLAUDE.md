@@ -23,6 +23,8 @@ uses hash-pinned public SBF, browser-memory temporary keys, and admin upgrade au
 OKX defaults to single-transaction upload signing; other wallets use four-write batches.
 Recover existing buffers by verified public address, including /admin?buffer=... links.
 Save each transaction ID before submission and reconcile confirmation transport failures on chain.
+Deployment signature checks permit only bounded compute-budget fee changes (max 5,000 lamports/tx),
+with their reserve included in quotes. All other instruction/account/authority/blockhash changes are rejected.
 The owner explicitly retains upgrade authority (no renounce). Admin rent recovery covers upload
 buffers and cancellation of an unused, never-configured deployment. ProgramData closure permanently
 disables the program; its small Program account rent remains locked. The panel blocks configured

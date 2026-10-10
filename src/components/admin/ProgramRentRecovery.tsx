@@ -112,7 +112,7 @@ export function ProgramRentRecovery({ wallet, artifact, authorize, onClosed, onB
         <div className="mt-4 space-y-3 border border-line bg-card-2 p-4 text-[13px]">
           <dl className="space-y-2">
             <div className="flex justify-between gap-3"><dt>ProgramData rent returned</dt><dd className="font-mono">{formatSol(quote.data.refundLamports, 6)} SOL</dd></div>
-            <div className="flex justify-between gap-3"><dt>Estimated network fee</dt><dd className="font-mono">{formatSol(quote.data.feeLamports, 6)} SOL</dd></div>
+            <div className="flex justify-between gap-3"><dt>Maximum network fee</dt><dd className="font-mono">{formatSol(quote.data.feeLamports, 6)} SOL</dd></div>
             <div className="flex justify-between gap-3"><dt>Program-address rent retained</dt><dd className="font-mono">{formatSol(quote.data.retainedProgramLamports, 6)} SOL</dd></div>
           </dl>
           <p className="break-all font-mono text-[11px] text-ink-3">Refund recipient: {ADMIN_WALLET.toBase58()}</p>
