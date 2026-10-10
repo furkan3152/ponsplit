@@ -13,9 +13,12 @@ import {
 } from "@solana/web3.js";
 import { NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import BN from "bn.js";
-import { OnlinePumpSdk, PUMP_SDK, Platform, feeSharingConfigPda, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, socialFeePda } from "@pump-fun/pump-sdk";
+import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, socialFeePda } from "@pump-fun/pump-sdk";
 import { OnlinePumpAmmSdk, PUMP_AMM_SDK, buyQuoteInput, canonicalPumpPoolPda, sellBaseInput } from "@pump-fun/pump-swap-sdk";
 import { LAUNCH_FEE_LAMPORTS, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
+import { ESCROW_PROGRAM_ID, VERIFIER, isTikTokLaunchReady, isValidTikTokHandle, normalizeTikTokHandle } from "../tiktok-config";
+import { creatorFeeSplit } from "../tiktok-fees";
+import { creatorVault, decodeCreatorVault, initCreatorVaultInstruction } from "./tiktok-escrow";
 
 export { Platform, socialFeePda };
 export const PUMP_PROGRAM_ID = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
@@ -91,7 +94,7 @@ export async function launchTransactions(c: Connection, input: LaunchInput): Pro
 }
 
 /** pump.fun's create_v2 for the coin, with the creator's first buy in the same transaction. */
-export async function createTransaction(c: Connection, input: LaunchInput): Promise<VersionedTransaction> {
+export async function createTransaction(c: Connection, input: Omit<LaunchInput, "githubIds" | "bps">): Promise<VersionedTransaction> {
   const { user, mint } = input;
   const create: TransactionInstruction[] = [];
   if (input.firstBuyLamports > 0n) {
@@ -176,6 +179,104 @@ export async function launchState(c: Connection, mint: PublicKey): Promise<"miss
   if (!mintInfo) return "missing";
   if (cfgInfo && PUMP_SDK.decodeSharingConfig(cfgInfo).adminRevoked) return "done";
   return "needs-split";
+}
+
+
+/** Immutable TikTok split: treasury, creator escrow, optional launching wallet. */
+export function tikTokShareholders(handle: string, launcher: PublicKey, launcherBps: number): Share[] {
+  if (!isTikTokLaunchReady() || !TREASURY) throw new Error("TikTok escrow is not configured. Launches are disabled.");
+  const clean = normalizeTikTokHandle(handle);
+  if (!isValidTikTokHandle(clean)) throw new Error("Enter a valid TikTok handle.");
+  const split = creatorFeeSplit(PLATFORM_BPS, launcherBps);
+  const vault = creatorVault(clean);
+  if (launcherBps && (launcher.equals(TREASURY) || launcher.equals(vault))) throw new Error("Launcher reward needs a wallet distinct from the treasury and creator vault.");
+  return [
+    { address: TREASURY, shareBps: split.platformBps },
+    { address: vault, shareBps: split.creatorBps },
+    ...(launcherBps ? [{ address: launcher, shareBps: launcherBps }] : []),
+  ];
+}
+
+function exactTikTokSplit(actual: Share[], expected: Share[]): boolean {
+  return actual.length === expected.length && actual.every((s, i) => s.address.equals(expected[i].address) && s.shareBps === expected[i].shareBps);
+}
+
+/** Preflight is mandatory before creating a coin: a configured address must be an executable program. */
+export async function assertTikTokEscrowDeployed(c: Connection) {
+  if (!isTikTokLaunchReady()) throw new Error("TikTok escrow and verification authority are not configured.");
+  const [program, genesis] = await Promise.all([c.getAccountInfo(ESCROW_PROGRAM_ID!, "confirmed"), c.getGenesisHash()]);
+  const rpc = new URL(c.rpcEndpoint);
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(rpc.hostname);
+  if (genesis !== "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp" && !local) throw new Error("Tiksplit launches require Solana mainnet.");
+  if (!program?.executable) throw new Error("The configured TikTok escrow program is not deployed on this network.");
+}
+
+export async function finishTikTokLaunchTransactions(c: Connection, user: PublicKey, mint: PublicKey, handle: string, launcherBps: number): Promise<VersionedTransaction[]> {
+  const expected = tikTokShareholders(handle, user, launcherBps);
+  await assertTikTokEscrowDeployed(c);
+  const vault = creatorVault(normalizeTikTokHandle(handle));
+  const [vaultInfo, cfgInfo] = await c.getMultipleAccountsInfo([vault, feeSharingConfigPda(mint)], "confirmed");
+  const initializedVault = vaultInfo ? decodeCreatorVault(vaultInfo, vault) : null;
+  const prefundedVault = vaultInfo?.owner.equals(SystemProgram.programId) && vaultInfo.data.length === 0 && !vaultInfo.executable;
+  if (vaultInfo && !initializedVault && !prefundedVault) throw new Error("The creator vault is invalid.");
+  if (cfgInfo && !cfgInfo.owner.equals(PUMP_FEES_PROGRAM_ID)) throw new Error("The fee-sharing account is invalid.");
+  const cfg = cfgInfo ? PUMP_SDK.decodeSharingConfig(cfgInfo) : null;
+  if (cfg && !cfg.mint.equals(mint)) throw new Error("Fee-sharing mint does not match.");
+  if (cfg && !cfg.admin.equals(user)) throw new Error("This wallet cannot finish this coin's launch.");
+  if (cfg?.adminRevoked) {
+    if (!exactTikTokSplit(cfg.shareholders, expected) || cfgInfo!.data[10] !== 1) throw new Error("This coin has a different permanent fee split.");
+    return initializedVault ? [] : [await v0(c, user, [initCreatorVaultInstruction(user, normalizeTikTokHandle(handle))])];
+  }
+  const txs: VersionedTransaction[] = [];
+  if (!initializedVault) txs.push(await v0(c, user, [initCreatorVaultInstruction(user, normalizeTikTokHandle(handle))]));
+  const sharing = cfg ? null : await PUMP_SDK.createFeeSharingConfig({ creator: user, mint, pool: null });
+  const update = await PUMP_SDK.updateFeeSharesV2({
+    authority: user, mint,
+    currentShareholders: cfg ? cfg.shareholders.map((h: { address: PublicKey }) => h.address) : [user],
+    newShareholders: expected, quoteMint: NATIVE_MINT, quoteTokenProgram: TOKEN_PROGRAM_ID,
+  });
+  const fee = LAUNCH_FEE_LAMPORTS > 0n ? [SystemProgram.transfer({ fromPubkey: user, toPubkey: TREASURY!, lamports: LAUNCH_FEE_LAMPORTS })] : [];
+  txs.push(await v0(c, user, [...budget(400_000), ...(sharing ? [sharing] : []), update, ...fee]));
+  if (txs.some(tx => tx.serialize().length > TX_BYTES_LIMIT)) throw new Error("The fee-sharing transaction exceeds Solana's size limit.");
+  return txs;
+}
+
+export type TikTokLaunchExpectation = { handle: string; launcher: PublicKey; launcherBps: number; metadataUri: string };
+/** Recovery validates the original launch's mint metadata, wallet and permanent fee split. */
+export async function tikTokLaunchState(c: Connection, mint: PublicKey, expected?: TikTokLaunchExpectation): Promise<"missing" | "needs-split" | "done"> {
+  const [mintInfo, cfgInfo] = await c.getMultipleAccountsInfo([mint, feeSharingConfigPda(mint)], "confirmed");
+  if (!mintInfo) return "missing";
+  if (expected) {
+    const { ExtensionType, getExtensionData, unpackMint } = await import("@solana/spl-token");
+    const { unpack } = await import("@solana/spl-token-metadata");
+    const parsed = unpackMint(mint, mintInfo, TOKEN_2022_PROGRAM_ID);
+    const raw = getExtensionData(ExtensionType.TokenMetadata, parsed.tlvData);
+    if (!raw || unpack(raw).uri !== expected.metadataUri) throw new Error("Stored launch details do not match this mint.");
+  }
+  if (cfgInfo && !cfgInfo.owner.equals(PUMP_FEES_PROGRAM_ID)) throw new Error("The fee-sharing account is invalid.");
+  const cfg = cfgInfo ? PUMP_SDK.decodeSharingConfig(cfgInfo) : null;
+  if (cfg && !cfg.mint.equals(mint)) throw new Error("Fee-sharing mint does not match.");
+  if (expected) {
+    const curveInfo = await c.getAccountInfo(bondingCurvePda(mint), "confirmed");
+    if (!curveInfo?.owner.equals(PUMP_PROGRAM_ID)) throw new Error("The stored mint is not a pump.fun coin.");
+    const curve = PUMP_SDK.decodeBondingCurve(curveInfo);
+    const creator = cfg ? feeSharingConfigPda(mint) : expected.launcher;
+    // A config can exist between the create-config and update-shares transactions.
+    if (!curve.creator.equals(creator) && !(cfg && !cfg.adminRevoked && curve.creator.equals(expected.launcher))) throw new Error("The stored coin's creator does not match its launch.");
+  }
+  if (!cfg) return "needs-split";
+  if (expected && !cfg.admin.equals(expected.launcher)) throw new Error("This wallet does not own the stored launch.");
+  if (!cfg.adminRevoked) return "needs-split";
+  if (expected && (!exactTikTokSplit(cfg.shareholders, tikTokShareholders(expected.handle, expected.launcher, expected.launcherBps)) || cfgInfo!.data[10] !== 1)) throw new Error("The final fee split does not match the stored launch.");
+  if (expected) {
+    const vault = creatorVault(normalizeTikTokHandle(expected.handle));
+    const info = await c.getAccountInfo(vault, "confirmed");
+    if (!decodeCreatorVault(info, vault)) {
+      if (!info || (info.owner.equals(SystemProgram.programId) && !info.executable && info.data.length === 0)) return "needs-split";
+      throw new Error("The creator vault is invalid.");
+    }
+  }
+  return "done";
 }
 
 /** pump.fun's starting curve (from its global config), for previews before a coin exists. */

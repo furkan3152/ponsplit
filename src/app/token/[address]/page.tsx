@@ -6,7 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { PublicKey } from "@solana/web3.js";
-import { GraduatedArt, NotFoundArt, StepLaunch } from "@/components/art";
+import { StateIcon } from "@/components/StateIcon";
 import { Flash, Reveal, celebrate } from "@/components/motion";
 import { PriceChart } from "@/components/PriceChart";
 import { Progress } from "@/components/Progress";
@@ -56,7 +56,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   if (isLoading) return <PageSkeleton />;
   // A failed read is a network problem, not proof the coin doesn't exist.
   if (t === undefined && isError) return <Missing text="Couldn't load this coin right now. Retrying…" />;
-  if (!t) return <Missing text="This coin wasn't launched on Splitdev." />;
+  if (!t) return <Missing text="This coin wasn't launched on Tiksplit." />;
 
   const links = [
     { label: "Website", href: safeUrl(t.website) },
@@ -66,7 +66,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
   const description = t.description?.trim();
   const graduated = t.graduated;
   const mine = Boolean(address && t.creator === address);
-  const accountsBps = 10_000 - t.platformBps;
+  const accountsBps = 10_000 - t.platformBps - t.launcherBps;
 
   return (
     <div className="space-y-6 pt-1 sm:space-y-8">
@@ -95,7 +95,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
             {/* x-clip: the stamp starts at 1.8x scale, which must not widen the page next to a long ticker. */}
             <div className="mt-3 flex flex-wrap items-center gap-2 overflow-x-clip sm:mt-4">
               <span className="num inline-flex items-center rounded-full border border-line-2 bg-card px-2.5 py-1 text-[12px] font-semibold text-ink">${t.symbol}</span>
-              {isOfficial(t.token) ? <span className="chip border-lime bg-lime font-semibold text-[var(--lime-ink)]">✓ Official Splitdev token</span> : null}
+              {isOfficial(t.token) ? <span className="chip border-lime bg-lime font-semibold text-[var(--lime-ink)]">✓ Official Tiksplit token</span> : null}
               {graduated ? (
                 <span
                   className="inline-flex animate-stamp items-center gap-1.5 rounded-lg border-2 border-up bg-up-soft px-2.5 py-0.5 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-up-ink"
@@ -174,7 +174,7 @@ export default function TokenPage({ params }: { params: { address: string } }) {
           >
             <Flash value={t.liquiditySol}>{`${compact(t.liquiditySol)} SOL`}</Flash>
           </Tile>
-          <Tile label="Waiting to split" foot={<Foot>{pct(accountsBps)} of the creator fee to GitHub</Foot>}>
+          <Tile label="Waiting to split" foot={<Foot>{pct(accountsBps)} of the creator fee to TikTok creators</Foot>}>
             <Flash value={Number(t.pendingFees)} className="text-up-ink">{`${formatSol(t.pendingFees, 4)} SOL`}</Flash>
           </Tile>
         </dl>
@@ -237,7 +237,7 @@ function DistributeCard({ t, onDone }: { t: Coin; onDone: () => void }) {
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
       const r = await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
       if (r.value.err) throw new Error("The transaction failed on chain.");
-      setMsg({ ok: true, text: "Distributed. The developers can claim it on pump.fun." });
+      setMsg({ ok: true, text: "Distributed to the configured shareholders. Creators can verify and claim through Tiksplit." });
       onDone();
     } catch (e) {
       setMsg({ ok: false, text: errorMessage(e) });
@@ -255,7 +255,7 @@ function DistributeCard({ t, onDone }: { t: Coin; onDone: () => void }) {
         <span className="num shrink-0 text-[18px] font-semibold text-up-ink">{formatSol(t.pendingFees, 4)} SOL</span>
       </div>
       <p className="text-[13px] leading-relaxed text-ink-2">
-        pump.fun holds this coin&apos;s creator fees until someone distributes them to the GitHub accounts and Splitdev. Anyone can; it costs only the network fee.
+        pump.fun holds this coin&apos;s creator fees until someone distributes them to the creator escrows, the platform and its optional launcher share. Anyone can distribute for the network fee.
       </p>
       <button className="btn-secondary w-full py-2.5 text-[14px]" disabled={Boolean(busy) || (connected && t.pendingFees === 0n && !t.graduated)} onClick={distribute}>
         {busy ?? (connected ? "Distribute now" : "Connect wallet")}
@@ -286,12 +286,12 @@ function LaunchBanner({ t }: { t: Coin }) {
       />
       <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:gap-5 sm:px-6">
         <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-[var(--lime-ink)] sm:h-[76px] sm:w-[76px]">
-          <StepLaunch className="h-14 w-14 animate-float sm:h-16 sm:w-16" />
+          <StateIcon kind="launch" className="h-14 w-14 sm:h-16 sm:w-16" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] opacity-70">Launch confirmed</div>
           <p className="display mt-1 text-[30px] leading-[0.95] [overflow-wrap:anywhere] sm:text-[38px]">${t.symbol} is live.</p>
-          <p className="mt-1.5 text-[14px] font-medium opacity-80">Share it: every trade pays your GitHub devs.</p>
+          <p className="mt-1.5 text-[14px] font-medium opacity-80">Share it: its creator fees support your TikTok creators.</p>
         </div>
         <ShareButton t={t} tone="ink" className="self-start sm:self-center" />
       </div>
@@ -435,7 +435,7 @@ function GraduatedCard({ t }: { t: Coin }) {
         </div>
       </div>
       <p className="mt-4 text-[13px] leading-relaxed text-ink-2">
-        The curve sold out and pump.fun moved {t.symbol} to its pool. Its creator fees keep flowing to the same GitHub accounts.
+        The curve sold out and pump.fun moved {t.symbol} to its pool. Its creator fee uses the same finalized shareholder split.
       </p>
       <a
         href={pumpUrl(t.token)}
@@ -463,12 +463,12 @@ function Seal() {
           <text className="fill-[var(--ink-2)] font-mono" fontSize="7.4" fontWeight={600}>
             {/* textLength is the ring's circumference, so the words meet seamlessly (the no-break space keeps the last gap). */}
             <textPath href={`#${id}ring`} textLength={251.3} lengthAdjust="spacing">
-              {"SOLD OUT · LIQUIDITY LOCKED · PONSWAP · "}
+              {"CURVE COMPLETE · PUMP.FUN POOL · TIKSPLIT · "}
             </textPath>
           </text>
         </g>
       </svg>
-      <GraduatedArt className="absolute inset-[17%] h-[66%] w-[66%] animate-float" />
+      <StateIcon kind="done" className="absolute inset-[17%] h-[66%] w-[66%]" />
     </div>
   );
 }
@@ -490,33 +490,42 @@ function About({ text }: { text: string }) {
   );
 }
 
-/** Opens an X post with the coin, its GitHub split and a link that unfurls into the coin's card. */
+/** Share the coin with native mobile sharing, with a clipboard fallback. */
 function ShareButton({
   t,
   tone = "default",
   className = "",
 }: {
   t: Pick<Coin, "name" | "symbol" | "recipients" | "token">;
-  /** "ink": the dark pill used on the neon launch banner. */
   tone?: "default" | "ink";
   className?: string;
 }) {
-  function share() {
-    const who = t.recipients.map((r) => (r.login ? `github.com/${r.login}` : `GitHub #${r.githubId}`)).join(", ");
-    const text = `${t.name} ($${t.symbol}) on Splitdev: every trade pays ${who}`;
+  const [copied, setCopied] = useState(false);
+  async function share() {
+    const who = t.recipients.map((r) => `@${r.handle}`).join(", ");
+    const text = `${t.name} ($${t.symbol}) on Tiksplit: creator fees support ${who}`;
     const url = `${location.origin}/token/${t.token}`;
-    window.open(`https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, "_blank", "noopener,noreferrer");
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: t.name, text, url });
+        return;
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
   }
-  const look =
-    tone === "ink"
-      ? "btn min-h-[44px] bg-[var(--lime-ink)] px-5 text-[14px] text-lime hover:-translate-y-px"
-      : "btn-secondary min-h-[40px] px-4 py-2 text-[13px]";
+  const look = tone === "ink" ? "btn min-h-[44px] bg-[var(--lime-ink)] px-5 text-[14px] text-lime hover:-translate-y-px" : "btn-secondary min-h-[40px] px-4 py-2 text-[13px]";
   return (
     <button className={`${look} ${className}`} onClick={share}>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v14" />
-      </svg>
-      Share
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v14" /></svg>
+      {copied ? "Copied" : "Share"}
     </button>
   );
 }
@@ -563,10 +572,10 @@ function Missing({ text }: { text: string }) {
   return (
     <div className="card relative isolate mx-auto mt-6 flex max-w-lg flex-col items-center gap-4 overflow-hidden px-6 py-14 text-center">
       <div aria-hidden className="bg-grid absolute inset-0 -z-10" />
-      <NotFoundArt className="h-36 w-48 animate-float" />
+      <StateIcon kind="search" className="h-28 w-28" />
       <div className="eyebrow">Coin page</div>
       <p className="display max-w-sm text-[26px] leading-[1.05]">{text}</p>
-      <Link href="/" className="btn-secondary mt-1">
+      <Link href="/explore" className="btn-secondary mt-1">
         Back to explore
       </Link>
     </div>

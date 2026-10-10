@@ -1,41 +1,28 @@
-import { readFileSync } from "fs";
-import { join } from "path";
 import { ImageResponse } from "next/og";
+import { LOGO_DATA_URL } from "@/lib/logo-svg";
 
 export const runtime = "nodejs";
-export const alt = "Splitdev: pump.fun coins that pay GitHub developers";
+export const alt = "Tiksplit: creator coins for TikTok on Solana";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-/** The share card: the night paper, the wordmark, the line, and a big Bitbug. */
 export default function OgImage() {
-  const logo = `data:image/svg+xml;base64,${readFileSync(join(process.cwd(), "public", "logo.svg")).toString("base64")}`;
   return new ImageResponse(
-    (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          backgroundColor: "#0d0a1a",
-          backgroundImage: "radial-gradient(circle at 12% 0%, #3a1d1c 0%, #0d0a1a 46%)",
-          padding: 72,
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", width: 640 }}>
-          <div style={{ display: "flex", fontSize: 44, fontWeight: 700, color: "#f6f1ff", letterSpacing: -2 }}>
-            split<span style={{ color: "#ff7a3d" }}>dev</span>
-            <span style={{ color: "#ff7a3d" }}>_</span>
-          </div>
-          <div style={{ fontSize: 76, fontWeight: 800, color: "#f6f1ff", lineHeight: 1.02, marginTop: 40, letterSpacing: -3 }}>Coins that pay GitHub devs.</div>
-          <div style={{ fontSize: 28, color: "#b6acd2", marginTop: 28, fontFamily: "monospace" }}>{"// launch on pump.fun · solana"}</div>
+    <div style={{ width: "100%", height: "100%", display: "flex", backgroundColor: "#0b0e11", padding: 64, alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ display: "flex", flexDirection: "column", width: 750 }}>
+        <div style={{ display: "flex", alignItems: "center", fontSize: 40, fontWeight: 700, color: "#f4f7f8", letterSpacing: -2 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={LOGO_DATA_URL} width={40} height={40} alt="" style={{ marginRight: 12 }} />
+          tik<span style={{ color: "#41e7dd" }}>split</span><span style={{ color: "#ff6b80" }}>.</span>
         </div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logo} width={400} height={436} alt="" />
+        <div style={{ display: "flex", flexDirection: "column", fontSize: 74, fontWeight: 800, color: "#f4f7f8", lineHeight: 1.04, marginTop: 44, letterSpacing: -3 }}><span>Turn attention into</span><span style={{ color: "#41e7dd" }}>creator earnings.</span></div>
+        <div style={{ fontSize: 24, color: "#abb6c0", marginTop: 36 }}>TikTok creators · pump.fun · Solana mainnet</div>
       </div>
-    ),
-    size
+      <div style={{ width: 250, height: 320, border: "1px solid #29343e", borderRadius: 28, background: "#12171c", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={LOGO_DATA_URL} width={190} height={190} alt="" />
+      </div>
+    </div>,
+    size,
   );
 }

@@ -6,7 +6,7 @@ import { compact, progressText } from "@/lib/format";
 import { useCoins } from "@/lib/hooks";
 import { TokenAvatar } from "./TokenAvatar";
 
-/** A live tape of every Splitdev coin's market cap and curve progress, like a trading floor's ticker. */
+/** A live tape of every Tiksplit coin's market cap and curve progress, like a trading floor's ticker. */
 export function Ticker() {
   const { data } = useCoins();
   const coins = data ? [...data].sort((a, b) => b.marketCap - a.marketCap).slice(0, 24) : undefined;

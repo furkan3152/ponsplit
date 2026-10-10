@@ -1,63 +1,18 @@
 import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
-import { Wordmark } from "./art";
-import { FollowX } from "./home/Official";
+import { Wordmark } from "./art/Logo";
 
 export function Footer() {
   return (
-    <footer className="relative mt-8 overflow-hidden border-t border-line">
-      <div className="mx-auto max-w-6xl px-4 pb-28 pt-12 sm:px-6 md:pb-10">
-        <div className="flex flex-col gap-8 sm:flex-row sm:items-end sm:justify-between">
-          <div className="max-w-sm space-y-3">
-            <Wordmark size={30} />
-            <p className="text-[14px] leading-relaxed text-ink-2">
-              Coins that pay developers. Every Splitdev coin is a pump.fun coin whose creator fees go, for good, to the GitHub accounts it names, on the curve and after it graduates.
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <FollowX />
-              <span className="inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-[12px] font-medium text-ink-2">
-                <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" aria-hidden />
-                Solana
-              </span>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-[14px] text-ink-2">
-            <Link href="/how" className="transition hover:text-ink">
-              How it works
-            </Link>
-            <Link href="/docs" className="transition hover:text-ink">
-              Docs
-            </Link>
-            <Link href="/create" className="transition hover:text-ink">
-              Launch
-            </Link>
-            <Link href="/claim" className="transition hover:text-ink">
-              Claim
-            </Link>
-            <a href="https://solscan.io" target="_blank" rel="noreferrer" className="transition hover:text-ink">
-              Explorer ↗
-            </a>
-            <ThemeToggle />
-          </div>
+    <footer className="mt-14 border-t border-line">
+      <div className="mx-auto max-w-[1240px] px-4 pb-24 pt-8 sm:px-6 lg:pb-8">
+        <div className="flex flex-col gap-7 sm:flex-row sm:justify-between">
+          <div className="max-w-sm"><Wordmark size={28} /><p className="mt-3 text-[13px] leading-relaxed text-ink-2">A home for creator coins. Launch on pump.fun, allocate creator fees and let TikTok creators claim their share in SOL.</p></div>
+          <div className="flex flex-wrap items-start gap-x-5 gap-y-3 pt-1 text-[12px] text-ink-2"><Link href="/how" className="hover:text-ink">How it works</Link><Link href="/docs" className="hover:text-ink">Docs</Link><Link href="/create" className="hover:text-ink">Launch</Link><Link href="/claim" className="hover:text-ink">Creator earnings</Link><ThemeToggle compact /></div>
         </div>
-        <div className="mt-8 space-y-2 text-[12px] leading-relaxed text-ink-3">
-          <p>
-            Splitdev is an independent app built on pump.fun&apos;s public programs (
-            <a href="https://pump.fun" target="_blank" rel="noreferrer" className="underline-offset-2 hover:text-ink-2 hover:underline">
-              pump.fun
-            </a>
-            ). It is not affiliated with, endorsed by or operated by pump.fun or GitHub.
-          </p>
-          <p>Experimental software on a live network; trade at your own risk.</p>
-        </div>
-        {/* Filled, fading into the page. An outline would show where the variable font's glyph
-            contours overlap. */}
-        <div
-          aria-hidden
-          className="display pointer-events-none mt-4 select-none whitespace-nowrap bg-clip-text text-[21vw] leading-[0.84] text-transparent sm:text-[168px]"
-          style={{ backgroundImage: "linear-gradient(to bottom, var(--line-2) 10%, transparent 92%)" }}
-        >
-          Splitdev
+        <div className="mt-7 flex flex-col gap-3 border-t border-line pt-5 text-[11px] leading-relaxed text-ink-3 md:flex-row md:justify-between">
+          <p className="max-w-xl">Tiksplit is independent and is not affiliated with TikTok or pump.fun. Creator earnings depend on actual trading activity and are not guaranteed. Coins are speculative; trading can result in loss.</p>
+          <a href="https://solscan.io" target="_blank" rel="noreferrer" className="shrink-0 hover:text-ink-2">Explore Solana ↗</a>
         </div>
       </div>
     </footer>

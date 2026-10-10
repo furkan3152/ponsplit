@@ -1,12 +1,10 @@
 import "server-only";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { PUMP_SDK } from "@pump-fun/pump-sdk";
-import { resolveIds } from "../github";
+import { CREATOR_VAULT_SIZE, decodeCreatorVault } from "./tiktok-escrow";
 import { parseMetadata, safeUrl, type TokenMetadata } from "../metadata";
 import { rateLimit } from "../ratelimit";
 import { fetchPublicBytes } from "../safe-image";
 import { rpcUrls } from "./config";
-import { PUMP_FEES_PROGRAM_ID } from "./pump";
 import { listCoins, many, readCoin, type Coin } from "./reads";
 import { recentTrades, type Trade } from "./trades";
 
@@ -107,46 +105,36 @@ async function createdAt(c: Connection, mint: string): Promise<number | null> {
 }
 
 async function enrich(c: Connection, coins: Coin[]): Promise<CoinView[]> {
-  const ids = Array.from(new Set(coins.flatMap((x) => x.recipients.map((r) => r.githubId))));
-  const [profiles, metas, ages] = await Promise.all([
-    resolveIds(ids).catch(() => ({}) as Awaited<ReturnType<typeof resolveIds>>),
+  const [metas, ages] = await Promise.all([
     Promise.all(coins.map((x) => metadataFor(x.uri).catch(() => ({}) as TokenMetadata))),
     Promise.all(coins.map((x) => createdAt(c, x.token))),
   ]);
-  return coins.map((x, i) => ({
-    ...x,
-    ...metas[i],
-    createdAt: ages[i],
-    recipients: x.recipients.map((r) => {
-      const p = profiles[r.githubId];
-      return p ? { ...r, login: p.login, name: p.name, avatar: p.avatar } : r;
-    }),
-  }));
+  return coins.map((x, i) => ({ ...metas[i], ...x, createdAt: ages[i] }));
 }
 
 async function earnersOf(c: Connection, coins: CoinView[]): Promise<Earner[]> {
-  const byId = new Map<string, Earner>();
-  for (const coin of coins)
-    for (const r of coin.recipients) {
-      const e = byId.get(r.githubId) ?? { githubId: r.githubId, login: r.login, avatar: r.avatar, claimable: 0n, claimed: 0n, coins: 0 };
-      e.coins++;
-      byId.set(r.githubId, e);
-    }
-  const list = [...byId.values()];
-  const accounts = coins.flatMap((x) => x.recipients).filter((r, i, all) => all.findIndex((o) => o.githubId === r.githubId) === i);
-  const infos = await many(c, accounts.map((r) => new PublicKey(r.feeAccount)));
-  const rent = await c.getMinimumBalanceForRentExemption(infos.find(Boolean)?.data.length ?? 0);
+  const byHandle = new Map<string, Earner>();
+  for (const coin of coins) for (const r of coin.recipients) {
+    const e = byHandle.get(r.handle) ?? { handle: r.handle, claimable: 0n, claimed: 0n, coins: 0, verified: r.verified, wallet: r.wallet };
+    e.coins++;
+    byHandle.set(r.handle, e);
+  }
+  const accounts = [...new Map(coins.flatMap(x => x.recipients).map(r => [r.handle, r])).values()];
+  if (!accounts.length) return [];
+  const keys = accounts.map(r => new PublicKey(r.feeAccount));
+  const infos = await many(c, keys);
+  const rent = await c.getMinimumBalanceForRentExemption(CREATOR_VAULT_SIZE);
   infos.forEach((info, i) => {
-    if (!info || !info.owner.equals(PUMP_FEES_PROGRAM_ID)) return;
-    const e = byId.get(accounts[i].githubId)!;
+    const vault = decodeCreatorVault(info, keys[i]);
+    if (!vault || !info) throw new Error("A creator vault could not be read.");
+    const e = byHandle.get(accounts[i].handle)!;
+    if (!Number.isSafeInteger(info.lamports)) throw new Error("Creator balance exceeds safe RPC precision.");
     e.claimable = BigInt(Math.max(0, info.lamports - rent));
-    try {
-      e.claimed = BigInt(PUMP_SDK.decodeSocialFeePda(info).totalClaimed.toString());
-    } catch {
-      // not readable: leave at 0
-    }
+    e.claimed = vault.totalClaimed;
+    e.verified = Boolean(vault.beneficiary);
+    e.wallet = vault.beneficiary?.toBase58();
   });
-  return list.sort((a, b) => Number(b.claimable + b.claimed - (a.claimable + a.claimed)));
+  return [...byHandle.values()].sort((a,b) => Number(b.claimable + b.claimed - a.claimable - a.claimed));
 }
 
 const snap: Memo<Snapshot> = { at: 0 };
@@ -155,7 +143,7 @@ export function snapshot(): Promise<Snapshot> {
   return memo(snap, async () => {
     const c = serverConnection();
     const coins = await enrich(c, await listCoins(c));
-    const earners = await earnersOf(c, coins).catch(() => []);
+    const earners = await earnersOf(c, coins);
     return { at: Date.now(), coins, earners };
   });
 }

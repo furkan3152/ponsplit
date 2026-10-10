@@ -7,7 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { GithubProfile } from "./github-types";
 import { isValidLogin, normalizeLogin } from "./github-handles";
-import { githubClaimable } from "./solana/reads";
+import { creatorVaultClaimable } from "./solana/tiktok-escrow";
+import { isValidTikTokHandle, normalizeTikTokHandle, isTikTokLaunchReady } from "./tiktok-config";
 import type { Coin, Snapshot, Trade } from "./types";
 import { decode } from "./wire";
 
@@ -70,17 +71,17 @@ export function useGithubProfiles(logins: string[]) {
   });
 }
 
-/** What a GitHub account has waiting in its pump.fun fee account (lamports). */
-export function useClaimable(githubId: string | undefined) {
+/** A TikTok handle's escrow balance. No pump.fun social-platform id is invented. */
+export function useClaimable(handle: string | undefined) {
   const { connection } = useConnection();
+  const clean = normalizeTikTokHandle(handle ?? "");
   return useQuery({
-    queryKey: ["claimable", githubId],
-    enabled: Boolean(githubId),
+    queryKey: ["tiktok-claimable", clean],
+    enabled: isTikTokLaunchReady() && isValidTikTokHandle(clean),
     refetchInterval: 15_000,
-    queryFn: () => githubClaimable(connection, githubId!),
+    queryFn: () => creatorVaultClaimable(connection, clean),
   });
 }
-
 /** The connected wallet's SOL (lamports). */
 export function useSolBalance() {
   const { connection } = useConnection();

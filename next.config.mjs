@@ -20,6 +20,9 @@ function checkSettings() {
   if (!Array.isArray(s.hidden)) throw new Error("src/splidev.json hidden must be a list of mint addresses.");
   s.hidden.forEach((m, i) => checkKey(m, `src/splidev.json hidden[${i}]`));
   if (s.officialToken) checkKey(s.officialToken, "src/splidev.json officialToken");
+  for (const name of ["NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID", "NEXT_PUBLIC_TIKSPLIT_VERIFIER"]) {
+    if (process.env[name]) checkKey(process.env[name], name);
+  }
 }
 
 checkSettings();

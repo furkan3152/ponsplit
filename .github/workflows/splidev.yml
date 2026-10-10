@@ -1,36 +1,10 @@
-name: Splitdev
+name: Tiksplit
 
-# The Solana side on pump.fun's real programs (e2e/solana/fixtures, dumped from mainnet): a local
-# solana-test-validator, a launch through the site's own transaction builder, trades and pump.fun's
-# fee distribution to Splitdev and the GitHub accounts.
 on:
   push:
   workflow_dispatch:
 
 jobs:
-  pump-local:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - name: Install the Solana CLI
-        run: |
-          curl -sSfL https://github.com/anza-xyz/agave/releases/download/v2.3.13/solana-release-x86_64-unknown-linux-gnu.tar.bz2 | tar xj
-          echo "$PWD/solana-release/bin" >> "$GITHUB_PATH"
-      - name: Start a validator with pump.fun's programs
-        run: e2e/solana/validator.sh "$RUNNER_TEMP/ledger"
-      - name: Launch, trade and distribute
-        run: |
-          node e2e/solana/build-lib.mjs
-          RPC=http://127.0.0.1:8899 node e2e/solana/launch-local.mjs
-      - name: Graduate to pump.fun's pool, trade there and distribute
-        run: RPC=http://127.0.0.1:8899 node e2e/solana/graduate-local.mjs
-
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -41,23 +15,46 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npx next lint
+      - run: npm run typecheck
       - run: npm test
-      - run: npx next build
+      - run: npm run build
+
+  escrow-and-pump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # A deterministic, public, validator-only program address. No deployment wallet.
+      NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID: 3Zw2boFgPgPHoxJEhuAKSyVuWWMWcys6px7kHFxRFirW
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test escrow privileges and accounting
+        run: cargo test --locked --manifest-path programs/tiktok-escrow/Cargo.toml
+      - name: Install Solana CLI
+        run: |
+          curl -sSfL https://github.com/anza-xyz/agave/releases/download/v2.3.13/solana-release-x86_64-unknown-linux-gnu.tar.bz2 | tar xj
+          echo "$PWD/solana-release/bin" >> "$GITHUB_PATH"
+      - name: Build escrow executable
+        run: |
+          cargo build-sbf --manifest-path programs/tiktok-escrow/Cargo.toml -- --locked
+          rm -f programs/tiktok-escrow/target/deploy/tiktok_escrow-keypair.json
+      - name: Start validator with real pump.fun and escrow programs
+        run: e2e/solana/validator.sh "$RUNNER_TEMP/tiksplit-ledger" --bpf-program "$NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID" programs/tiktok-escrow/target/deploy/tiktok_escrow.so
+      - name: Launch, trade, distribute, verify and claim
+        run: |
+          node e2e/solana/build-lib.mjs
+          node e2e/solana/tiktok-local.mjs
 
   browser:
-    # The site in Chromium against a local validator running pump.fun's programs: launch, trade,
-    # distribute and the claim page, plus every page on desktop and phone widths.
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 20
     env:
       NEXT_TELEMETRY_DISABLED: 1
-      NEXT_PUBLIC_SOLANA_RPC_URL: http://127.0.0.1:8899
-      SOLANA_RPC_URL: http://127.0.0.1:8899
-      SPLIDEV_METADATA_STORE: memory
-      # GitHub lookups (real accounts: torvalds, gaearon) with the job's token, for the API's limits.
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -65,27 +62,17 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Install the Solana CLI
-        run: |
-          curl -sSfL https://github.com/anza-xyz/agave/releases/download/v2.3.13/solana-release-x86_64-unknown-linux-gnu.tar.bz2 | tar xj
-          echo "$PWD/solana-release/bin" >> "$GITHUB_PATH"
-      - name: Start a validator with pump.fun's programs
-        run: e2e/solana/validator.sh "$RUNNER_TEMP/ledger"
-      - name: A treasury address for this run
-        run: echo "NEXT_PUBLIC_SPLIDEV_TREASURY=$(node -e 'console.log(require("@solana/web3.js").Keypair.generate().publicKey.toBase58())')" >> "$GITHUB_ENV"
-      - run: npx next build
-      - name: Browser
+      - run: npm run build
+      - name: Browser setup and responsive UI checks
         run: |
           node node_modules/.bin/next start -p 3000 > app.log 2>&1 &
-          for i in $(seq 1 60); do curl -sf http://localhost:3000/ > /dev/null && break; sleep 2; done
-          cd e2e && npm ci && npx playwright install --with-deps chromium
-          mkdir -p shots
-          BASE=http://localhost:3000 RPC=http://127.0.0.1:8899 TREASURY=$NEXT_PUBLIC_SPLIDEV_TREASURY node splidev.mjs
-      - name: Server log
-        if: always()
-        run: tail -n 80 app.log || true
+          for i in $(seq 1 40); do curl -sf http://localhost:3000/ > /dev/null && break; sleep 1; done
+          cd e2e
+          npm ci
+          npx playwright install --with-deps chromium
+          BASE=http://localhost:3000 node tiksplit-ui.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: shots
+          name: tiksplit-browser-shots
           path: e2e/shots

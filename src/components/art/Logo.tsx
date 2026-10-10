@@ -1,29 +1,17 @@
-import { BugMark } from "./Bug";
-
-/**
- * Splitdev brand mark: Bitbug, the split-shell beetle. `public/logo.svg` and `src/app/icon.svg` are
- * rendered from this (scripts/render-logo.mjs).
- */
+/** An original split-play mark: the feed becomes a creator's share. */
 export function LogoMark({ size = 32, className }: { size?: number; className?: string }) {
-  return <BugMark size={size} className={className} />;
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" className={className} aria-hidden>
+      <path d="M7 4.5 22 13v14L7 35.5V4.5Z" fill="var(--lime)" />
+      <path d="m26 15.3 8.5 4.7-8.5 4.7v-9.4Z" fill="var(--coral)" />
+    </svg>
+  );
 }
 
-/** The wordmark text alone: "splitdev" in lowercase like a command, "dev" in tangerine, a blinking caret. */
 export function WordmarkText({ className = "" }: { className?: string }) {
-  return (
-    <span className={`display whitespace-nowrap leading-none tracking-[-0.05em] ${className}`}>
-      split<span className="text-neon">dev</span>
-      <span aria-hidden className="caret ml-[1px] inline-block h-[0.14em] w-[0.5em] translate-y-[0.02em] rounded-[1px] bg-lime align-baseline" />
-    </span>
-  );
+  return <span className={`display whitespace-nowrap leading-none tracking-[-0.06em] ${className}`}>tik<span className="text-neon">split</span><span className="text-[var(--coral)]">.</span></span>;
 }
 
-/** LogoMark + wordmark as a flex row. The bug turns a little when its link is hovered. */
 export function Wordmark({ className, textClassName = "", size = 28 }: { className?: string; textClassName?: string; size?: number }) {
-  return (
-    <span className={`inline-flex items-center gap-2 ${className ?? ""}`}>
-      <LogoMark size={size} className="transition-transform duration-500 group-hover:-rotate-12 group-hover:scale-110" />
-      <WordmarkText className={`text-[21px] ${textClassName}`} />
-    </span>
-  );
+  return <span className={`inline-flex items-center gap-2 ${className ?? ""}`}><LogoMark size={size} /><WordmarkText className={`text-[22px] ${textClassName}`} /></span>;
 }
