@@ -66,7 +66,7 @@ Program/verifier adresinin değiştirilmesi yeni escrow PDA'ları üretir; final
 
 | Kalem | Tahmin / kaynak |
 | --- | --- |
-| Mainnet program deployment | **Güncel `/admin` mainnet RPC teklifini kullanın.** Güncel 104,568 byte manual-proof build için yerel RPC tahmini final rent + fee `0.730743800 SOL`; konservatif başlangıç rezervi `1.459690480 SOL`. Bu yerel ölçüm, mainnet'teki kesin fiyat veya canlı deployment sonucu değildir. |
+| Mainnet program deployment | **Güncel `/admin` mainnet RPC teklifini kullanın.** Güncel 63,552 byte manual-proof build için yerel RPC tahmini final rent + fee `0.445042440 SOL`; başlangıç bakiyesi `0.445938320 SOL`. Bu yerel ölçüm, mainnet'teki kesin fiyat veya canlı deployment sonucu değildir. |
 | Creator proof isteği | 143 byte için varsayılan yerel rent `0.00188616 SOL`; uygulama gerçek RPC tutarını gösterir. İptal/onayda rent geri döner; network ücretleri harcanır. |
 | Vercel Pro | [$20/ay + kullanım aşımı](https://vercel.com/pricing). Hobby kişisel/ticari olmayan kullanım içindir. |
 | RPC | Mevcut endpoint kullanılabilir; isteğe bağlı [Helius Developer $49/ay](https://www.helius.dev/pricing). Public RPC yoğun trafikte limitlenebilir. |
@@ -74,7 +74,7 @@ Program/verifier adresinin değiştirilmesi yeni escrow PDA'ları üretir; final
 | Verifier imzalayıcı | Bugünkü manual approval admin cüzdanında imzalanır; ayrı signer aboneliği gerekmez. Gelecekte OAuth attestation seçilirse sağlayıcı maliyeti ayrıdır. |
 | Storage, domain, audit | Kullanıma ve sağlayıcı/denetim kapsamına göre ayrı teklif. Mevcut storage/RPC kullanılabilir. |
 
-Yerel deployment hesabı **119 işlem** içerir: 117 write, 1 buffer create ve 1 deploy. Final tutarın `0.730138800 SOL` kısmı program hesaplarında tutulan rent, `0.000605000 SOL` kısmı işlem ücreti tahminidir. Konservatif başlangıç rezervi final tutara geçici buffer rent'i `0.728941680 SOL` ve recovery işlemi için `0.000005 SOL` ekler. Mainnet paneli güncel rent/fee değerleriyle yeniden fiyatlar.
+Yerel deployment hesabı **73 işlem** içerir: 71 write, 1 buffer create ve 1 deploy. Final tutarın `0.444667440 SOL` kısmı program hesaplarında tutulan rent, `0.000375000 SOL` kısmı işlem ücreti tahminidir. Başlangıç bakiyesi final tutara cüzdanın rent-exempt kalması için `0.000890880 SOL` ve recovery için `0.000005 SOL` ekler. `0.443470320 SOL` yükleme buffer'ı loader tarafından ProgramData oluşturulmadan önce ödeyiciye aktarılır ve program rent'i için yeniden kullanılır; ikinci kez bütçeye eklenmez. Mainnet paneli güncel rent/fee değerleriyle yeniden fiyatlar.
 
 Yalnız Vercel/RPC tabanı $20/ay; isteğe bağlı Helius Developer eklenirse $69/aydır. Storage, domain, audit ve mevcut sağlayıcıların kullanım aşımı bu toplama dahil değildir. SOL/USD kuru sabitlenmemiştir. Program rent'i aylık ücret değildir; hesaplarda tutulan rezervdir. Geçici deployment buffer bakiyesi loader tarafından deployment sırasında geri dönüştürülür/iade edilir; kesintide admin recovery/close akışı vardır. Mevcut creator kasalarını destekleyen programı kapatmak rutin bir tasarruf işlemi değildir. [Solana deployment rehberi](https://solana.com/docs/programs/deploying).
 
