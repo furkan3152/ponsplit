@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import type { GithubProfile } from "./github-types";
 import { isValidLogin, normalizeLogin } from "./github-handles";
 import { creatorVaultClaimable } from "./solana/tiktok-escrow";
-import { isValidTikTokHandle, normalizeTikTokHandle, isTikTokLaunchReady } from "./tiktok-config";
+import { ESCROW_PROGRAM_ID, isValidTikTokHandle, normalizeTikTokHandle, isTikTokLaunchReady } from "./tiktok-config";
 import type { Coin, Snapshot, Trade } from "./types";
 import { decode } from "./wire";
 
@@ -25,6 +25,49 @@ async function getJson<T>(url: string): Promise<T> {
     throw new Error(msg);
   }
   return decode<T>(text);
+}
+
+type EscrowRuntimeStatus = {
+  configuration?: {
+    escrowProgram?: { address?: string | null; deployed?: boolean | null; artifactMatches?: boolean | null };
+  };
+};
+
+function escrowAvailable(status: EscrowRuntimeStatus | undefined): boolean {
+  const program = status?.configuration?.escrowProgram;
+  return Boolean(ESCROW_PROGRAM_ID && program?.address === ESCROW_PROGRAM_ID.toBase58() && program.deployed === true && program.artifactMatches === true);
+}
+
+function escrowPausedMessage(status: EscrowRuntimeStatus | undefined, failed: boolean): string {
+  if (failed) return "The escrow program could not be checked. Verification, fee distribution and withdrawals are paused until its status is confirmed.";
+  if (!status) return "Checking whether the escrow program is available…";
+  if (status.configuration?.escrowProgram?.deployed === false) return "The escrow program is not running. Verification, fee distribution and withdrawals are paused. Existing creator escrow funds cannot be withdrawn while the program is closed.";
+  return "The reviewed escrow program is unavailable. Verification, fee distribution and withdrawals are paused.";
+}
+
+/** Existing creator operations depend on the program, not launch metadata storage. */
+export function useEscrowAvailability() {
+  const query = useQuery({
+    queryKey: ["escrow-availability"],
+    queryFn: async () => {
+      const response = await fetch("/api/runtime-status", { cache: "no-store" });
+      if (!response.ok) throw new Error("The escrow program status could not be checked.");
+      return await response.json() as EscrowRuntimeStatus;
+    },
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    retry: false,
+  });
+  return {
+    available: !query.isError && escrowAvailable(query.data),
+    pausedMessage: escrowPausedMessage(query.data, query.isError),
+    async assertAvailable() {
+      const fresh = await query.refetch({ cancelRefetch: false });
+      if (fresh.isError || !escrowAvailable(fresh.data)) {
+        throw new Error(escrowPausedMessage(fresh.data, fresh.isError));
+      }
+    },
+  };
 }
 
 /** Every Splitdev coin and the GitHub accounts they pay, as one shared server read (refreshed every 10 s). */

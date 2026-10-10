@@ -11,6 +11,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ADMIN_WALLET, MAINNET_GENESIS_HASH } from "@/lib/admin-config";
 import { errorMessage, formatSol, shortAddress } from "@/lib/format";
+import { useEscrowAvailability } from "@/lib/hooks";
 import {
   isTikTokLaunchReady,
   tikTokProfileUrl,
@@ -44,8 +45,9 @@ export function CreatorProof({ handle }: { handle: string }) {
   const queryClient = useQueryClient();
   const address = publicKey?.toBase58();
   const configured = isTikTokLaunchReady();
+  const escrow = useEscrowAvailability();
   const manual = Boolean(VERIFIER?.equals(ADMIN_WALLET));
-  const ready = configured && manual;
+  const ready = configured && manual && escrow.available;
   const [videoUrl, setVideoUrl] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
@@ -220,6 +222,7 @@ export function CreatorProof({ handle }: { handle: string }) {
     return () => { cancelled = true; clearInterval(timer); };
   }, [connection, pendingSignatures, refetchProof, refetchVault]);
   async function preflight() {
+    await escrow.assertAvailable();
     if (!ready)
       throw new Error(
         "The mainnet video verification program is not configured on this deployment.",
@@ -228,7 +231,6 @@ export function CreatorProof({ handle }: { handle: string }) {
       throw new Error(
         "Connect to Solana mainnet to verify your TikTok account.",
       );
-    await assertTikTokEscrowDeployed(connection);
   }
   async function send(instructions: TransactionInstruction[], title: string) {
     assertContext();
@@ -246,9 +248,11 @@ export function CreatorProof({ handle }: { handle: string }) {
       }).compileToV0Message(),
     );
     const expected = transaction.message.serialize();
+    await assertTikTokEscrowDeployed(connection);
     assertContext();
     setBusy(`${title}: approve in your wallet…`);
     const signed = await checkedVersionedSignature(expected, await signTransaction(transaction));
+    await assertTikTokEscrowDeployed(connection);
     assertContext();
     try {
       const signature = await sendCheckedVersionedTransaction(connection, signed, (signature) => {
@@ -263,11 +267,11 @@ export function CreatorProof({ handle }: { handle: string }) {
     }
   }
   async function run(action: "request" | "attach" | "cancel" | "activate") {
+    if (!ready || inFlight.current) return;
     if (!connected || !publicKey) {
       setVisible(true);
       return;
     }
-    if (!ready || inFlight.current) return;
     inFlight.current = true;
     setMessage(null);
     try {
@@ -392,8 +396,7 @@ export function CreatorProof({ handle }: { handle: string }) {
       </p>
       {!ready ? (
         <p className="mt-5 border border-line bg-card-2 p-4 text-[13px] leading-relaxed text-ink-3">
-          Video verification is paused until the reviewed mainnet escrow and
-          admin verification authority are configured.
+          {!escrow.available ? escrow.pausedMessage : "Video verification is paused until the mainnet escrow and admin verification authority are configured."}
         </p>
       ) : !connected ? (
         <button
