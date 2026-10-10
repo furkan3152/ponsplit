@@ -1,3 +1,4 @@
+import bs58 from "bs58";
 import {
   Keypair, PublicKey, SystemProgram, SYSVAR_CLOCK_PUBKEY, SYSVAR_RENT_PUBKEY,
   Transaction, TransactionInstruction, VersionedTransaction,
@@ -318,10 +319,25 @@ function checkedSigned(expected: Transaction, returned: Transaction): Transactio
 }
 
 async function broadcast(connection: Connection, transaction: Transaction, onSent?: (signature: string) => void): Promise<string> {
-  const signature = await connection.sendRawTransaction(transaction.serialize(), { skipPreflight: false, maxRetries: 3, preflightCommitment: "confirmed" });
+  const bytes = transaction.serialize();
+  if (!transaction.signature) throw new Error("Missing deployment transaction signature.");
+  const signature = bs58.encode(transaction.signature);
+  // Save the signed transaction ID BEFORE submission: a lost HTTP response must not hide it.
   onSent?.(signature);
-  const response = await connection.confirmTransaction({ signature, blockhash: transaction.recentBlockhash!, lastValidBlockHeight: transaction.lastValidBlockHeight! }, "confirmed");
-  if (response.value.err) throw new Error(`Program transaction failed: ${JSON.stringify(response.value.err)}`);
+  try {
+    const returned = await connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 3, preflightCommitment: "confirmed" });
+    if (returned !== signature) throw new Error("RPC returned a different transaction signature.");
+    const response = await connection.confirmTransaction({ signature, blockhash: transaction.recentBlockhash!, lastValidBlockHeight: transaction.lastValidBlockHeight! }, "confirmed");
+    if (response.value.err) throw new Error(`Program transaction failed: ${JSON.stringify(response.value.err)}`);
+  } catch (error) {
+    // Mobile/websocket disconnects may happen AFTER a successful payment or write.
+    // Read the exact signed transaction; never start a second payment to resolve uncertainty.
+    const status = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true }).catch(() => null);
+    const value = status?.value[0];
+    if (value?.err) throw new Error(`Program transaction failed: ${JSON.stringify(value.err)}. Transaction: ${signature}`);
+    if (value?.confirmationStatus === "confirmed" || value?.confirmationStatus === "finalized") return signature;
+    throw new Error(`${error instanceof Error ? error.message : String(error)} Transaction: ${signature}. Check its status and resume the saved buffer; do not create another upload.`);
+  }
   return signature;
 }
 
@@ -345,9 +361,14 @@ export async function inspectDeployedProgram(connection: Connection, program: Pu
 export async function deployEscrowProgram(options: {
   connection: Connection; wallet: DeployWallet; artifact: ProgramArtifact; resumeBuffer?: PublicKey; maxDataLen?: number;
   onProgress?: (progress: DeployProgress) => void; onBufferCreated?: (buffer: string) => void;
+  onTransaction?: (signature: string) => void; writeBatchSize?: number;
 }): Promise<DeployResult> {
   const { connection, wallet, onProgress } = options;
   const authority = admin(wallet);
+  const requestedBatchSize = options.writeBatchSize ?? 4;
+  if (!Number.isInteger(requestedBatchSize) || requestedBatchSize < 1 || requestedBatchSize > 16) throw new Error("Invalid upload signing batch size.");
+  // A wallet without batch signing must send each signed transaction immediately.
+  const batchSize = wallet.signAllTransactions ? requestedBatchSize : 1;
   // Snapshot bytes: callers cannot alter chunks while a wallet approval is pending.
   const artifact = { ...options.artifact, bytes: Uint8Array.from(options.artifact.bytes) };
   let buffer: PublicKey | null = options.resumeBuffer ?? null;
@@ -369,7 +390,7 @@ export async function deployEscrowProgram(options: {
     checkedSigned(transaction, signed);
     // Store the public buffer key before sending: uncertain confirmation must not lose it.
     options.onBufferCreated?.(buffer.toBase58());
-    await broadcast(connection, signed);
+    await broadcast(connection, signed, options.onTransaction);
   }
   const info = await connection.getAccountInfo(buffer, "confirmed");
   const pending = pendingChunks(bufferBytes(info, authority, artifact.bytes.length), artifact);
@@ -377,8 +398,8 @@ export async function deployEscrowProgram(options: {
   if (exact(await connection.getBalance(authority, "confirmed")) < remainingDeploymentBalance(quote, exact(info!.lamports), pending.length)) throw new Error("Insufficient SOL remains for deployment. The admin can close the saved buffer to recover its rent.");
   progress("writing");
   // Batches keep blockhashes fresh and work with wallets that sign all at once.
-  for (let start = 0; start < pending.length; start += 16) {
-    const chunks = pending.slice(start, start + 16);
+  for (let start = 0; start < pending.length; start += batchSize) {
+    const chunks = pending.slice(start, start + batchSize);
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     const transactions = chunks.map((chunk) => {
       const tx = new Transaction({ feePayer: authority, blockhash, lastValidBlockHeight });
@@ -387,13 +408,13 @@ export async function deployEscrowProgram(options: {
     });
     const messages = transactions.map((transaction) => transaction.serializeMessage());
     const signed: Transaction[] = [];
-    if (wallet.signAllTransactions) signed.push(...await wallet.signAllTransactions(transactions));
+    if (batchSize > 1 && wallet.signAllTransactions) signed.push(...await wallet.signAllTransactions(transactions));
     else for (const transaction of transactions) signed.push(await wallet.signTransaction(transaction));
     if (signed.length !== transactions.length) throw new Error("The wallet returned an incomplete deployment batch.");
     for (let i = 0; i < signed.length; i++) {
       if (!equal(messages[i], signed[i].serializeMessage())) throw new Error("The wallet changed a program write transaction.");
       checkedSigned(transactions[i], signed[i]);
-      await broadcast(connection, signed[i]);
+      await broadcast(connection, signed[i], options.onTransaction);
       writtenBytes += chunks[i].bytes.length;
       progress("writing");
     }
@@ -415,7 +436,7 @@ export async function deployEscrowProgram(options: {
   progress("deploying", { programId: program.publicKey.toBase58() });
   let signature = "";
   try {
-    signature = await broadcast(connection, signed, (sig) => { signature = sig; progress("deploying", { programId: program.publicKey.toBase58(), signature: sig }); });
+    signature = await broadcast(connection, signed, (sig) => { signature = sig; options.onTransaction?.(sig); progress("deploying", { programId: program.publicKey.toBase58(), signature: sig }); });
   } catch (error) {
     // A lost RPC confirmation can still mean a successful deployment. Check it.
     if (!signature || !await inspectDeployedProgram(connection, program.publicKey, artifact)) throw error;

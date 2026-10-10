@@ -65,7 +65,7 @@ export function errorMessage(e: unknown): string {
     const err = e as { message?: string; name?: string; logs?: string[] };
     const msg = err.message?.split("\n")[0] || "Something went wrong";
     if (/^401:/.test(msg) && /UNAUTHORIZED/i.test(msg) && /"instance"/.test(msg)) return "The Solana RPC provider rejected this website. The site administrator must add the current domain to the RPC referrer allowlist, then refresh. This error is not a wallet rejection.";
-    if (/user rejected|rejected the request|denied|WalletSignTransactionError/i.test(`${err.name} ${msg}`)) return "Cancelled in wallet.";
+    if (/user rejected|rejected the request|user denied|user cancelled|user canceled/i.test(`${err.name} ${msg}`)) return "Cancelled in wallet.";
     const logs = (err.logs ?? []).join("\n") + msg;
     if (/insufficient (funds|lamports)|0x1\b|InsufficientFundsForRent/i.test(logs)) return "Not enough SOL in this wallet for the amount plus network fees.";
     if (/TooMuchSolRequired|TooLittleSolReceived|ExceededSlippage|0x1772|0x1773|slippage/i.test(logs)) return "The price moved too much. Try again.";

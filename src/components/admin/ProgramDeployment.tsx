@@ -23,6 +23,7 @@ type SavedDeployment = {
   buffer?: string;
   programId?: string;
   signature?: string;
+  lastSignature?: string;
   sha256: string;
 };
 
@@ -56,7 +57,7 @@ export function ProgramDeployment({
 }) {
   const { connection } = useConnection();
   const queryClient = useQueryClient();
-  const { publicKey, signTransaction, signAllTransactions } = useWallet();
+  const { publicKey, signTransaction, signAllTransactions, wallet: connectedWallet } = useWallet();
   const allowed = Boolean(enabled && publicKey?.equals(ADMIN_WALLET));
   const currentAccess = useRef(allowed);
   currentAccess.current = allowed;
@@ -66,6 +67,9 @@ export function ProgramDeployment({
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
     null,
   );
+  const [bufferInput, setBufferInput] = useState("");
+  const [singleSigningChoice, setSingleSigningChoice] = useState<boolean | null>(null);
+  const singleSigning = singleSigningChoice ?? /okx/i.test(connectedWallet?.adapter.name ?? "");
   const [receipt, setReceipt] = useState<string | null>(null);
   const inFlight = useRef(false);
   const artifact = useQuery({
@@ -126,6 +130,11 @@ export function ProgramDeployment({
     const stored = readSaved();
     setSaved(stored);
     if (stored?.programId) onProgramId(stored.programId);
+    if (stored?.lastSignature) setReceipt(stored.lastSignature);
+    const linkedBuffer = new URLSearchParams(window.location.search).get("buffer");
+    if (linkedBuffer) {
+      try { setBufferInput(new PublicKey(linkedBuffer).toBase58()); } catch { /* Ignore malformed public recovery links. */ }
+    }
   }, [onProgramId]);
   useEffect(() => {
     currentAccess.current = allowed;
@@ -208,6 +217,7 @@ export function ProgramDeployment({
         sufficientBalance &&
         !existingProgram.data &&
         sameArtifact &&
+        (!bufferInput.trim() || resumeBuffer) &&
         (!resumeBuffer || buffer.data) &&
         (!saved?.buffer || !saved.programId || !existingProgram.isFetching),
     );
@@ -231,6 +241,12 @@ export function ProgramDeployment({
         artifact: artifact.data,
         ...(resumeBuffer ? { resumeBuffer } : {}),
         maxDataLen: quote.data?.maxDataLen,
+        writeBatchSize: singleSigning ? 1 : 4,
+        onTransaction: (signature) => {
+          record = { ...record, lastSignature: signature };
+          remember(record);
+          setReceipt(signature);
+        },
         onBufferCreated: (address) => {
           record = { ...record, buffer: address };
           remember(record);
@@ -282,6 +298,29 @@ export function ProgramDeployment({
         queryKey: ["admin-deployed-program"],
       });
       await quote.refetch();
+    }
+  }
+
+  async function recoverBuffer() {
+    if (!allowed || !artifact.data || inFlight.current || existingProgram.data) return;
+    inFlight.current = true;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const address = new PublicKey(bufferInput.trim());
+      if (saved?.buffer && saved.buffer !== address.toBase58()) throw new Error("Resolve the current saved buffer before switching to another upload.");
+      const inspected = await inspectDeploymentBuffer(connection, address, artifact.data);
+      if (!currentAccess.current) throw new Error("Unlock the admin dashboard to restore the upload.");
+      remember({ buffer: address.toBase58(), sha256: artifact.data.manifest.sha256 });
+      queryClient.setQueryData(["admin-deployment-buffer", address.toBase58(), artifact.data.manifest.sha256], inspected);
+      setProgress(null);
+      setMessage({ ok: true, text: "Existing buffer verified and restored. Resume uses the SOL already in this buffer; no new upload account is funded." });
+      await quote.refetch();
+    } catch (error) {
+      setMessage({ ok: false, text: errorMessage(error) });
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
     }
   }
 
@@ -412,6 +451,19 @@ export function ProgramDeployment({
           </p>
         </dl>
       ) : null}
+      {!resumeBuffer && !existingProgram.data ? (
+        <details className="mt-5 border border-line p-4" open={Boolean(bufferInput)}>
+          <summary className="cursor-pointer text-[13px] font-semibold">Recover an existing upload</summary>
+          <p className="mt-3 text-[12px] text-ink-2">Already paid for a buffer? Restore its public address before deploying. This check does not send a transaction.</p>
+          <label htmlFor="deployment-buffer" className="mt-3 block text-[12px]">Existing buffer address</label>
+          <input id="deployment-buffer" value={bufferInput} onChange={(event) => setBufferInput(event.target.value)} disabled={busy} autoComplete="off" spellCheck={false} className="mt-2 w-full rounded border border-line bg-card-2 px-3 py-2 font-mono text-[11px]" />
+          <button className="btn-secondary mt-3 px-3 py-2 text-[12px]" disabled={busy || !artifact.data || !bufferInput.trim()} onClick={() => { void recoverBuffer(); }}>Check and restore buffer</button>
+        </details>
+      ) : null}
+      <label className="mt-5 flex items-start gap-3 text-[12px] text-ink-2">
+        <input type="checkbox" checked={singleSigning} onChange={(event) => setSingleSigningChoice(event.target.checked)} disabled={busy} className="mt-0.5" />
+        <span>Sign one upload transaction at a time (recommended for OKX/mobile). Each transaction is sent before the next approval. Otherwise, approve batches of four.</span>
+      </label>
       {resumeBuffer ? (
         <div className="mt-5 border border-line bg-card-2 p-4">
           <div className="edition-label">Interrupted upload</div>
@@ -493,7 +545,7 @@ export function ProgramDeployment({
           target="_blank"
           rel="noreferrer"
         >
-          View deployment transaction ↗
+          Check last transaction status ↗
         </a>
       ) : null}
       {quote.data && !sufficientBalance ? (
