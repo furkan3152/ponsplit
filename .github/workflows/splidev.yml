@@ -41,14 +41,17 @@ jobs:
           echo "$PWD/solana-release/bin" >> "$GITHUB_PATH"
       - name: Build escrow executable
         run: |
-          cargo build-sbf --manifest-path programs/tiktok-escrow/Cargo.toml -- --locked
-          rm -f programs/tiktok-escrow/target/deploy/tiktok_escrow-keypair.json
+          node scripts/build-escrow-artifact.mjs
+          git diff --exit-code -- public/programs
       - name: Start validator with real pump.fun and escrow programs
         run: e2e/solana/validator.sh "$RUNNER_TEMP/tiksplit-ledger" --bpf-program "$NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID" programs/tiktok-escrow/target/deploy/tiktok_escrow.so
       - name: Launch, trade, distribute, verify and claim
         run: |
           node e2e/solana/build-lib.mjs
           node e2e/solana/tiktok-local.mjs
+          node e2e/solana/manual-proof-local.mjs
+      - name: Deploy, interrupt, resume and refund with the real loader
+        run: RPC=http://127.0.0.1:8899 node e2e/solana/program-deploy-local.mjs
 
   browser:
     runs-on: ubuntu-latest

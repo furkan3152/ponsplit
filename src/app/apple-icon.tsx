@@ -10,7 +10,7 @@ export default function AppleIcon() {
   const logo = LOGO_DATA_URL;
   return new ImageResponse(
     (
-      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#0b0e11" }}>
+      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#0b0c0f" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logo} width={132} height={132} alt="" />
       </div>

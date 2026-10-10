@@ -60,16 +60,15 @@ test("OAuth configuration requires a trusted exact callback and strong cookie se
   assert.equal(getAttestationConfig({ TIKTOK_ATTESTATION_URL: "https://signer.example", TIKTOK_ATTESTATION_TOKEN: "test" })?.url, "https://signer.example/");
 });
 
-test("OAuth has an unpredictable state and S256 PKCE with required official scopes", () => {
+test("web OAuth uses an unpredictable state and the documented parameters with required scopes", () => {
   const pending = newOAuthSession();
   const other = newOAuthSession();
   assert.notEqual(pending.state, other.state);
-  assert.notEqual(pending.codeVerifier, other.codeVerifier);
   const url = new URL(buildTikTokAuthorizationUrl(config, pending));
   assert.equal(url.origin, "https://www.tiktok.com");
   assert.equal(url.searchParams.get("state"), pending.state);
-  assert.equal(url.searchParams.get("code_challenge_method"), "S256");
-  assert.equal(url.searchParams.get("code_challenge"), createHash("sha256").update(pending.codeVerifier).digest("base64url"));
+  assert.equal(url.searchParams.get("code_challenge_method"), null);
+  assert.equal(url.searchParams.get("code_challenge"), null);
   assert.equal(url.searchParams.get("scope"), "user.info.basic,user.info.profile");
   assert.ok(equalOAuthState(pending.state, pending.state));
   assert.ok(!equalOAuthState(other.state, pending.state));
@@ -151,7 +150,7 @@ test("attestation accepts only the verifier signature over the unchanged transac
   assert.throws(() => validateAttestedTransaction(original, invalid.serialize(), verifier.publicKey), { code: "invalid_attestation" });
 });
 
-test("official OAuth exchanges PKCE and rejects absent profile scope or inconsistent identity", async (t) => {
+test("official web OAuth exchanges the confidential server secret and rejects scope or identity mismatch", async (t) => {
   const oldFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = oldFetch; });
   const pending = newOAuthSession();
@@ -160,7 +159,9 @@ test("official OAuth exchanges PKCE and rejects absent profile scope or inconsis
     calls++;
     if (String(input).endsWith("/oauth/token/")) {
       const body = init?.body as URLSearchParams;
-      assert.equal(body.get("code_verifier"), pending.codeVerifier);
+      assert.equal(body.get("code_verifier"), null);
+      assert.equal(body.get("client_key"), config.clientKey);
+      assert.equal(body.get("client_secret"), config.clientSecret);
       assert.equal(body.get("redirect_uri"), config.redirectUri);
       return Response.json({ access_token: "test-token", open_id: "test-account", scope: "user.info.basic,user.info.profile", expires_in: 86_400 });
     }

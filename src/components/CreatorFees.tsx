@@ -9,8 +9,8 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { useQuery } from "@tanstack/react-query";
-import bs58 from "bs58";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { CreatorProof } from "@/components/CreatorProof";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { coinImage } from "@/lib/coin-ui";
 import { errorMessage, formatSol, pct, shortAddress } from "@/lib/format";
@@ -21,34 +21,17 @@ import {
   normalizeTikTokHandle,
   tikTokProfileUrl,
 } from "@/lib/tiktok-config";
-import { distributeTransaction } from "@/lib/solana/pump";
+import {
+  assertTikTokEscrowDeployed,
+  distributeTransaction,
+} from "@/lib/solana/pump";
+import { PLATFORM_BPS } from "@/lib/solana/config";
 import {
   claimCreatorInstruction,
   creatorVaultClaimable,
 } from "@/lib/solana/tiktok-escrow";
 
-type AuthStatus = {
-  readiness: { oauth: boolean; verification: boolean };
-  session: { handle: string; displayName: string; avatar?: string } | null;
-  verificationMessage?: string;
-};
-type VerificationResponse = {
-  transaction?: string;
-  blockhash?: string;
-  lastValidBlockHeight?: number;
-  error?: string;
-};
 const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
-
-async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...init, cache: "no-store" });
-  const body = (await response.json()) as T & { error?: string };
-  if (!response.ok)
-    throw new Error(
-      body.error || "The request could not be completed. Try again.",
-    );
-  return body;
-}
 
 export function CreatorFees({
   initialHandle = "",
@@ -56,13 +39,8 @@ export function CreatorFees({
   initialHandle?: string;
 }) {
   const { connection } = useConnection();
-  const {
-    publicKey,
-    connected,
-    signMessage,
-    signTransaction,
-    signAllTransactions,
-  } = useWallet();
+  const { publicKey, connected, signTransaction, signAllTransactions } =
+    useWallet();
   const { setVisible } = useWalletModal();
   const address = publicKey?.toBase58();
   const configured = isTikTokLaunchReady();
@@ -73,38 +51,15 @@ export function CreatorFees({
   );
   const [receipts, setReceipts] = useState<string[]>([]);
   const inFlight = useRef(false);
-  const edited = useRef(Boolean(initialHandle));
   const handle = normalizeTikTokHandle(useDebounced(input, 350));
   const valid = isValidTikTokHandle(handle);
   const coins = useCoins();
-  const auth = useQuery({
-    queryKey: ["tiktok-status", address],
-    queryFn: () =>
-      requestJson<AuthStatus>(
-        `/api/tiktok/status${address ? `?wallet=${encodeURIComponent(address)}` : ""}`,
-      ),
-    staleTime: 15_000,
-    refetchOnWindowFocus: true,
-  });
   const vault = useQuery({
     queryKey: ["creator-vault", handle],
     enabled: valid && configured,
     queryFn: () => creatorVaultClaimable(connection, handle),
     refetchInterval: 15_000,
   });
-  useEffect(() => {
-    if (auth.data?.session && !edited.current) {
-      setInput(auth.data.session.handle);
-      edited.current = true;
-    }
-  }, [auth.data?.session]);
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).has("tiktok_error"))
-      setMessage({
-        ok: false,
-        text: "TikTok sign-in could not be completed. Try signing in again.",
-      });
-  }, []);
   const mine = useMemo(
     () =>
       !valid
@@ -135,9 +90,9 @@ export function CreatorFees({
     .filter(({ coin }) => coin.pendingFees > 0n || coin.graduated)
     .map(({ coin }) => coin.token);
   const beneficiary = vault.data?.beneficiary;
-  const ownsVault = Boolean(address && beneficiary === address);
-  const session = auth.data?.session;
-  const available = Boolean(auth.data?.readiness.verification && configured);
+  const ownsVault = Boolean(
+    address && beneficiary === address && vault.data?.verified,
+  );
 
   async function confirmed(signature: string) {
     for (let attempt = 0; attempt < 50; attempt++) {
@@ -171,101 +126,7 @@ export function CreatorFees({
       throw new Error(
         "Connect to Solana mainnet to verify, distribute or claim creator fees.",
       );
-  }
-
-  async function verify() {
-    if (!connected || !publicKey) {
-      setVisible(true);
-      return;
-    }
-    if (!session || !available || inFlight.current) return;
-    if (!signMessage || !signTransaction) {
-      setMessage({
-        ok: false,
-        text: "Use a wallet that supports message and transaction signing, such as Phantom or Solflare.",
-      });
-      return;
-    }
-    inFlight.current = true;
-    setMessage(null);
-    try {
-      setBusy("Preparing the wallet ownership message…");
-      await assertMainnet();
-      const status = await auth.refetch();
-      const verificationMessage = status.data?.verificationMessage;
-      if (
-        !status.data?.session ||
-        !verificationMessage ||
-        !status.data.readiness.verification
-      )
-        throw new Error(
-          "Your TikTok session or wallet challenge has expired. Sign in again.",
-        );
-      setBusy("Sign the ownership message in your wallet…");
-      const signature = bs58.encode(
-        await signMessage(new TextEncoder().encode(verificationMessage)),
-      );
-      setBusy("Verifying your TikTok account…");
-      const response = await requestJson<VerificationResponse>(
-        "/api/tiktok/verify",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ wallet: publicKey.toBase58(), signature }),
-        },
-      );
-      if (
-        !response.transaction ||
-        !response.blockhash ||
-        !Number.isSafeInteger(response.lastValidBlockHeight)
-      )
-        throw new Error(
-          "The verifier did not return a complete Solana transaction.",
-        );
-      const transaction = VersionedTransaction.deserialize(
-        Uint8Array.from(atob(response.transaction), (character) =>
-          character.charCodeAt(0),
-        ),
-      );
-      if (
-        !transaction.message.staticAccountKeys[0]?.equals(publicKey) ||
-        transaction.message.recentBlockhash !== response.blockhash
-      )
-        throw new Error(
-          "The verification transaction does not match your wallet challenge.",
-        );
-      setBusy("Approve the on-chain verification in your wallet…");
-      const signed = await signTransaction(transaction);
-      const receipt = await connection.sendRawTransaction(signed.serialize(), {
-        maxRetries: 3,
-      });
-      recordReceipt(receipt);
-      setBusy("Confirming your creator wallet…");
-      const result = await connection.confirmTransaction(
-        {
-          signature: receipt,
-          blockhash: response.blockhash,
-          lastValidBlockHeight: response.lastValidBlockHeight!,
-        },
-        "confirmed",
-      );
-      if (result.value.err)
-        throw new Error(
-          "The verification transaction failed. Check its receipt.",
-        );
-      setInput(status.data.session.handle);
-      edited.current = true;
-      setMessage({
-        ok: true,
-        text: `@${status.data.session.handle} is now linked to your wallet on Solana.`,
-      });
-      await Promise.all([auth.refetch(), vault.refetch(), coins.refetch()]);
-    } catch (e) {
-      setMessage({ ok: false, text: errorMessage(e) });
-    } finally {
-      setBusy(null);
-      inFlight.current = false;
-    }
+    await assertTikTokEscrowDeployed(connection);
   }
 
   async function claim() {
@@ -287,7 +148,7 @@ export function CreatorFees({
       setBusy("Checking your creator balance…");
       await assertMainnet();
       const current = await creatorVaultClaimable(connection, handle);
-      if (current.beneficiary !== publicKey.toBase58())
+      if (!current.verified || current.beneficiary !== publicKey.toBase58())
         throw new Error("Connect the wallet verified for this TikTok creator.");
       if (current.claimable <= 0n)
         throw new Error(
@@ -408,16 +269,6 @@ export function CreatorFees({
     }
   }
 
-  async function logout() {
-    try {
-      await requestJson("/api/tiktok/logout", { method: "POST" });
-      await auth.refetch();
-      setMessage(null);
-    } catch (e) {
-      setMessage({ ok: false, text: errorMessage(e) });
-    }
-  }
-
   return (
     <div className="space-y-7 py-4 sm:py-6">
       <header className="max-w-3xl">
@@ -428,8 +279,11 @@ export function CreatorFees({
           <span className="text-neon">Your creator fees.</span>
         </h1>
         <p className="mt-4 max-w-xl text-[16px] leading-relaxed text-ink-2">
-          Find the coins launched for your username. Verify your TikTok account,
-          bind a Solana wallet and claim the fees your community generates.
+          Find the coins launched for your username. Verify with a public TikTok
+          video, bind a Solana wallet and claim the fees your community
+          generates. New coins reserve {(10_000 - PLATFORM_BPS) / 100}% of
+          pump.fun creator fees for the TikTok beneficiary and{" "}
+          {PLATFORM_BPS / 100}% for the platform.
         </p>
       </header>
 
@@ -449,7 +303,6 @@ export function CreatorFees({
             className="input h-14 pl-9 text-[17px]"
             value={input}
             onChange={(event) => {
-              edited.current = true;
               setInput(event.target.value);
             }}
             placeholder="creator.username"
@@ -500,106 +353,23 @@ export function CreatorFees({
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-5">
-          <section className="card p-5 sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="eyebrow">01 · Prove it is you</div>
-                <h2 className="mt-2 text-[23px] font-semibold">
-                  Verify your creator account
-                </h2>
-              </div>
-              {session ? (
-                <span className="rounded-full bg-up-soft px-3 py-1 text-[11px] text-up-ink">
-                  TikTok connected
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
-              TikTok sign-in confirms your username. A signed wallet message and
-              on-chain verification then link it to your payout wallet.
-            </p>
-            {auth.isLoading ? (
-              <p className="mt-4 text-[13px] text-ink-3">
-                Checking TikTok sign-in…
+          {valid ? (
+            <CreatorProof key={handle} handle={handle} />
+          ) : (
+            <section className="editorial-panel p-5 sm:p-6">
+              <div className="edition-label">01 / Verify ownership</div>
+              <h2 className="editorial mt-2 text-[32px] leading-none">
+                Verify with a TikTok video.
+              </h2>
+              <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
+                Enter your TikTok username above, then connect your payout
+                wallet to create a unique on-chain verification code. Publish
+                the exact wallet-bound code in a public video caption, submit
+                the original video URL, and activate your wallet after admin
+                approval.
               </p>
-            ) : auth.error ? (
-              <div className="mt-4">
-                <p role="alert" className="text-[13px] text-down-ink">
-                  {errorMessage(auth.error)}
-                </p>
-                <button
-                  className="btn-secondary mt-3 px-4 py-2 text-[13px]"
-                  onClick={() => {
-                    void auth.refetch();
-                  }}
-                >
-                  Retry sign-in status
-                </button>
-              </div>
-            ) : session ? (
-              <div className="mt-5 rounded-2xl border border-line bg-card-2 p-4">
-                <div className="font-semibold">@{session.handle}</div>
-                <div className="mt-1 text-[12px] text-ink-2">
-                  {session.displayName}
-                </div>
-                <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
-                  {address
-                    ? `Payout wallet: ${shortAddress(address)}`
-                    : "Connect the Solana wallet you want to use for payouts."}{" "}
-                  Once verified, this creator wallet cannot be changed.
-                </p>
-                <button
-                  className="btn-neon mt-4 w-full py-3 text-[14px]"
-                  disabled={
-                    Boolean(busy) ||
-                    !available ||
-                    (connected && (!signMessage || !signTransaction))
-                  }
-                  onClick={() => {
-                    void verify();
-                  }}
-                >
-                  {!available
-                    ? "Wallet verification unavailable"
-                    : !connected
-                      ? "Connect payout wallet"
-                      : `Verify @${session.handle} on Solana →`}
-                </button>
-                {!available ? (
-                  <p className="mt-2 text-[12px] text-ink-3">
-                    The on-chain verification service has not been configured
-                    for this deployment.
-                  </p>
-                ) : connected && (!signMessage || !signTransaction) ? (
-                  <p className="mt-2 text-[12px] text-down-ink">
-                    Choose a wallet that supports message and transaction
-                    signing.
-                  </p>
-                ) : null}
-                <button
-                  className="mt-3 text-[12px] text-ink-3 underline hover:text-ink"
-                  disabled={Boolean(busy)}
-                  onClick={() => {
-                    void logout();
-                  }}
-                >
-                  Sign out of TikTok
-                </button>
-              </div>
-            ) : auth.data?.readiness.oauth ? (
-              <a
-                className={`btn-neon mt-5 w-full py-3.5 text-[14px] ${busy ? "pointer-events-none opacity-50" : ""}`}
-                href="/api/tiktok/login"
-              >
-                Connect TikTok account →
-              </a>
-            ) : (
-              <div className="mt-4 rounded-xl bg-card-2 p-4 text-[13px] leading-relaxed text-ink-2">
-                TikTok sign-in is not configured on this deployment. Fees can be
-                viewed below; claiming requires account verification.
-              </div>
-            )}
-          </section>
+            </section>
+          )}
 
           {valid ? (
             <section className="card p-5 sm:p-6">
@@ -713,11 +483,13 @@ export function CreatorFees({
             {valid ? `@${handle}` : "Creator escrow"}
           </h2>
           <span
-            className={`mt-3 inline-flex rounded-full px-3 py-1 text-[11px] ${beneficiary ? "bg-up-soft text-up-ink" : "bg-card-2 text-ink-3"}`}
+            className={`mt-3 inline-flex rounded-full px-3 py-1 text-[11px] ${vault.data?.verified ? "bg-up-soft text-up-ink" : "bg-card-2 text-ink-3"}`}
           >
-            {beneficiary
+            {vault.data?.verified
               ? "Wallet verified on Solana"
-              : "Awaiting creator verification"}
+              : vault.data?.approved
+                ? "Approved · awaiting wallet activation"
+                : "Awaiting video verification"}
           </span>
           <dl className="mt-6 space-y-5">
             <div>
@@ -771,7 +543,9 @@ export function CreatorFees({
             </p>
           ) : beneficiary ? (
             <p className="mt-4 text-[12px] leading-relaxed text-ink-3">
-              Verified payout wallet:{" "}
+              {vault.data?.verified
+                ? "Verified payout wallet:"
+                : "Approved payout wallet:"}{" "}
               <span className="font-mono text-ink-2">
                 {shortAddress(beneficiary)}
               </span>
@@ -783,7 +557,7 @@ export function CreatorFees({
               Boolean(busy) ||
               !valid ||
               !configured ||
-              !beneficiary ||
+              !vault.data?.verified ||
               (connected &&
                 (!ownsVault || !vault.data?.claimable || !signTransaction))
             }
@@ -791,8 +565,10 @@ export function CreatorFees({
               void claim();
             }}
           >
-            {!beneficiary
-              ? "Verify a wallet to claim"
+            {!vault.data?.verified
+              ? vault.data?.approved
+                ? "Activate approved wallet to claim"
+                : "Verify with a video to claim"
               : !connected
                 ? "Connect verified wallet"
                 : !ownsVault

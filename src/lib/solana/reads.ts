@@ -7,7 +7,7 @@ import { ExtensionType, TOKEN_2022_PROGRAM_ID, getExtensionData, unpackAccount, 
 import { unpack as unpackMetadata } from "@solana/spl-token-metadata";
 import { PUMP_SDK, feeSharingConfigPda, bondingCurvePda, creatorVaultPda, socialFeePda, Platform } from "@pump-fun/pump-sdk";
 import { canonicalPumpPoolPda, coinCreatorVaultAtaPda, coinCreatorVaultAuthorityPda, PUMP_AMM_SDK } from "@pump-fun/pump-swap-sdk";
-import { ALLOWED_PLATFORM_BPS, HIDDEN, SHARES_TOTAL, TREASURY } from "./config";
+import { ALLOWED_PLATFORM_BPS, HIDDEN, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
 import { PUMP_FEES_PROGRAM_ID, PUMP_PROGRAM_ID } from "./pump";
 import { decodeCreatorVault } from "./tiktok-escrow";
 import { isTikTokLaunchReady } from "../tiktok-config";
@@ -149,6 +149,7 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
     const reward = s.shareholders[2];
     if (reward && (!reward.address.equals(s.admin) || reward.address.equals(s.shareholders[0].address) || reward.address.equals(vaultShare.address))) return;
     const launcherBps = reward?.shareBps ?? 0;
+    if (treasuryShare0 === PLATFORM_BPS && launcherBps !== 0) return;
     let split: ReturnType<typeof creatorFeeSplit>;
     try { split = creatorFeeSplit(treasuryShare0, launcherBps); } catch { return; }
     if (vaultShare.shareBps !== split.creatorBps) return;
@@ -162,9 +163,10 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
     const treasuryShare = s.shareholders[0]?.shareBps ?? 0;
     const recipients: Recipient[] = [{
       handle: creatorVault.handle, feeAccount: vaultShare.address.toBase58(), shareBps: vaultShare.shareBps,
-      verified: Boolean(creatorVault.beneficiary), wallet: creatorVault.beneficiary?.toBase58(),
+      verified: creatorVault.verified, wallet: creatorVault.beneficiary?.toBase58(),
     }];
     const vault = vaultInfos[i]?.lamports ?? 0;
+    if (!Number.isSafeInteger(vault) || vault < 0) throw new Error("Creator fee balance exceeds safe RPC precision.");
     coins.push({
       token: s.mint.toBase58(),
       name: md.name,
@@ -193,7 +195,7 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
     const poolVaults = graduated.map((i) => coinCreatorVaultAtaPda(coinCreatorVaultAuthorityPda(configOf.get(coins[i].token)!), NATIVE_MINT, TOKEN_PROGRAM_ID));
     const poolVaultInfos = await many(c, poolVaults);
     graduated.forEach((i, j) => {
-      coins[i].pendingFees += BigInt(tokenAmount(poolVaultInfos[j], poolVaults[j]));
+      coins[i].pendingFees += tokenAmount(poolVaultInfos[j], poolVaults[j]);
     });
     const pools = await many(c, graduated.map((i) => canonicalPumpPoolPda(new PublicKey(coins[i].token))));
     const decoded = pools.map((p) => (p ? PUMP_AMM_SDK.decodePoolNullable(p) : null));
@@ -201,8 +203,8 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
     let r = 0;
     decoded.forEach((p, j) => {
       if (!p) return;
-      const base = tokenAmount(reserves[r++], p.poolBaseTokenAccount);
-      const quote = tokenAmount(reserves[r++], p.poolQuoteTokenAccount);
+      const base = Number(tokenAmount(reserves[r++], p.poolBaseTokenAccount));
+      const quote = Number(tokenAmount(reserves[r++], p.poolQuoteTokenAccount));
       // pump.fun's pools price with virtual SOL on top of the real reserve.
       const effectiveQuote = quote + Number(p.virtualQuoteReserves?.toString() ?? 0);
       const coin = coins[graduated[j]];
@@ -216,13 +218,10 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
   return coins;
 }
 
-function tokenAmount(info: AccountInfo<Buffer> | null, address: PublicKey): number {
-  if (!info) return 0;
-  try {
-    return Number(unpackAccount(address, info, info.owner).amount);
-  } catch {
-    return 0;
-  }
+function tokenAmount(info: AccountInfo<Buffer> | null, address: PublicKey): bigint {
+  if (!info) return 0n;
+  if (!info.owner.equals(TOKEN_PROGRAM_ID) && !info.owner.equals(TOKEN_2022_PROGRAM_ID)) throw new Error("Invalid pool token-account owner.");
+  return unpackAccount(address, info, info.owner).amount;
 }
 
 /** getMultipleAccountsInfo in pages of 100 (the RPC's limit). */

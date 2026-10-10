@@ -9,6 +9,7 @@ import { ESCROW_PROGRAM_ID, VERIFIER, isValidTikTokHandle, normalizeTikTokHandle
 
 export const CREATOR_VAULT_SIZE = 138;
 const MAGIC = Buffer.from("TIKVAULT");
+const APPROVED_MAGIC = Buffer.from("TIKAPPRV");
 const SEED = Buffer.from("creator");
 const ZERO = new PublicKey(new Uint8Array(32));
 
@@ -19,6 +20,8 @@ export type CreatorVault = {
   beneficiary: PublicKey | null;
   identityHash: Uint8Array;
   totalClaimed: bigint;
+  approved: boolean;
+  verified: boolean;
 };
 export type CreatorVaultBalance = {
   account: string;
@@ -26,6 +29,9 @@ export type CreatorVaultBalance = {
   exists: boolean;
   beneficiary: string | null;
   totalClaimed: bigint;
+  identityHash: Uint8Array;
+  approved: boolean;
+  verified: boolean;
 };
 
 /** TikTok handles are case insensitive, ASCII and at most 24 bytes. */
@@ -116,6 +122,18 @@ export function claimCreatorInstruction(
   });
 }
 
+/** Activates an admin-approved manual proof; only the creator signs. */
+export function activateCreatorInstruction(
+  handle: string,
+  beneficiary: PublicKey,
+  identityHash: Uint8Array,
+  config?: EscrowConfig,
+): TransactionInstruction {
+  const instruction = bindCreatorInstruction(handle, beneficiary, identityHash, config);
+  instruction.keys[0].isSigner = false;
+  return instruction;
+}
+
 /** Decode only canonical, program-owned accounts belonging to this site's verifier. */
 export function decodeCreatorVault(
   info: AccountInfo<Buffer> | null,
@@ -126,7 +144,9 @@ export function decodeCreatorVault(
   try { settings = requireConfig(config); } catch { return null; }
   if (!info || info.executable || !info.owner.equals(settings.program)) return null;
   const data = info.data;
-  if (data.length !== CREATOR_VAULT_SIZE || !data.subarray(0, 8).equals(MAGIC)) return null;
+  if (data.length !== CREATOR_VAULT_SIZE) return null;
+  const approved = data.subarray(0, 8).equals(APPROVED_MAGIC);
+  if (!approved && !data.subarray(0, 8).equals(MAGIC)) return null;
   const handleLength = data[9];
   if (!handleLength || handleLength > 24 || data.subarray(10 + handleLength, 34).some((byte) => byte !== 0)) return null;
   const handleBytes = data.subarray(10, 10 + handleLength);
@@ -141,11 +161,12 @@ export function decodeCreatorVault(
   const beneficiary = new PublicKey(data.subarray(66, 98));
   if (beneficiary.equals(verifier)) return null;
   const identityHash = Uint8Array.from(data.subarray(98, 130));
-  const verified = !beneficiary.equals(ZERO);
-  if (verified !== identityHash.some((byte) => byte !== 0)) return null;
+  const bound = !beneficiary.equals(ZERO);
+  if (bound !== identityHash.some((byte) => byte !== 0)) return null;
   const totalClaimed = data.readBigUInt64LE(130);
-  if (!verified && totalClaimed !== BigInt(0)) return null;
-  return { handle, verifier, beneficiary: verified ? beneficiary : null, identityHash, totalClaimed };
+  if ((!bound || approved) && totalClaimed !== BigInt(0)) return null;
+  if (approved && !bound) return null;
+  return { handle, verifier, beneficiary: bound ? beneficiary : null, identityHash, totalClaimed, approved, verified: bound && !approved };
 }
 
 function exactLamports(value: number): bigint {
@@ -161,7 +182,7 @@ export async function creatorVaultClaimable(
   const settings = requireConfig(config);
   const address = creatorVault(handle, settings.program, settings.verifier);
   const info = await connection.getAccountInfo(address, "confirmed");
-  if (!info) return { account: address.toBase58(), claimable: BigInt(0), exists: false, beneficiary: null, totalClaimed: BigInt(0) };
+  if (!info) return { account: address.toBase58(), claimable: BigInt(0), exists: false, beneficiary: null, totalClaimed: BigInt(0), identityHash: new Uint8Array(32), approved: false, verified: false };
   const state = decodeCreatorVault(info, address, settings);
   // A system-owned empty PDA may be prefunded before its initialization. Report
   // its balance, but keep exists=false until its program state is established.
@@ -175,5 +196,8 @@ export async function creatorVaultClaimable(
     exists: Boolean(state),
     beneficiary: state?.beneficiary?.toBase58() ?? null,
     totalClaimed: state?.totalClaimed ?? BigInt(0),
+    identityHash: state?.identityHash ?? new Uint8Array(32),
+    approved: state?.approved ?? false,
+    verified: state?.verified ?? false,
   };
 }

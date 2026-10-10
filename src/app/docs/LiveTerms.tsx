@@ -7,13 +7,12 @@ export function FeeTable() {
   const platform = PLATFORM_BPS / 100;
   const rows = [
     { part: "Tiksplit", share: pct(platform), to: "Platform treasury; fixed for the coin when its split is finalized" },
-    { part: "Launcher", share: "0–10%", to: "Optional share paid to the launcher's wallet" },
-    { part: "TikTok creator", share: `${pct(100 - platform)} minus launcher share`, to: "The remainder goes to the selected creator’s escrow account" },
+    { part: "TikTok creator", share: pct(100 - platform), to: "Paid to the selected creator’s escrow account" },
   ];
   return (
     <div className="card overflow-hidden">
       <table className="w-full text-left text-[14px]">
-        <caption className="border-b border-line px-4 py-3 text-left text-[13px] text-ink-2">How the coin&apos;s creator fees are shared</caption>
+        <caption className="border-b border-line px-4 py-3 text-left text-[13px] text-ink-2">How new coins share their creator fees</caption>
         <thead>
           <tr className="border-b border-line text-[11px] uppercase tracking-[0.12em] text-ink-3">
             <th className="px-4 py-3 font-medium">Recipient</th>
@@ -41,7 +40,7 @@ export function FeeTable() {
 export function FeeExample() {
   return (
     <p className="text-[14px] leading-relaxed text-ink-2">
-      These percentages apply to creator fees, not to the full trade amount. The selected creator receives the remainder after platform and launcher shares.
+      These percentages apply to creator fees, not to the full trade amount. New coins allocate 20% to Tiksplit and 80% to the selected TikTok creator.
       pump.fun&apos;s protocol fees are separate and can vary by market and stage; review the current transaction quote before signing.
     </p>
   );

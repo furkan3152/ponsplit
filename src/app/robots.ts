@@ -1,10 +1,10 @@
 import type { MetadataRoute } from "next";
 
-const base = process.env.NEXTAUTH_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
+const base = process.env.SITE_URL || "https://splitdev.app";
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: [{ userAgent: "*", allow: "/", disallow: ["/api/", "/setup", "/me"] }],
+    rules: [{ userAgent: "*", allow: "/", disallow: ["/api/", "/admin", "/me"] }],
     sitemap: `${base}/sitemap.xml`,
   };
 }
