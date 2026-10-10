@@ -45,11 +45,25 @@ assert.equal(quote.requiredLamports, quote.finalCostLamports + quote.walletRentL
 let savedBuffer;
 let signingBatches = 0;
 const initialAdminBalance = BigInt(await c.getBalance(admin.publicKey));
-await assert.rejects(lib.deployEscrowProgram({ connection: c, wallet: { ...wallet, signAllTransactions: async (txs) => {
+let confirmationDropped = false;
+const lastSignatures = [];
+// Real transaction succeeds on the validator, then its confirmation transport disconnects.
+const mobileConnection = new Proxy(c, { get(target, key) {
+  if (key === "confirmTransaction") return async (...args) => {
+    const result = await target.confirmTransaction(...args);
+    if (!confirmationDropped) { confirmationDropped = true; throw new Error("Mobile confirmation connection lost"); }
+    return result;
+  };
+  const value = Reflect.get(target, key, target);
+  return typeof value === "function" ? value.bind(target) : value;
+} });
+await assert.rejects(lib.deployEscrowProgram({ connection: mobileConnection, onTransaction: (signature) => lastSignatures.push(signature), wallet: { ...wallet, signAllTransactions: async (txs) => {
   if (++signingBatches === 2) throw new Error("Intentional interruption after first write batch");
   return wallet.signAllTransactions(txs);
 } }, artifact, onBufferCreated: (address) => { savedBuffer = address; } }), /Intentional interruption/);
 assert.ok(savedBuffer);
+assert.equal(confirmationDropped, true);
+assert.equal(lastSignatures.length, 5, "buffer and four writes preserve signed transaction IDs");
 const interrupted = await lib.inspectDeploymentBuffer(c, new PublicKey(savedBuffer), artifact);
 assert.ok(interrupted.writtenBytes > 0 && !interrupted.complete);
 const bufferBalance = interrupted.lamports;
@@ -60,13 +74,24 @@ assert.equal(BigInt((await c.getAccountInfo(new PublicKey(savedBuffer))).lamport
 console.log("PASS interrupted writes resumable; unauthorized loader refund rejected");
 
 let resumedBytes = 0;
-const result = await lib.deployEscrowProgram({ connection: c, wallet, artifact, resumeBuffer: new PublicKey(savedBuffer), onProgress: (progress) => { if (progress.phase === "writing") resumedBytes = Math.max(resumedBytes, progress.writtenBytes); } });
+let singleApprovals = 0;
+const singleWallet = { publicKey: admin.publicKey, signTransaction: async (tx) => {
+  // Before every new approval, the previous write must already be confirmed on chain.
+  if (singleApprovals > 0) {
+    const current = await lib.inspectDeploymentBuffer(c, new PublicKey(savedBuffer), artifact);
+    assert.ok(current.writtenBytes > interrupted.writtenBytes + (singleApprovals - 1) * lib.WRITE_CHUNK_SIZE);
+  }
+  singleApprovals++;
+  return wallet.signTransaction(tx);
+}, signAllTransactions: async () => { assert.fail("single signing must not invoke wallet batch signing"); } };
+const result = await lib.deployEscrowProgram({ connection: c, wallet: singleWallet, writeBatchSize: 1, artifact, resumeBuffer: new PublicKey(savedBuffer), onProgress: (progress) => { if (progress.phase === "writing") resumedBytes = Math.max(resumedBytes, progress.writtenBytes); } });
 assert.equal(resumedBytes, artifact.bytes.length);
+assert.equal(singleApprovals, interrupted.remainingChunks + 1);
 assert.equal(await lib.inspectDeployedProgram(c, new PublicKey(result.programId), artifact), true);
 assert.ok((await c.getAccountInfo(new PublicKey(result.programId))).executable);
 assert.equal(initialAdminBalance - BigInt(await c.getBalance(admin.publicKey)), quote.finalCostLamports, "actual completed deployment costs exactly the quoted rents and fees; buffer rent is recycled");
 assert.equal(BigInt(await c.getBalance(admin.publicKey)), quote.walletRentLamports + quote.recoveryFeeLamports);
-console.log("PASS exact minimum-budget deployment + binary readback + admin upgrade authority", result.programId);
+console.log("PASS single-transaction mobile signing, lost-confirmation recovery, exact budget and verified program", result.programId);
 // Refill only for the independent cancellation/refund scenario.
 await c.confirmTransaction(await c.requestAirdrop(admin.publicKey, 1_000_000_000), "confirmed");
 

@@ -20,6 +20,9 @@ D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm wallet only, via a locally verified
 signed wallet challenge and native wallet-signed transactions. Optional server hosting mutations
 require signed server sessions with durable Redis replay prevention in production. Program deployment
 uses hash-pinned public SBF, browser-memory temporary keys, and admin upgrade authority.
+OKX defaults to single-transaction upload signing; other wallets use four-write batches.
+Recover existing buffers by verified public address, including /admin?buffer=... links.
+Save each transaction ID before submission and reconcile confirmation transport failures on chain.
 The owner explicitly retains upgrade authority (no renounce). Admin rent recovery covers upload
 buffers and cancellation of an unused, never-configured deployment. ProgramData closure permanently
 disables the program; its small Program account rent remains locked. The panel blocks configured

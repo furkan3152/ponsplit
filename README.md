@@ -106,3 +106,7 @@ cargo build-sbf --manifest-path programs/tiktok-escrow/Cargo.toml
 ```
 
 Yerel testler yalnız validator ve throwaway test cüzdanları kullanır; gerçek pump.fun programlarıyla native paylaşım, dağıtım, creator claim, rent koruması ve proof yetkilerini kontrol eder. Local testlerin geçmesi gerçek TikTok videosunun elle incelendiği, mainnet programın deploy edildiği veya bağımsız audit yapıldığı anlamına gelmez.
+
+### Mobil cüzdanda yarım kalan program kurulumu
+
+Buffer oluşturma başarılı olup upload durursa, rent buffer hesabında kalır. Aynı buffer'dan **Resume the verified upload** ile devam edin; yeniden rent yatırılmaz. Tarayıcı kaydı kaybolduysa `/admin?buffer=<public-buffer-address>` bağlantısı veya **Recover an existing upload** alanı üzerinden **Check and restore buffer** seçin. Panel önce loader sahibini, admin yetkisini, boyutu ve mevcut byte'ları doğrular; bu kontrol işlem göndermez. OKX'te tek tek imzalama varsayılandır. Her yazma işlemi gönderilip onaylandıktan sonra yenisi imzalanır; diğer cüzdanlar en fazla dört işlemlik varsayılan gruplar kullanır. Son imzalı transaction ID gönderimden önce saklanır; bağlantı kesilirse zincirde confirmed/finalized olup olmadığı kontrol edilir. Belirsiz sonuçta yeniden ödeme yapmak yerine mevcut buffer ve işlem durumunu kontrol edin.
