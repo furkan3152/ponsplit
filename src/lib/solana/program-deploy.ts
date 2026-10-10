@@ -3,7 +3,7 @@ import { checkedDeploymentSignature, MAX_WALLET_PRIORITY_FEE_LAMPORTS } from "./
 import { sendUploadQueue } from "./deployment-upload";
 export { MAX_WALLET_PRIORITY_FEE_LAMPORTS } from "./deployment-signing";
 import {
-  Keypair, PublicKey, SystemProgram, SYSVAR_CLOCK_PUBKEY, SYSVAR_RENT_PUBKEY,
+  ComputeBudgetProgram, Keypair, PublicKey, SystemProgram, SYSVAR_CLOCK_PUBKEY, SYSVAR_RENT_PUBKEY,
   Transaction, TransactionInstruction, VersionedTransaction,
   type AccountInfo, type Connection,
 } from "@solana/web3.js";
@@ -18,7 +18,10 @@ export const BUFFER_HEADER_SIZE = 37;
 export const PROGRAM_ACCOUNT_SIZE = 36;
 export const PROGRAM_DATA_HEADER_SIZE = 45;
 export const WRITE_CHUNK_SIZE = 900;
+export const DEFAULT_UPLOAD_SIGNING_BATCH = 8;
 export const MAX_UPLOAD_SIGNING_BATCH = 80;
+export const WRITE_COMPUTE_UNIT_LIMIT = 25_000;
+export const WRITE_COMPUTE_UNIT_PRICE = 1_000;
 export const MAX_ARTIFACT_BYTES = 256 * 1024;
 export const ESCROW_ARTIFACT_MANIFEST = manifest;
 
@@ -38,6 +41,7 @@ export type DeploymentQuote = {
 export type DeployProgress = {
   phase: "checking" | "creating-buffer" | "awaiting-upload-approval" | "writing" | "simulating" | "deploying" | "complete";
   buffer: string | null; writtenBytes: number; totalBytes: number; programId?: string; signature?: string;
+  approvalTransactions?: number; approvalBatch?: number; approvalBatches?: number;
 };
 export type DeploymentBuffer = { buffer: string; writtenBytes: number; complete: boolean; lamports: bigint; remainingChunks: number };
 export type DeployResult = { programId: string; buffer: string; signature: string };
@@ -123,6 +127,19 @@ export function writeBufferInstruction(buffer: PublicKey, authority: PublicKey, 
     { pubkey: buffer, isWritable: true, isSigner: false },
     { pubkey: authority, isWritable: false, isSigner: true },
   ], data: Buffer.concat([tag(1), start, u64(bytes.length), Buffer.from(bytes)]) });
+}
+
+/** Explicit, small fee budget: upload writes transfer no SOL and allocate no accounts.
+ * A 900-byte loader write consumes under 3,000 CU on mainnet. Keep ample headroom,
+ * without leaving a mobile wallet to choose a large default for every batch item.
+ * Fee quotes and actual writes must use this same builder (25 lamports priority fee).
+ */
+export function createBufferWriteTransaction(buffer: PublicKey, authority: PublicKey, offset: number, bytes: Uint8Array): Transaction {
+  return new Transaction().add(
+    ComputeBudgetProgram.setComputeUnitLimit({ units: WRITE_COMPUTE_UNIT_LIMIT }),
+    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: WRITE_COMPUTE_UNIT_PRICE }),
+    writeBufferInstruction(buffer, authority, offset, bytes),
+  );
 }
 
 export function deployProgramInstruction(program: PublicKey, buffer: PublicKey, authority: PublicKey, maxDataLen: number): TransactionInstruction {
@@ -281,7 +298,7 @@ export async function quoteProgramDeployment(connection: Connection, authority: 
   ]);
   const [createFee, writeFee, deployFee, recoveryFeeLamports] = await Promise.all([
     fee(connection, authority, createBufferTransaction(authority, buffer, artifact.bytes.length, bufferRent)),
-    fee(connection, authority, new Transaction().add(writeBufferInstruction(buffer, authority, 0, artifact.bytes.subarray(0, WRITE_CHUNK_SIZE)))),
+    fee(connection, authority, createBufferWriteTransaction(buffer, authority, 0, artifact.bytes.subarray(0, WRITE_CHUNK_SIZE))),
     fee(connection, authority, createProgramTransaction(authority, program, buffer, maxDataLen, programRent)),
     fee(connection, authority, new Transaction().add(closeBufferInstruction(buffer, authority))),
   ]);
@@ -367,7 +384,7 @@ export async function deployEscrowProgram(options: {
 }): Promise<DeployResult> {
   const { connection, wallet, onProgress } = options;
   const authority = admin(wallet);
-  const requestedBatchSize = options.writeBatchSize ?? MAX_UPLOAD_SIGNING_BATCH;
+  const requestedBatchSize = options.writeBatchSize ?? DEFAULT_UPLOAD_SIGNING_BATCH;
   if (!Number.isInteger(requestedBatchSize) || requestedBatchSize < 1 || requestedBatchSize > MAX_UPLOAD_SIGNING_BATCH) throw new Error("Invalid upload signing batch size.");
   // A wallet without batch signing must send each signed transaction immediately.
   const batchSize = wallet.signAllTransactions ? requestedBatchSize : 1;
@@ -398,29 +415,35 @@ export async function deployEscrowProgram(options: {
   writtenBytes = artifact.bytes.length - pending.reduce((sum, chunk) => sum + chunk.bytes.length, 0);
   if (exact(await connection.getBalance(authority, "confirmed")) < remainingDeploymentBalance(quote, exact(info!.lamports), pending.length)) throw new Error("Insufficient SOL remains for deployment. The admin can close the saved buffer to recover its rent.");
   progress("writing");
-  // One approval request covers the current artifact's writes. Bounded concurrent sending
-  // avoids expiring the signed batch while waiting for each preceding confirmation.
+  // Small automatic groups keep mobile wallet approval/fee estimation bounded. A larger
+  // group is opt-in; every group uses fresh hashes and is validated before any broadcast.
   for (let start = 0; start < pending.length; start += batchSize) {
     const chunks = pending.slice(start, start + batchSize);
+    // Test the exact write and its compute limit against the real buffer before approval.
+    // This is read-only: it neither funds the buffer again nor submits an unsigned write.
+    await simulate(connection, await prepare(connection, authority, createBufferWriteTransaction(buffer, authority, chunks[0].offset, chunks[0].bytes)));
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
     const transactions = chunks.map((chunk) => {
-      const tx = new Transaction({ feePayer: authority, blockhash, lastValidBlockHeight });
-      tx.add(writeBufferInstruction(buffer!, authority, chunk.offset, chunk.bytes));
+      const tx = createBufferWriteTransaction(buffer!, authority, chunk.offset, chunk.bytes);
+      tx.feePayer = authority;
+      tx.recentBlockhash = blockhash;
+      tx.lastValidBlockHeight = lastValidBlockHeight;
       return tx;
     });
     const messages = transactions.map((transaction) => transaction.serializeMessage());
     const signed: Transaction[] = [];
-    progress("awaiting-upload-approval");
+    const approval = { approvalTransactions: chunks.length, approvalBatch: Math.floor(start / batchSize) + 1, approvalBatches: Math.ceil(pending.length / batchSize) };
+    progress("awaiting-upload-approval", approval);
     if (batchSize > 1 && wallet.signAllTransactions) signed.push(...await wallet.signAllTransactions(transactions));
     else for (const transaction of transactions) signed.push(await wallet.signTransaction(transaction));
     if (signed.length !== transactions.length) throw new Error("The wallet returned an incomplete deployment batch.");
     // Validate the ENTIRE batch before sending any of it, including every admin signature.
     const verified = signed.map((transaction, i) => checkedDeploymentSignature(messages[i], transaction, lastValidBlockHeight));
-    progress("writing");
+    progress("writing", approval);
     await sendUploadQueue(verified, async (transaction, i) => {
       await broadcast(connection, transaction, options.onTransaction);
       writtenBytes += chunks[i].bytes.length;
-      progress("writing");
+      progress("writing", approval);
     });
   }
   if (!(await inspectDeploymentBuffer(connection, buffer, artifact)).complete) throw new Error("Program buffer readback failed. Resume the saved buffer before deployment.");

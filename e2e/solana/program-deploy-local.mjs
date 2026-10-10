@@ -18,6 +18,27 @@ for (const who of [admin, attacker]) {
   await c.confirmTransaction(signature, "confirmed");
 }
 let hashRefreshes = 0, coSignatureRefreshes = 0, signatureConfirmations = 0;
+function isUploadWrite(tx) {
+  return tx.instructions.some(ix => ix.programId.equals(lib.UPGRADEABLE_LOADER) && ix.data.readUInt32LE(0) === 1);
+}
+function assertBoundedUpload(tx, { units = 25000, microLamports = 1000n } = {}) {
+  assert.equal(tx.instructions.length, 3, "uploads contain exactly two fee settings and one loader write");
+  const [limit, price, write] = tx.instructions;
+  assert.ok(limit.programId.equals(ComputeBudgetProgram.programId));
+  assert.equal(limit.data[0], 2);
+  assert.equal(limit.data.readUInt32LE(1), units);
+  assert.ok(price.programId.equals(ComputeBudgetProgram.programId));
+  assert.equal(price.data[0], 3);
+  assert.equal(price.data.readBigUInt64LE(1), microLamports);
+  assert.ok(write.programId.equals(lib.UPGRADEABLE_LOADER));
+  assert.equal(write.data.readUInt32LE(0), 1);
+  assert.ok(!tx.instructions.some(ix => ix.programId.equals(SystemProgram.programId)), "uploading must never create/fund an account or transfer SOL");
+  assert.ok(tx.serialize({ requireAllSignatures: false, verifySignatures: false }).length <= 1232, "explicit budgets must fit the Solana packet limit with a full chunk");
+}
+function replaceWalletFee(tx) {
+  tx.instructions = tx.instructions.filter(ix => !ix.programId.equals(ComputeBudgetProgram.programId));
+  tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 10000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100000 }));
+}
 async function okxStyleSign(tx) {
   const original = tx.recentBlockhash;
   // Reproduce the reported wallet behavior with real validator blockhashes, including
@@ -31,6 +52,7 @@ async function okxStyleSign(tx) {
   if (tx.signatures.some(s => s.signature && !s.publicKey.equals(admin.publicKey))) coSignatureRefreshes++;
   tx.lastValidBlockHeight = 1;
   tx.partialSign(admin);
+  assert.ok(tx.serialize({ requireAllSignatures: false, verifySignatures: false }).length <= 1232, "wallet mutation must preserve the packet limit");
   return Transaction.from(tx.serialize({ requireAllSignatures: false, verifySignatures: false }));
 }
 const wallet = {
@@ -52,6 +74,11 @@ assert.ok(quote.sufficientBalance);
 assert.equal(quote.writeTransactions, Math.ceil(artifact.bytes.length / lib.WRITE_CHUNK_SIZE));
 assert.equal(quote.finalCostLamports, quote.lockedRentLamports + quote.transactionFeesLamports);
 assert.ok(quote.requiredLamports > quote.finalCostLamports);
+assert.equal(quote.writeFeeLamports, 5025n, "the quote includes the explicit 25-lamport upload priority fee");
+assert.equal(lib.DEFAULT_UPLOAD_SIGNING_BATCH, 8);
+const quotedWrite = new Transaction({ feePayer: admin.publicKey, ...await c.getLatestBlockhash("confirmed") }).add(...lib.createBufferWriteTransaction(attacker.publicKey, admin.publicKey, 0, artifact.bytes.subarray(0, lib.WRITE_CHUNK_SIZE)).instructions);
+assertBoundedUpload(quotedWrite);
+assert.equal(BigInt((await c.getFeeForMessage(quotedWrite.compileMessage(), "confirmed")).value), quote.writeFeeLamports, "the exported write builder and live fee quote agree");
 console.log("PASS real RPC rent/fee quote", { bytes: quote.binaryBytes, transactions: quote.totalTransactions, finalCostLamports: quote.finalCostLamports.toString(), requiredLamports: quote.requiredLamports.toString() });
 
 // Prove deployment with only the advertised budget, not a generously funded test wallet.
@@ -108,9 +135,11 @@ const singleWallet = { publicKey: admin.publicKey, signTransaction: async (tx) =
     assert.ok(current.writtenBytes > interrupted.writtenBytes + (singleApprovals - 1) * lib.WRITE_CHUNK_SIZE);
   }
   singleApprovals++;
-  if (tx.instructions[0].programId.equals(lib.UPGRADEABLE_LOADER) && tx.instructions[0].data.readUInt32LE(0) === 1) {
-    tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 10000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100000 }));
-    walletAddedFees += 1000n;
+  if (isUploadWrite(tx)) {
+    assertBoundedUpload(tx);
+    replaceWalletFee(tx);
+    assertBoundedUpload(tx, { units: 10000, microLamports: 100000n });
+    walletAddedFees += 975n;
   }
   return wallet.signTransaction(tx);
 }, signAllTransactions: async () => { assert.fail("single signing must not invoke wallet batch signing"); } };
@@ -132,7 +161,7 @@ await assert.rejects(lib.deployEscrowProgram({ connection: checkedConnection, wa
 const info = await lib.inspectDeploymentBuffer(c, new PublicKey(refundable), artifact);
 const before = BigInt(await c.getBalance(admin.publicKey));
 let tamperedBatchSent = 0;
-await assert.rejects(lib.deployEscrowProgram({ connection: checkedConnection, artifact, resumeBuffer: new PublicKey(refundable), onTransaction: () => { tamperedBatchSent++; }, wallet: { ...wallet, signAllTransactions: async txs => {
+await assert.rejects(lib.deployEscrowProgram({ connection: checkedConnection, artifact, writeBatchSize: lib.MAX_UPLOAD_SIGNING_BATCH, resumeBuffer: new PublicKey(refundable), onTransaction: () => { tamperedBatchSent++; }, wallet: { ...wallet, signAllTransactions: async txs => {
   assert.equal(txs.length, quote.writeTransactions, "fast mode requests the full upload together");
   txs.at(-1).add(SystemProgram.transfer({ fromPubkey: admin.publicKey, toPubkey: attacker.publicKey, lamports: 1 }));
   return wallet.signAllTransactions(txs);
@@ -153,7 +182,7 @@ await assert.rejects(lib.closeDeploymentBuffer({ connection: checkedConnection, 
 assert.equal(BigInt(await c.getBalance(admin.publicKey)), before, "invalid/expired wallet hash fails preflight without charging fees");
 assert.equal((await lib.inspectDeploymentBuffer(c, new PublicKey(refundable), artifact)).lamports, info.lamports);
 await lib.closeDeploymentBuffer({ connection: checkedConnection, wallet: { ...wallet, signTransaction: async tx => {
-  tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 10000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100000 }));
+  replaceWalletFee(tx);
   return wallet.signTransaction(tx);
 } }, buffer: new PublicKey(refundable) });
 const after = BigInt(await c.getBalance(admin.publicKey));
@@ -187,6 +216,42 @@ assert.equal(await lib.inspectDeployedProgram(c, deployed, artifact), false);
 await assert.rejects(lib.quoteUnusedProgramRefund(c, deployed, artifact), /not an active verified/);
 console.log("PASS unused program closure: only admin receives ProgramData rent, exact fee, address rent retained, program cannot run");
 
+// Model a mobile wallet that rejects oversized signing queues. The default path must
+// complete with small batches while preserving every write and the exact quoted cost.
+const defaultBalance = BigInt(await c.getBalance(admin.publicKey));
+const defaultQuote = await lib.quoteProgramDeployment(c, admin.publicKey, artifact);
+let defaultSingleRequests = 0;
+const defaultBatchSizes = [];
+const defaultWriteSignatures = [];
+let defaultPhase = "checking";
+const compatible = await lib.deployEscrowProgram({ connection: checkedConnection, artifact,
+  onProgress: progress => { defaultPhase = progress.phase; },
+  onTransaction: signature => { if (defaultPhase === "writing") defaultWriteSignatures.push(signature); },
+  wallet: { ...wallet,
+    signTransaction: async tx => { defaultSingleRequests++; assert.ok(!isUploadWrite(tx)); return wallet.signTransaction(tx); },
+    signAllTransactions: async txs => {
+      assert.ok(txs.length <= 8, "a restrictive mobile wallet must never receive an oversized default batch");
+      defaultBatchSizes.push(txs.length);
+      for (const tx of txs) assertBoundedUpload(tx);
+      const signed = await wallet.signAllTransactions(txs);
+      for (const tx of signed) assertBoundedUpload(tx);
+      return signed;
+    },
+  },
+});
+assert.equal(defaultSingleRequests, 2);
+assert.equal(defaultBatchSizes.length, Math.ceil(defaultQuote.writeTransactions / 8));
+assert.equal(defaultBatchSizes.reduce((sum, count) => sum + count, 0), defaultQuote.writeTransactions);
+assert.equal(defaultWriteSignatures.length, defaultQuote.writeTransactions);
+for (const signature of [defaultWriteSignatures[0], defaultWriteSignatures.at(-1)]) {
+  const receipt = await c.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+  assert.ok(receipt?.meta && !receipt.meta.err);
+  assert.equal(BigInt(receipt.meta.fee), defaultQuote.writeFeeLamports, "real first/last uploads charge the quoted fee");
+}
+assert.equal(defaultBalance - BigInt(await c.getBalance(admin.publicKey)), defaultQuote.finalCostLamports, "the default small-batch deployment costs exactly its quote");
+assert.equal(await lib.inspectDeployedProgram(c, new PublicKey(compatible.programId), artifact), true);
+console.log("PASS default mobile deployment: batches of eight, explicit bounded fees, no upload transfers, exact real fees and complete verified readback", defaultBatchSizes);
+
 let fastSingleRequests = 0, fastBatchRequests = 0, activeConfirmations = 0, maxConfirmations = 0;
 const fastConnection = new Proxy(checkedConnection, { get(target, key) {
   if (key === "confirmTransaction") return async (...args) => {
@@ -198,7 +263,7 @@ const fastConnection = new Proxy(checkedConnection, { get(target, key) {
   const value = Reflect.get(target, key, target);
   return typeof value === "function" ? value.bind(target) : value;
 } });
-const second = await lib.deployEscrowProgram({ connection: fastConnection, artifact, wallet: { ...wallet,
+const second = await lib.deployEscrowProgram({ connection: fastConnection, artifact, writeBatchSize: lib.MAX_UPLOAD_SIGNING_BATCH, wallet: { ...wallet,
   signTransaction: async tx => { fastSingleRequests++; return wallet.signTransaction(tx); },
   signAllTransactions: async txs => { fastBatchRequests++; assert.equal(txs.length, quote.writeTransactions); return wallet.signAllTransactions(txs); },
 } });

@@ -16,6 +16,7 @@ import {
   quoteProgramDeployment,
   remainingDeploymentBalance,
   MAX_WALLET_PRIORITY_FEE_LAMPORTS,
+  DEFAULT_UPLOAD_SIGNING_BATCH,
   MAX_UPLOAD_SIGNING_BATCH,
   type DeployProgress,
 } from "@/lib/solana/program-deploy";
@@ -28,6 +29,28 @@ type SavedDeployment = {
   lastSignature?: string;
   sha256: string;
 };
+
+class DeploymentWalletApprovalError extends Error {
+  constructor(error: unknown) {
+    const detail = error && typeof error === "object"
+      ? error as { message?: unknown; code?: unknown; error?: unknown; cause?: unknown }
+      : null;
+    const message = typeof detail?.message === "string" ? detail.message : String(error);
+    let code = "";
+    let nested: unknown = detail;
+    // Wallet adapters often wrap the provider's original error under `error`.
+    for (let depth = 0; nested && typeof nested === "object" && depth < 3; depth++) {
+      const value = nested as { code?: unknown; error?: unknown; cause?: unknown };
+      if (typeof value.code === "number" || typeof value.code === "string") {
+        code = ` (code ${value.code})`;
+        break;
+      }
+      nested = value.error ?? value.cause;
+    }
+    super(`Wallet approval did not complete${code}: ${message}`);
+    this.name = "DeploymentWalletApprovalError";
+  }
+}
 
 function readSaved(): SavedDeployment | null {
   try {
@@ -70,8 +93,8 @@ export function ProgramDeployment({
     null,
   );
   const [bufferInput, setBufferInput] = useState("");
-  const [signingMode, setSigningMode] = useState("fast");
-  const uploadBatchSize = !signAllTransactions || signingMode === "single" ? 1 : signingMode === "small" ? 8 : MAX_UPLOAD_SIGNING_BATCH;
+  const [signingMode, setSigningMode] = useState("small");
+  const uploadBatchSize = !signAllTransactions || signingMode === "single" ? 1 : signingMode === "small" ? DEFAULT_UPLOAD_SIGNING_BATCH : MAX_UPLOAD_SIGNING_BATCH;
   const [receipt, setReceipt] = useState<string | null>(null);
   const inFlight = useRef(false);
   const artifact = useQuery({
@@ -184,27 +207,44 @@ export function ProgramDeployment({
     quote.data && requiredBalance !== undefined
       ? quote.data.balanceLamports >= requiredBalance
       : false;
+  const pendingRecovery = Boolean(bufferInput.trim() && !resumeBuffer && !existingProgram.data);
+  const balanceQuoteReady = Boolean(quote.data && !pendingRecovery && (!resumeBuffer || buffer.data));
+  const remainingWrites = resumeBuffer && buffer.data ? buffer.data.remainingChunks : quote.data?.writeTransactions ?? 0;
+  const uploadApprovals = Math.ceil(remainingWrites / uploadBatchSize);
+  const currentGroupSize = busy && progress?.approvalTransactions
+    ? progress.approvalTransactions
+    : Math.min(remainingWrites, uploadBatchSize);
+  const groupBaseFee = quote.data ? quote.data.writeFeeLamports * BigInt(currentGroupSize) : 0n;
+  const groupMaximumFee = groupBaseFee + MAX_WALLET_PRIORITY_FEE_LAMPORTS * BigInt(currentGroupSize);
   const wallet = useMemo(
     () =>
       !publicKey || !signTransaction
         ? null
         : {
             publicKey,
-            signTransaction: (transaction: Transaction) => {
+            signTransaction: async (transaction: Transaction) => {
               if (!currentAccess.current)
                 throw new Error(
                   "Unlock the dashboard with the admin wallet to continue this operation.",
                 );
-              return signTransaction(transaction);
+              try {
+                return await signTransaction(transaction);
+              } catch (error) {
+                throw new DeploymentWalletApprovalError(error);
+              }
             },
             ...(signAllTransactions
               ? {
-                  signAllTransactions: (transactions: Transaction[]) => {
+                  signAllTransactions: async (transactions: Transaction[]) => {
                     if (!currentAccess.current)
                       throw new Error(
                         "Unlock the dashboard with the admin wallet to continue this operation.",
                       );
-                    return signAllTransactions(transactions);
+                    try {
+                      return await signAllTransactions(transactions);
+                    } catch (error) {
+                      throw new DeploymentWalletApprovalError(error);
+                    }
                   },
                 }
               : {}),
@@ -229,6 +269,7 @@ export function ProgramDeployment({
     inFlight.current = true;
     setBusy(true);
     setMessage(null);
+    let latestProgress: DeployProgress | null = null;
     let record: SavedDeployment = {
       ...saved,
       sha256: artifact.data.manifest.sha256,
@@ -258,6 +299,7 @@ export function ProgramDeployment({
             throw new Error(
               "The dashboard was locked. Unlock it to resume the saved upload.",
             );
+          latestProgress = next;
           setProgress(next);
           if (next.programId || next.signature) {
             record = {
@@ -289,7 +331,20 @@ export function ProgramDeployment({
         text: "Escrow program deployed. Validate its public program ID and verifier in the configuration panel.",
       });
     } catch (error) {
-      setMessage({ ok: false, text: errorMessage(error) });
+      const uploadApprovalFailed = error instanceof DeploymentWalletApprovalError
+        && (latestProgress as DeployProgress | null)?.phase === "awaiting-upload-approval";
+      setMessage({
+        ok: false,
+        text: error instanceof DeploymentWalletApprovalError
+          ? `${error.message}${uploadApprovalFailed
+            ? ` Completed writes remain saved in the funded buffer. ${uploadBatchSize > DEFAULT_UPLOAD_SIGNING_BATCH
+              ? "Select Small batches and resume."
+              : uploadBatchSize > 1
+                ? "If the wallet continues to decline this group, select Compatibility and resume."
+                : "Check the wallet's message before retrying this write."} A write group requires only its network fees; it does not fund another buffer.`
+            : ""}`
+          : errorMessage(error),
+      });
     } finally {
       setBusy(false);
       inFlight.current = false;
@@ -406,7 +461,7 @@ export function ProgramDeployment({
         <p role="alert" className="mt-4 text-[13px] text-down-ink">
           {errorMessage(quote.error)}
         </p>
-      ) : quote.data ? (
+      ) : quote.data && balanceQuoteReady ? (
         <dl className="mt-5 space-y-3 text-[13px]">
           <div className="flex justify-between gap-4">
             <dt className="text-ink-2">Wallet balance</dt>
@@ -415,17 +470,17 @@ export function ProgramDeployment({
             </dd>
           </div>
           <div className="flex justify-between gap-4">
-            <dt className="text-ink-2">Rent remaining in deployed accounts</dt>
+            <dt className="text-ink-2">{resumeBuffer && buffer.data ? "Already funded in this buffer" : "Rent held by the deployed program"}</dt>
             <dd className="font-mono">
-              {formatSol(quote.data.lockedRentLamports, 5)} SOL
+              {formatSol(resumeBuffer && buffer.data ? buffer.data.lamports : quote.data.lockedRentLamports, 6)} SOL
             </dd>
           </div>
           <div className="flex justify-between gap-4">
-            <dt className="text-ink-2">Estimated transaction fees</dt>
+            <dt className="text-ink-2">{resumeBuffer ? "Remaining estimated network fees" : "Estimated network fees"}</dt>
             <dd className="font-mono">
               {formatSol(
                 remainingFees ?? quote.data.transactionFeesLamports,
-                5,
+                6,
               )}{" "}
               SOL
             </dd>
@@ -435,9 +490,9 @@ export function ProgramDeployment({
             <dd className="font-mono">{formatSol(resumeBuffer && buffer.data ? MAX_WALLET_PRIORITY_FEE_LAMPORTS * BigInt(buffer.data.remainingChunks + 2) : quote.data.walletFeeReserveLamports, 6)} SOL</dd>
           </div>
           <div className="flex justify-between gap-4 border-t border-line pt-3">
-            <dt className="font-semibold">Required SOL balance</dt>
+            <dt className="font-semibold">{resumeBuffer ? "Additional wallet balance needed" : "Required SOL balance"}</dt>
             <dd className="font-mono font-semibold text-neon">
-              {formatSol(requiredBalance ?? quote.data.requiredLamports, 5)} SOL
+              {formatSol(requiredBalance ?? quote.data.requiredLamports, 6)} SOL
             </dd>
           </div>
           <div className="flex justify-between gap-4">
@@ -449,17 +504,25 @@ export function ProgramDeployment({
             </dd>
           </div>
           <div className="flex justify-between gap-4">
-            <dt className="text-ink-2">Wallet approval requests</dt>
-            <dd className="font-mono text-neon">{Math.ceil((resumeBuffer && buffer.data ? buffer.data.remainingChunks : quote.data.writeTransactions) / uploadBatchSize) + (resumeBuffer ? 1 : 2)}</dd>
+            <dt className="text-ink-2">Upload approval groups</dt>
+            <dd className="font-mono text-neon">{uploadApprovals}</dd>
+          </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-ink-2">Other wallet approval requests</dt>
+            <dd className="text-right">{resumeBuffer ? "1 final deployment" : "Buffer creation + final deployment"}</dd>
           </div>
           <p className="text-[11px] leading-relaxed text-ink-3">
             {resumeBuffer && buffer.data
-              ? "SOL already in the upload buffer is credited toward deployment. This is the additional wallet balance needed."
-              : "Upload SOL is reused to fund the deployed program, so it is counted once. A small wallet and recovery reserve is included."}{" "}
-            The full workflow&apos;s final estimated cost is{" "}
-            {formatSol(quote.data.finalCostLamports, 5)} SOL. Buffer funding becomes program rent; any surplus is returned. Wallet-added priority fees are capped at 0.000005 SOL per transaction. The required balance includes their maximum reserve; unused reserve stays in your wallet.
+              ? "Your existing buffer funding will be reused for program rent. The additional balance above covers only the remaining work and a small wallet and recovery reserve."
+              : `Upload funding is reused for program rent. The full workflow's estimated final cost is ${formatSol(quote.data.finalCostLamports, 6)} SOL.`}{" "}
+            Wallet-added priority fees are capped at 0.000005 SOL per transaction. The required balance includes their maximum allowance; unused allowance stays in your wallet.
           </p>
         </dl>
+      ) : null}
+      {pendingRecovery ? (
+        <p role="status" className="mt-4 text-[13px] text-ink-2">
+          Restore the existing buffer below to calculate only the remaining cost. Its funded SOL will count toward deployment.
+        </p>
       ) : null}
       {!resumeBuffer && !existingProgram.data ? (
         <details className="mt-5 border border-line p-4" open={Boolean(bufferInput)}>
@@ -473,11 +536,26 @@ export function ProgramDeployment({
       <div className="mt-5 border border-line p-4">
         <label htmlFor="upload-signing-mode" className="block text-[13px] font-semibold">Upload approvals</label>
         <select id="upload-signing-mode" value={signAllTransactions ? signingMode : "single"} onChange={(event) => setSigningMode(event.target.value)} disabled={busy || !signAllTransactions} className="mt-2 w-full rounded border border-line bg-card-2 px-3 py-2 text-[12px]">
-          <option value="fast">Fast — approve remaining writes together</option>
-          <option value="small">Small batches — up to 8 writes per request</option>
+          <option value="small">Small batches — up to {DEFAULT_UPLOAD_SIGNING_BATCH} writes per request (recommended)</option>
+          <option value="fast">Full batch — all remaining writes (optional)</option>
           <option value="single">Compatibility — one write per request</option>
         </select>
-        <p className="mt-3 text-[12px] leading-relaxed text-ink-2">{uploadBatchSize > 1 ? "Approve the upload batch in your wallet. Signed writes are then sent automatically; the final deployment asks for a separate approval. Your wallet controls the confirmation screens inside each request." : "This mode asks for a separate approval for each write. Choose Fast when your wallet supports batch signing."} Keep this tab open until the upload finishes.</p>
+        <p className="mt-3 text-[12px] leading-relaxed text-ink-2">
+          {uploadBatchSize > 1
+            ? `Up to ${uploadBatchSize} writes are requested together. After each approval, the site sends that group and prepares the next. Your wallet controls the confirmation screens within each request.`
+            : "This mode requests a separate wallet approval for each write and sends it immediately."}{" "}
+          The first write in each group is simulated before approval. Final deployment has its own approval. Keep this tab open until the upload finishes.
+        </p>
+        {signingMode === "fast" && signAllTransactions ? (
+          <p className="mt-2 text-[12px] text-ink-2">Full batches may exceed a mobile wallet&apos;s request limit. Use Small batches if your wallet declines the request.</p>
+        ) : null}
+        {balanceQuoteReady && currentGroupSize > 0 ? (
+          <div className="mt-3 border-t border-line pt-3 text-[12px]">
+            <p className="font-semibold">{busy ? "Current" : "Next"} upload group: {currentGroupSize} writes</p>
+            <p className="mt-1 text-ink-2">Estimated network fees: {formatSol(groupBaseFee, 9)} SOL. Upper bound with wallet priority fees: {formatSol(groupMaximumFee, 9)} SOL.</p>
+            <p className="mt-1 text-ink-2">Upload writes reuse the funded buffer; they do not pay rent again.</p>
+          </div>
+        ) : null}
       </div>
       {resumeBuffer ? (
         <div className="mt-5 border border-line bg-card-2 p-4">
@@ -543,6 +621,12 @@ export function ProgramDeployment({
             max={progress.totalBytes || 1}
             value={progress.writtenBytes}
           />
+          {progress.approvalBatch && progress.approvalBatches && progress.approvalTransactions ? (
+            <p className="mt-2 text-[12px] text-ink-2">
+              Upload group {progress.approvalBatch} of {progress.approvalBatches}: {progress.approvalTransactions} writes.
+              {progress.phase === "awaiting-upload-approval" ? " Waiting for your wallet approval." : " Sending approved writes and checking confirmations."}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {message ? (
@@ -563,10 +647,10 @@ export function ProgramDeployment({
           Check last transaction status ↗
         </a>
       ) : null}
-      {quote.data && !sufficientBalance ? (
+      {quote.data && balanceQuoteReady && requiredBalance !== undefined && !sufficientBalance ? (
         <p className="mt-4 text-[12px] text-down-ink">
-          Fund {shortAddress(ADMIN_WALLET.toBase58())} with enough SOL for the
-          required balance before deploying.
+          {shortAddress(ADMIN_WALLET.toBase58())} needs {formatSol(requiredBalance - quote.data.balanceLamports, 6)} SOL more to cover this estimate.
+          {resumeBuffer ? " Existing buffer funding is already included." : ""}
         </p>
       ) : null}
       {!wallet ? (
