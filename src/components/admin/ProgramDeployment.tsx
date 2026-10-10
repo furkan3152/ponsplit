@@ -16,6 +16,7 @@ import {
   quoteProgramDeployment,
   remainingDeploymentBalance,
   MAX_WALLET_PRIORITY_FEE_LAMPORTS,
+  MAX_UPLOAD_SIGNING_BATCH,
   type DeployProgress,
 } from "@/lib/solana/program-deploy";
 
@@ -58,7 +59,7 @@ export function ProgramDeployment({
 }) {
   const { connection } = useConnection();
   const queryClient = useQueryClient();
-  const { publicKey, signTransaction, signAllTransactions, wallet: connectedWallet } = useWallet();
+  const { publicKey, signTransaction, signAllTransactions } = useWallet();
   const allowed = Boolean(enabled && publicKey?.equals(ADMIN_WALLET));
   const currentAccess = useRef(allowed);
   currentAccess.current = allowed;
@@ -69,8 +70,8 @@ export function ProgramDeployment({
     null,
   );
   const [bufferInput, setBufferInput] = useState("");
-  const [singleSigningChoice, setSingleSigningChoice] = useState<boolean | null>(null);
-  const singleSigning = singleSigningChoice ?? /okx/i.test(connectedWallet?.adapter.name ?? "");
+  const [signingMode, setSigningMode] = useState("fast");
+  const uploadBatchSize = !signAllTransactions || signingMode === "single" ? 1 : signingMode === "small" ? 8 : MAX_UPLOAD_SIGNING_BATCH;
   const [receipt, setReceipt] = useState<string | null>(null);
   const inFlight = useRef(false);
   const artifact = useQuery({
@@ -242,7 +243,7 @@ export function ProgramDeployment({
         artifact: artifact.data,
         ...(resumeBuffer ? { resumeBuffer } : {}),
         maxDataLen: quote.data?.maxDataLen,
-        writeBatchSize: singleSigning ? 1 : 4,
+        writeBatchSize: uploadBatchSize,
         onTransaction: (signature) => {
           record = { ...record, lastSignature: signature };
           remember(record);
@@ -447,6 +448,10 @@ export function ProgramDeployment({
                 : quote.data.totalTransactions}
             </dd>
           </div>
+          <div className="flex justify-between gap-4">
+            <dt className="text-ink-2">Wallet approval requests</dt>
+            <dd className="font-mono text-neon">{Math.ceil((resumeBuffer && buffer.data ? buffer.data.remainingChunks : quote.data.writeTransactions) / uploadBatchSize) + (resumeBuffer ? 1 : 2)}</dd>
+          </div>
           <p className="text-[11px] leading-relaxed text-ink-3">
             {resumeBuffer && buffer.data
               ? "SOL already in the upload buffer is credited toward deployment. This is the additional wallet balance needed."
@@ -465,10 +470,15 @@ export function ProgramDeployment({
           <button className="btn-secondary mt-3 px-3 py-2 text-[12px]" disabled={busy || !artifact.data || !bufferInput.trim()} onClick={() => { void recoverBuffer(); }}>Check and restore buffer</button>
         </details>
       ) : null}
-      <label className="mt-5 flex items-start gap-3 text-[12px] text-ink-2">
-        <input type="checkbox" checked={singleSigning} onChange={(event) => setSingleSigningChoice(event.target.checked)} disabled={busy} className="mt-0.5" />
-        <span>Sign one upload transaction at a time (recommended for OKX/mobile). Each transaction is sent before the next approval. Otherwise, approve batches of four.</span>
-      </label>
+      <div className="mt-5 border border-line p-4">
+        <label htmlFor="upload-signing-mode" className="block text-[13px] font-semibold">Upload approvals</label>
+        <select id="upload-signing-mode" value={signAllTransactions ? signingMode : "single"} onChange={(event) => setSigningMode(event.target.value)} disabled={busy || !signAllTransactions} className="mt-2 w-full rounded border border-line bg-card-2 px-3 py-2 text-[12px]">
+          <option value="fast">Fast — approve remaining writes together</option>
+          <option value="small">Small batches — up to 8 writes per request</option>
+          <option value="single">Compatibility — one write per request</option>
+        </select>
+        <p className="mt-3 text-[12px] leading-relaxed text-ink-2">{uploadBatchSize > 1 ? "Approve the upload batch in your wallet. Signed writes are then sent automatically; the final deployment asks for a separate approval. Your wallet controls the confirmation screens inside each request." : "This mode asks for a separate approval for each write. Choose Fast when your wallet supports batch signing."} Keep this tab open until the upload finishes.</p>
+      </div>
       {resumeBuffer ? (
         <div className="mt-5 border border-line bg-card-2 p-4">
           <div className="edition-label">Interrupted upload</div>
@@ -577,7 +587,7 @@ export function ProgramDeployment({
             : existingProgram.data
               ? "Verified program is already deployed"
               : resumeBuffer
-                ? "Resume the verified upload →"
+                ? uploadBatchSize > 1 ? "Resume with batch signing →" : "Resume the verified upload →"
                 : "Deploy escrow on mainnet →"}
         </button>
         <button
