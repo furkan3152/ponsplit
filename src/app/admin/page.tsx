@@ -443,6 +443,9 @@ export default function AdminPage() {
               </div>
             </div>
           </section>
+          <nav aria-label="Admin shortcuts" className="flex flex-wrap gap-3">
+            <a href="#rent-recovery" className="btn-secondary px-4 py-3 text-[13px]">Rent recovery / Rent iadesi ↓</a>
+          </nav>
           <section className="editorial-panel p-5 sm:p-6">
             <div className="mb-5 border-b border-line pb-4">
               <div className="edition-label text-neon">

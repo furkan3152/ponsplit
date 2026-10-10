@@ -34,7 +34,9 @@ export function accountScanRequest(input: unknown, scope: Scope) {
   }) : null;
   const fixedScan = expected && JSON.stringify(normalizedFilters) === JSON.stringify(expected) && config.dataSlice === undefined;
   const slice = config.dataSlice as { offset?: unknown; length?: unknown } | undefined;
-  const recoveryScan = program !== FEE_PROGRAM && program !== scope.program && filters === undefined
+  // Active and unused deployment inspections both need every owned account.
+  // The route verifies the pinned bytecode and admin authority before this scan.
+  const recoveryScan = program !== FEE_PROGRAM && filters === undefined
     && slice?.offset === 0 && slice.length === 0 && Object.keys(slice).length === 2;
   if (!fixedScan && !recoveryScan) return null;
   return { request: { jsonrpc: "2.0", id: r.id, method: "getProgramAccounts", params: [program, config] }, program, verifyDeployment: Boolean(recoveryScan) };

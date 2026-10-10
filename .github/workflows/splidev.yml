@@ -52,6 +52,8 @@ jobs:
           node e2e/solana/manual-proof-local.mjs
       - name: Deploy, interrupt, resume and refund with the real loader
         run: RPC=http://127.0.0.1:8899 node e2e/solana/program-deploy-local.mjs
+      - name: Close an active escrow and verify rent refund and shutdown
+        run: ACTIVE_CLOSE_RPC_PORT=18919 node e2e/solana/program-close-active-local.mjs
 
   browser:
     runs-on: ubuntu-latest
