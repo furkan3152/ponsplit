@@ -6,6 +6,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ADMIN_WALLET } from "@/lib/admin-config";
 import { errorMessage, formatSol, shortAddress } from "@/lib/format";
+import { ESCROW_PROGRAM_ID } from "@/lib/tiktok-config";
+import deployment from "@/tiktok-deployment.json";
 import { ProgramRentRecovery } from "./ProgramRentRecovery";
 import {
   closeDeploymentBuffer,
@@ -104,19 +106,6 @@ export function ProgramDeployment({
     staleTime: Infinity,
     retry: false,
   });
-  const quote = useQuery({
-    queryKey: [
-      "admin-deployment-quote",
-      publicKey?.toBase58(),
-      artifact.data?.manifest.sha256,
-    ],
-    enabled: allowed && Boolean(artifact.data),
-    queryFn: () =>
-      quoteProgramDeployment(connection, ADMIN_WALLET, artifact.data!),
-    staleTime: 20_000,
-    refetchOnWindowFocus: true,
-    retry: false,
-  });
   const resumeBuffer = useMemo(() => {
     try {
       return saved?.buffer ? new PublicKey(saved.buffer) : undefined;
@@ -131,36 +120,62 @@ export function ProgramDeployment({
       artifact.data?.manifest.sha256,
     ],
     enabled: allowed && Boolean(resumeBuffer && artifact.data),
-    queryFn: () =>
-      inspectDeploymentBuffer(connection, resumeBuffer!, artifact.data!),
+    queryFn: async () => {
+      if (!await connection.getAccountInfo(resumeBuffer!, "confirmed")) return null;
+      return inspectDeploymentBuffer(connection, resumeBuffer!, artifact.data!);
+    },
     retry: false,
     refetchOnWindowFocus: true,
   });
+  const configuredProgramId = ESCROW_PROGRAM_ID?.toBase58();
+  const inspectedProgramId = saved?.programId || configuredProgramId;
   const existingProgram = useQuery({
     queryKey: [
       "admin-deployed-program",
-      saved?.programId,
+      inspectedProgramId,
       artifact.data?.manifest.sha256,
     ],
-    enabled: allowed && Boolean(saved?.programId && artifact.data),
+    enabled: allowed && Boolean(inspectedProgramId && artifact.data),
     queryFn: () =>
       inspectDeployedProgram(
         connection,
-        new PublicKey(saved!.programId!),
+        new PublicKey(inspectedProgramId!),
         artifact.data!,
       ),
+    retry: false,
+  });
+  const inspectConfiguredSeparately = Boolean(configuredProgramId && inspectedProgramId !== configuredProgramId);
+  const configuredProgram = useQuery({
+    queryKey: ["admin-deployed-program", configuredProgramId, artifact.data?.manifest.sha256],
+    enabled: allowed && Boolean(inspectConfiguredSeparately && artifact.data),
+    queryFn: () => inspectDeployedProgram(connection, ESCROW_PROGRAM_ID!, artifact.data!),
+    retry: false,
+  });
+  const savedProgramDeployed = Boolean(saved?.programId && existingProgram.data);
+  const configuredProgramDeployed = Boolean(inspectConfiguredSeparately ? configuredProgram.data : configuredProgramId && existingProgram.data);
+  const verifiedProgramId = configuredProgramDeployed ? configuredProgramId : existingProgram.data ? inspectedProgramId : undefined;
+  const programDeployed = Boolean(verifiedProgramId);
+  const deploymentWork = !programDeployed || Boolean(resumeBuffer && !savedProgramDeployed);
+  const programInspectionReady = (!inspectedProgramId || existingProgram.isSuccess) && (!inspectConfiguredSeparately || configuredProgram.isSuccess);
+  const deploymentInspectionReady = Boolean(resumeBuffer) || programInspectionReady;
+  const quote = useQuery({
+    queryKey: ["admin-deployment-quote", publicKey?.toBase58(), artifact.data?.manifest.sha256],
+    enabled: allowed && Boolean(artifact.data && deploymentWork && deploymentInspectionReady),
+    queryFn: () => quoteProgramDeployment(connection, ADMIN_WALLET, artifact.data!),
+    staleTime: 20_000,
+    refetchOnWindowFocus: true,
     retry: false,
   });
   useEffect(() => {
     const stored = readSaved();
     setSaved(stored);
-    if (stored?.programId) onProgramId(stored.programId);
+    if (stored?.programId || configuredProgramId) onProgramId(stored?.programId || configuredProgramId!);
     if (stored?.lastSignature) setReceipt(stored.lastSignature);
     const linkedBuffer = new URLSearchParams(window.location.search).get("buffer");
     if (linkedBuffer) {
       try { setBufferInput(new PublicKey(linkedBuffer).toBase58()); } catch { /* Ignore malformed public recovery links. */ }
     }
-  }, [onProgramId]);
+  }, [onProgramId, configuredProgramId]);
   useEffect(() => {
     currentAccess.current = allowed;
     return () => {
@@ -168,7 +183,8 @@ export function ProgramDeployment({
     };
   }, [allowed]);
   useEffect(() => {
-    if (!existingProgram.data || !saved?.programId || !saved.buffer) return;
+    // A verified deployment may coexist with an unused funded buffer. Keep its refund path.
+    if (!savedProgramDeployed || !saved?.programId || !saved.buffer || buffer.data !== null) return;
     const recovered = {
       sha256: saved.sha256,
       programId: saved.programId,
@@ -184,7 +200,7 @@ export function ProgramDeployment({
       ok: true,
       text: "The saved program is already deployed and its mainnet bytes match the verified artifact.",
     });
-  }, [existingProgram.data, saved]);
+  }, [savedProgramDeployed, saved, buffer.data]);
 
   function remember(value: SavedDeployment | null) {
     setSaved(value);
@@ -207,8 +223,8 @@ export function ProgramDeployment({
     quote.data && requiredBalance !== undefined
       ? quote.data.balanceLamports >= requiredBalance
       : false;
-  const pendingRecovery = Boolean(bufferInput.trim() && !resumeBuffer && !existingProgram.data);
-  const balanceQuoteReady = Boolean(quote.data && !pendingRecovery && (!resumeBuffer || buffer.data));
+  const pendingRecovery = Boolean(bufferInput.trim() && !resumeBuffer);
+  const balanceQuoteReady = Boolean(deploymentWork && deploymentInspectionReady && quote.data && !pendingRecovery && (!resumeBuffer || buffer.data));
   const remainingWrites = resumeBuffer && buffer.data ? buffer.data.remainingChunks : quote.data?.writeTransactions ?? 0;
   const uploadApprovals = Math.ceil(remainingWrites / uploadBatchSize);
   const currentGroupSize = busy && progress?.approvalTransactions
@@ -256,8 +272,11 @@ export function ProgramDeployment({
     Boolean(
       wallet &&
         artifact.data &&
+        deploymentWork &&
+        deploymentInspectionReady &&
         sufficientBalance &&
-        !existingProgram.data &&
+        !savedProgramDeployed &&
+        (!programDeployed || resumeBuffer) &&
         sameArtifact &&
         (!bufferInput.trim() || resumeBuffer) &&
         (!resumeBuffer || buffer.data) &&
@@ -359,7 +378,7 @@ export function ProgramDeployment({
   }
 
   async function recoverBuffer() {
-    if (!allowed || !artifact.data || inFlight.current || existingProgram.data) return;
+    if (!allowed || !artifact.data || inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     setMessage(null);
@@ -368,7 +387,7 @@ export function ProgramDeployment({
       if (saved?.buffer && saved.buffer !== address.toBase58()) throw new Error("Resolve the current saved buffer before switching to another upload.");
       const inspected = await inspectDeploymentBuffer(connection, address, artifact.data);
       if (!currentAccess.current) throw new Error("Unlock the admin dashboard to restore the upload.");
-      remember({ buffer: address.toBase58(), sha256: artifact.data.manifest.sha256 });
+      remember({ ...saved, buffer: address.toBase58(), sha256: artifact.data.manifest.sha256 });
       queryClient.setQueryData(["admin-deployment-buffer", address.toBase58(), artifact.data.manifest.sha256], inspected);
       setProgress(null);
       setMessage({ ok: true, text: "Existing buffer verified and restored. Resume uses the SOL already in this buffer; no new upload account is funded." });
@@ -416,18 +435,34 @@ export function ProgramDeployment({
   }
 
   if (!allowed) return null;
+  const deployedReceipt = verifiedProgramId === deployment.programId && artifact.data?.manifest.sha256 === deployment.artifactSha256
+    ? deployment.deploySignature
+    : verifiedProgramId === saved?.programId ? saved?.signature : undefined;
   return (
     <section className="editorial-panel p-5 sm:p-6">
-      <div className="edition-label">02 / Deploy the escrow</div>
+      <div className="edition-label">02 / Escrow program</div>
       <h2 className="editorial mt-2 text-[34px] leading-none">
-        A real mainnet program.
+        {programDeployed ? "Verified on mainnet." : "A real mainnet program."}
       </h2>
       <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
-        The verified build is uploaded to a Solana buffer, checked, then
+        {programDeployed ? "Your escrow program is deployed and its on-chain bytes match the verified build. No new deployment funding is needed. Upgrade authority stays with your admin wallet." : <>The verified build is uploaded to a Solana buffer, checked, then
         deployed with your admin wallet as upgrade authority. You approve each
         wallet transaction in this workflow. Upgrade authority stays with you;
-        this panel does not renounce it.
+        this panel does not renounce it.</>}
       </p>
+      {programDeployed ? (
+        <div role="status" className="mt-5 border border-neon bg-card-2 p-4">
+          <div className="edition-label text-neon">Escrow ready</div>
+          <a className="mt-2 block break-all font-mono text-[11px] text-neon hover:underline" href={`https://solscan.io/account/${verifiedProgramId}`} target="_blank" rel="noreferrer">{verifiedProgramId} ↗</a>
+          {deployedReceipt ? <a className="mt-3 inline-block text-[12px] text-neon hover:underline" href={`https://solscan.io/tx/${deployedReceipt}`} target="_blank" rel="noreferrer">View deployment receipt ↗</a> : null}
+          {resumeBuffer ? <p className="mt-3 text-[12px] text-ink-2">A separate upload buffer is saved below. Its refund remains available.</p> : null}
+        </div>
+      ) : inspectedProgramId && !programInspectionReady ? (
+        <div className="mt-5 border border-line p-4">
+          <p role={existingProgram.error || configuredProgram.error ? "alert" : "status"} className="text-[12px] text-ink-2">{existingProgram.error || configuredProgram.error ? "The existing program could not be verified. New deployment is paused until its mainnet status is confirmed." : "Checking the existing program on Solana mainnet before offering deployment…"}</p>
+          {existingProgram.error || configuredProgram.error ? <button className="btn-secondary mt-3 px-3 py-2 text-[12px]" disabled={busy} onClick={() => { void existingProgram.refetch(); if (inspectConfiguredSeparately) void configuredProgram.refetch(); }}>Refresh program status</button> : null}
+        </div>
+      ) : null}
       {artifact.isLoading ? (
         <p className="mt-5 text-[13px] text-ink-3">
           Loading and verifying the escrow artifact…
@@ -452,12 +487,12 @@ export function ProgramDeployment({
           </div>
         </div>
       ) : null}
-      {quote.isFetching ? (
+      {deploymentWork && quote.isFetching ? (
         <p className="mt-4 text-[12px] text-ink-3">
           Reading mainnet deployment costs and wallet balance…
         </p>
       ) : null}
-      {quote.error ? (
+      {deploymentWork && quote.error ? (
         <p role="alert" className="mt-4 text-[13px] text-down-ink">
           {errorMessage(quote.error)}
         </p>
@@ -524,7 +559,7 @@ export function ProgramDeployment({
           Restore the existing buffer below to calculate only the remaining cost. Its funded SOL will count toward deployment.
         </p>
       ) : null}
-      {!resumeBuffer && !existingProgram.data ? (
+      {!resumeBuffer ? (
         <details className="mt-5 border border-line p-4" open={Boolean(bufferInput)}>
           <summary className="cursor-pointer text-[13px] font-semibold">Recover an existing upload</summary>
           <p className="mt-3 text-[12px] text-ink-2">Already paid for a buffer? Restore its public address before deploying. This check does not send a transaction.</p>
@@ -533,7 +568,7 @@ export function ProgramDeployment({
           <button className="btn-secondary mt-3 px-3 py-2 text-[12px]" disabled={busy || !artifact.data || !bufferInput.trim()} onClick={() => { void recoverBuffer(); }}>Check and restore buffer</button>
         </details>
       ) : null}
-      <div className="mt-5 border border-line p-4">
+      {deploymentWork ? <div className="mt-5 border border-line p-4">
         <label htmlFor="upload-signing-mode" className="block text-[13px] font-semibold">Upload approvals</label>
         <select id="upload-signing-mode" value={signAllTransactions ? signingMode : "single"} onChange={(event) => setSigningMode(event.target.value)} disabled={busy || !signAllTransactions} className="mt-2 w-full rounded border border-line bg-card-2 px-3 py-2 text-[12px]">
           <option value="small">Small batches — up to {DEFAULT_UPLOAD_SIGNING_BATCH} writes per request (recommended)</option>
@@ -556,7 +591,7 @@ export function ProgramDeployment({
             <p className="mt-1 text-ink-2">Upload writes reuse the funded buffer; they do not pay rent again.</p>
           </div>
         ) : null}
-      </div>
+      </div> : null}
       {resumeBuffer ? (
         <div className="mt-5 border border-line bg-card-2 p-4">
           <div className="edition-label">Interrupted upload</div>
@@ -605,7 +640,7 @@ export function ProgramDeployment({
           </a>
         </div>
       ) : null}
-      {progress ? (
+      {deploymentWork && progress ? (
         <div aria-live="polite" className="mt-5">
           <div className="flex justify-between gap-4 text-[12px]">
             <span className="uppercase tracking-wider text-neon">
@@ -653,12 +688,12 @@ export function ProgramDeployment({
           {resumeBuffer ? " Existing buffer funding is already included." : ""}
         </p>
       ) : null}
-      {!wallet ? (
+      {deploymentWork && !wallet ? (
         <p className="mt-4 text-[12px] text-down-ink">
           This wallet must support Solana transaction signing to deploy.
         </p>
       ) : null}
-      <div className="mt-5 flex flex-wrap gap-3">
+      {deploymentWork ? <div className="mt-5 flex flex-wrap gap-3">
         <button
           className="btn-primary flex-1 px-4 py-3.5 text-[14px]"
           disabled={!ready || busy}
@@ -668,7 +703,7 @@ export function ProgramDeployment({
         >
           {busy
             ? "Deployment in progress…"
-            : existingProgram.data
+            : savedProgramDeployed
               ? "Verified program is already deployed"
               : resumeBuffer
                 ? uploadBatchSize > 1 ? "Resume with batch signing →" : "Resume the verified upload →"
@@ -683,7 +718,7 @@ export function ProgramDeployment({
         >
           Refresh cost
         </button>
-      </div>
+      </div> : null}
       <ProgramRentRecovery wallet={wallet} artifact={artifact.data} authorize={authorize} onBusyChange={setBusy} disabled={busy}
         onClosed={(programId) => {
           if (saved?.programId === programId) { remember(null); onProgramId(""); }

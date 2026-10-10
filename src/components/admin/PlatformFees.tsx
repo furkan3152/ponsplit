@@ -17,9 +17,11 @@ import { listCoins } from "@/lib/solana/reads";
 import { isTikTokLaunchReady } from "@/lib/tiktok-config";
 import type { Coin } from "@/lib/types";
 import { decode } from "@/lib/wire";
+import { checkedVersionedSignature } from "@/lib/solana/versioned-signing";
+import { sendCheckedVersionedTransaction, VersionedTransactionFailedError, VersionedTransactionPreflightError } from "@/lib/solana/versioned-send";
 
 type FeesResponse = { coins: Coin[]; pendingPlatformLamports: bigint };
-type Receipt = { signature: string; state: "pending" | "confirmed" | "failed" };
+type Receipt = { signature: string; state: "pending" | "confirmed" | "failed" | "rejected" };
 
 async function loadFees(): Promise<FeesResponse> {
   const response = await fetch("/api/admin/fees", {
@@ -125,42 +127,6 @@ export function PlatformFees({
     );
   }
 
-  async function confirmBatch(signatures: string[]) {
-    const pending = new Set(signatures);
-    let confirmed = 0;
-    let failure: unknown;
-    for (let attempt = 0; attempt < 50 && pending.size; attempt++) {
-      const waiting = [...pending];
-      const statuses = await connection
-        .getSignatureStatuses(waiting, { searchTransactionHistory: true })
-        .catch(() => null);
-      waiting.forEach((signature, index) => {
-        const status = statuses?.value[index];
-        if (status?.err) {
-          receiptState(signature, "failed");
-          pending.delete(signature);
-          failure ??= new Error(
-            "A fee distribution failed on Solana. Check its receipt.",
-          );
-        } else if (
-          status?.confirmationStatus === "confirmed" ||
-          status?.confirmationStatus === "finalized"
-        ) {
-          receiptState(signature, "confirmed");
-          pending.delete(signature);
-          confirmed++;
-        }
-      });
-      if (pending.size && attempt < 49)
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-    if (pending.size)
-      failure ??= new Error(
-        "Some transactions are still confirming. Check their receipts before retrying.",
-      );
-    return { confirmed, failure };
-  }
-
   async function collect() {
     if (!active || !publicKey || inFlight.current) return;
     if (!signAllTransactions && !signTransaction) {
@@ -208,6 +174,7 @@ export function PlatformFees({
         transactions.forEach((transaction) => {
           transaction.message.recentBlockhash = blockhash;
         });
+        const messages = transactions.map(transaction => Uint8Array.from(transaction.message.serialize()));
         assertAccess();
         setBusy(
           `Approve ${batch.length} fee distribution${batch.length === 1 ? "" : "s"} in your wallet…`,
@@ -220,30 +187,33 @@ export function PlatformFees({
           throw new Error(
             "The wallet did not sign the complete transaction group.",
           );
-        setBusy(`Broadcasting coins ${offset + 1}–${offset + batch.length}…`);
+        const verified = await Promise.all(signed.map((transaction, index) => checkedVersionedSignature(messages[index], transaction)));
+        assertAccess();
+        setBusy(`Sending and confirming coins ${offset + 1}–${offset + batch.length}…`);
         const sent = await Promise.allSettled(
-          signed.map(async (transaction) => {
+          verified.map(async (transaction) => {
             assertAccess();
-            const signature = await connection.sendRawTransaction(
-              transaction.serialize(),
-              { maxRetries: 3 },
-            );
-            setReceipts((list) => [...list, { signature, state: "pending" }]);
-            return signature;
+            let signature: string | null = null;
+            try {
+              const confirmedSignature = await sendCheckedVersionedTransaction(connection, transaction, (id) => {
+                assertAccess();
+                signature = id;
+                setReceipts((list) => list.some(receipt => receipt.signature === id) ? list : [...list, { signature: id, state: "pending" }]);
+              });
+              receiptState(confirmedSignature, "confirmed");
+              return confirmedSignature;
+            } catch (error) {
+              if (signature && error instanceof VersionedTransactionFailedError) receiptState(signature, "failed");
+              else if (signature && error instanceof VersionedTransactionPreflightError) receiptState(signature, "rejected");
+              throw error;
+            }
           }),
         );
-        const signatures: string[] = [];
         let failure: unknown;
         sent.forEach((result) => {
-          if (result.status === "fulfilled") signatures.push(result.value);
+          if (result.status === "fulfilled") confirmed++;
           else failure ??= result.reason;
         });
-        setBusy(
-          `Confirming ${signatures.length} transaction${signatures.length === 1 ? "" : "s"} on Solana…`,
-        );
-        const result = await confirmBatch(signatures);
-        confirmed += result.confirmed;
-        failure ??= result.failure;
         if (failure) throw failure;
       }
       setMessage({

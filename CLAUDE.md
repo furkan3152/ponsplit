@@ -9,6 +9,13 @@ As of 2026-10-10 the owner chose public RPC: browser wallet traffic uses PublicN
 Legacy paid SOLANA_RPC_URL / NEXT_PUBLIC_SOLANA_RPC_URL settings are ignored; only
 NEXT_PUBLIC_SOLANA_LOCAL_RPC_URL permits an exact loopback validator for tests.
 Primary site: https://www.tiksplit.com (apex redirects to www).
+Verified mainnet escrow: 2ns8wbrKD54m5ExMtyKhZiqHkjTe7aNb1Y2jRmapp7ri,
+ProgramData CMxWR9hAgmQJV911Hoyfzy9gvjgbmdTEuCDEBbKbne81. Deployment finalized on
+2026-10-10; byte-for-byte artifact and D2Ts...Wtvm upgrade authority verified on chain.
+src/tiktok-deployment.json pins public deployment metadata; tiktok-config uses it unless an
+explicit environment value overrides it. Empty string explicitly disables setup in CI.
+Do not deploy another program or ask the owner to fund program rent again.
+
 Default verification is a public TikTok video with the platform's full handle+beneficiary+nonce
 code, signed on-chain creator request, manual admin review pinned to the exact proof hash,
 then creator-only activation. Pending approval cannot claim. TikTok Login Kit and an external

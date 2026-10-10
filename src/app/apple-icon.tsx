@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
-/** Home-screen icon: Tiksplit's split-play mark. */
+/** Home-screen icon: the approved Tiksplit monogram. */
 export default function AppleIcon() {
   const logo = LOGO_DATA_URL;
   return new ImageResponse(

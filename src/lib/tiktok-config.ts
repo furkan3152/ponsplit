@@ -1,13 +1,14 @@
 import { PublicKey } from "@solana/web3.js";
 import { TREASURY } from "./solana/config";
 import { ADMIN_WALLET } from "./admin-config";
+import deployment from "../tiktok-deployment.json";
 
 function publicKey(value: string | undefined): PublicKey | null {
   try { return value?.trim() ? new PublicKey(value.trim()) : null; } catch { return null; }
 }
 
-/** Real deployed accounts only. An empty configuration keeps launches disabled. */
-export const ESCROW_PROGRAM_ID = publicKey(process.env.NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID);
+/** Verified public mainnet deployment. Explicit empty environment values disable setup in tests. */
+export const ESCROW_PROGRAM_ID = publicKey(process.env.NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID ?? deployment.programId);
 /** Manual video review uses the admin's native wallet; OAuth can use a separate managed signer later. */
 export const VERIFIER = publicKey(process.env.NEXT_PUBLIC_TIKSPLIT_VERIFIER || ADMIN_WALLET.toBase58());
 export const usesManualCreatorProof = () => Boolean(VERIFIER?.equals(ADMIN_WALLET));

@@ -11,6 +11,14 @@ function checkKey(value, name) {
 
 function checkSettings() {
   const s = JSON.parse(readFileSync(new URL("./src/splidev.json", import.meta.url), "utf8"));
+  const deployment = JSON.parse(readFileSync(new URL("./src/tiktok-deployment.json", import.meta.url), "utf8"));
+  const artifact = JSON.parse(readFileSync(new URL("./public/programs/tiktok-escrow.manifest.json", import.meta.url), "utf8"));
+  checkKey(deployment.programId, "src/tiktok-deployment.json programId");
+  checkKey(deployment.programData, "src/tiktok-deployment.json programData");
+  checkKey(deployment.upgradeAuthority, "src/tiktok-deployment.json upgradeAuthority");
+  if (deployment.network !== "mainnet-beta" || deployment.upgradeAuthority !== s.treasury || deployment.artifactSha256 !== artifact.sha256) {
+    throw new Error("The public mainnet deployment must match the admin treasury and pinned escrow artifact.");
+  }
   const treasury = process.env.NEXT_PUBLIC_SPLIDEV_TREASURY || s.treasury;
   if (treasury) checkKey(treasury, "src/splidev.json treasury");
   const bps = Number(process.env.NEXT_PUBLIC_SPLIDEV_PLATFORM_BPS || s.platformBps);
