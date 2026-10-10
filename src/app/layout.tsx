@@ -15,10 +15,10 @@ const sans = Figtree({ subsets: ["latin"], variable: "--font-sans" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 const editorial = Barlow_Condensed({ subsets: ["latin"], weight: ["600", "700", "800"], variable: "--font-editorial" });
 
-/** The public URL, for absolute links in share cards: explicit, else the host's production URL. */
+/** Absolute share links use the chosen production domain; preview deployments stay isolated. */
 function siteUrl(): string {
   if (process.env.SITE_URL) return process.env.SITE_URL;
-  if (process.env.VERCEL_ENV === "production" && process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  if (process.env.NODE_ENV === "production" && process.env.VERCEL_ENV !== "preview") return "https://www.tiksplit.com";
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   return "http://localhost:3000";
 }

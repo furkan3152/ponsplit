@@ -1,5 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import settings from "../../splidev.json";
+import { publicRpcEndpoint } from "./rpc";
 
 /**
  * Splitdev's settings (src/splidev.json, overridable with NEXT_PUBLIC_* variables for tests):
@@ -34,14 +35,9 @@ export const OFFICIAL_TOKEN = key(s.officialToken);
 /** Whether launches can happen: Splitdev's treasury is set. */
 export const isLive = () => Boolean(TREASURY);
 
-/** RPC endpoints, tried in order: NEXT_PUBLIC_SOLANA_RPC_URL (comma list), then the public one. */
+/** Public mainnet RPC; only the explicit local-validator override is configurable. */
 export function rpcUrls(): string[] {
-  const own = (process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "")
-    .split(",")
-    .map((u) => u.trim())
-    .filter(Boolean);
-  if (own.some((u) => /^https?:\/\/(127\.0\.0\.1|localhost)/.test(u))) return own;
-  return [...own, "https://api.mainnet-beta.solana.com"];
+  return [publicRpcEndpoint(process.env.NEXT_PUBLIC_SOLANA_LOCAL_RPC_URL)];
 }
 
 /** Each GitHub account can hold at most this many shares: pump.fun allows 10 shareholders and Splitdev is one. */

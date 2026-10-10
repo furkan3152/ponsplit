@@ -37,7 +37,7 @@ Bugün gerekenler:
 | `NEXT_PUBLIC_TIKSPLIT_ADMIN_WALLET` | Yayınlanmış admin public adresi; cüzdan imzaları bu kimlikle karşılaştırılır. |
 | `NEXT_PUBLIC_TIKSPLIT_VERIFIER` | Manual review için aynı admin public adresi. |
 | `NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID` | Güncel manual proof/approval programının gerçek mainnet public adresi. |
-| `SOLANA_RPC_URL`, `NEXT_PUBLIC_SOLANA_RPC_URL` | Server/browser mainnet RPC. Mevcut üretim RPC ayarları kullanılabilir. |
+| `NEXT_PUBLIC_SOLANA_LOCAL_RPC_URL` | Yalnız yerel validator testleri için loopback URL. Production’da boş bırakın. Browser `https://solana-rpc.publicnode.com`, server ve kısıtlı hesap taramaları resmi `https://api.mainnet-beta.solana.com` kullanır; eski `SOLANA_RPC_URL` / `NEXT_PUBLIC_SOLANA_RPC_URL` artık okunmaz. |
 | `BLOB_READ_WRITE_TOKEN` veya `PINATA_JWT` | Kalıcı görsel/metadata depolama; mevcut üretim sağlayıcısı kullanılabilir. |
 
 `/admin` içindeki varsayılan cüzdan imzalı unlock, deployment, manual review/onay ve financial işlemler için TikTok API, harici signer veya Redis gerekmez. Sadece cüzdan bağlanması uygulamanın sahiplik kanıtını onaylamaz; her zincir işlemi yetkili cüzdandan imza ister.
@@ -78,7 +78,7 @@ Açılış birden fazla Solana işlemidir; atomik değildir. Mint ile paylaşım
 | Mainnet program deployment | 10 Ekim 2026 canlı mainnet RPC teklifi: `0.324931120 SOL` rent + fee, `0.325586360 SOL` başlangıç bakiyesi. **Güncel tutarı `/admin` yeniden hesaplar.** Bu bir fiyat sorgusudur; mainnet deployment yapılmadı. |
 | Creator proof isteği | 143 byte için varsayılan yerel rent `0.00188616 SOL`; uygulama gerçek RPC tutarını gösterir. İptal/onayda rent geri döner; network ücretleri harcanır. |
 | Vercel Pro | [$20/ay + kullanım aşımı](https://vercel.com/pricing). Hobby kişisel/ticari olmayan kullanım içindir. |
-| RPC | Mevcut endpoint kullanılabilir; isteğe bağlı [Helius Developer $49/ay](https://www.helius.dev/pricing). Public RPC yoğun trafikte limitlenebilir. |
+| RPC | PublicNode mainnet, API anahtarı ve aylık RPC ücreti yok. Paylaşılan servis yoğun trafikte limitlenebilir; kesintisiz erişim garantisi yok. |
 | Redis | Bugünkü manual verification için gerekmez. İsteğe bağlı server admin otomasyonunda [Upstash Free kota veya $0.20/100 bin komut](https://upstash.com/pricing/redis); storage/bandwidth/replica kullanımını ayrıca değerlendirin. |
 | Verifier imzalayıcı | Bugünkü manual approval admin cüzdanında imzalanır; ayrı signer aboneliği gerekmez. Gelecekte OAuth attestation seçilirse sağlayıcı maliyeti ayrıdır. |
 | Storage, domain, audit | Kullanıma ve sağlayıcı/denetim kapsamına göre ayrı teklif. Mevcut storage/RPC kullanılabilir. |

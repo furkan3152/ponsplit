@@ -5,6 +5,7 @@ import { parseMetadata, safeUrl, type TokenMetadata } from "../metadata";
 import { rateLimit } from "../ratelimit";
 import { fetchPublicBytes } from "../safe-image";
 import { rpcUrls } from "./config";
+import { PUBLIC_MAINNET_RPC, PUBLIC_INDEX_RPC } from "./rpc";
 import { listCoins, many, readCoin, type Coin } from "./reads";
 import { recentTrades, type Trade } from "./trades";
 
@@ -17,9 +18,12 @@ const FRESH_MS = 5_000;
 export const CDN_CACHE = "public, max-age=0, s-maxage=10, stale-while-revalidate=20";
 
 let conn: Connection | null = null;
-/** SOLANA_RPC_URL (server only, e.g. a paid key) first, else the public endpoints. */
+/** Official public mainnet RPC supports indexed scans; no legacy paid credentials. */
 export function serverConnection(): Connection {
-  if (!conn) conn = new Connection(process.env.SOLANA_RPC_URL?.split(",")[0]?.trim() || rpcUrls()[0], "confirmed");
+  if (!conn) {
+    const endpoint = rpcUrls()[0];
+    conn = new Connection(endpoint === PUBLIC_MAINNET_RPC ? PUBLIC_INDEX_RPC : endpoint, "confirmed");
+  }
   return conn;
 }
 
