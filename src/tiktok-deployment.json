@@ -1,0 +1,8 @@
+{
+  "network": "mainnet-beta",
+  "programId": "2ns8wbrKD54m5ExMtyKhZiqHkjTe7aNb1Y2jRmapp7ri",
+  "programData": "CMxWR9hAgmQJV911Hoyfzy9gvjgbmdTEuCDEBbKbne81",
+  "upgradeAuthority": "D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm",
+  "artifactSha256": "ea990737e64d98db25d53dd3d00547a03fd8a805071e0b8e0b7a56f5bd865ea4",
+  "deploySignature": "4pUAo16ARurUCBG6aY1cduj6Ns7dA3dvgtnMAt6EUbHNZ8QoWAsDgvPXeyhtG1GPvmgCboPbeYw8eS4qZ9ivZE26"
+}

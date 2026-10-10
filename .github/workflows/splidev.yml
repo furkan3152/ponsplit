@@ -58,6 +58,8 @@ jobs:
     timeout-minutes: 20
     env:
       NEXT_TELEMETRY_DISABLED: 1
+      # Exercise fail-closed setup mode even when the repository pins a live program.
+      NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

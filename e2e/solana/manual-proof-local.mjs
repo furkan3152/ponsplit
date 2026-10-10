@@ -1,7 +1,7 @@
 // Native pump.fun + signed video-proof lifecycle on a real LOCAL validator. No actual identity claim.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { Connection, Keypair, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import { ComputeBudgetProgram, Connection, Keypair, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 
 const connection = new Connection(process.env.RPC || "http://127.0.0.1:8899", "confirmed");
 if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection.rpcEndpoint).hostname)) throw new Error("Disposable proof-test keys require a local validator.");
@@ -133,3 +133,96 @@ const cancelTransaction = await connection.getTransaction(cancelReceipt, { commi
 assert.equal(await connection.getAccountInfo(cancelAddress), null);
 assert.equal(BigInt(await connection.getBalance(owner.publicKey)) - beforeCancel, cancelRent - BigInt(cancelTransaction.meta.fee));
 console.log("PASS: prefunded proof PDAs stay usable; only creator cancels and recovers all rent minus actual fee");
+
+// Wallets may refresh a blockhash and select a bounded priority fee while signing.
+// Exercise the production checker and exact signed-ID sender against real accounts.
+async function refreshedWalletTransaction(payer, instructions, { originalTransaction, ephemeralSigners = [], units = 100_000 } = {}) {
+  const built = originalTransaction
+    ? { transaction: originalTransaction, blockhash: originalTransaction.message.recentBlockhash }
+    : await tx(payer, instructions);
+  if (ephemeralSigners.length) built.transaction.sign(ephemeralSigners);
+  const expectedMessage = Uint8Array.from(built.transaction.message.serialize());
+  let freshHash = built.blockhash;
+  for (let attempt = 0; freshHash === built.blockhash; attempt++) {
+    assert.ok(attempt < 80, "the real validator must produce a fresh blockhash");
+    freshHash = (await connection.getLatestBlockhash("processed")).blockhash;
+    if (freshHash === built.blockhash) await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  const returned = new VersionedTransaction(new TransactionMessage({
+    payerKey: payer.publicKey,
+    recentBlockhash: freshHash,
+    instructions: [
+      ComputeBudgetProgram.setComputeUnitLimit({ units }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 10_000 }),
+      ...instructions,
+    ],
+  }).compileToV0Message());
+  for (const signer of ephemeralSigners) {
+    const previousIndex = built.transaction.message.staticAccountKeys.findIndex(key => key.equals(signer.publicKey));
+    const nextIndex = returned.message.staticAccountKeys.findIndex(key => key.equals(signer.publicKey));
+    // Copy the old partial signature to reproduce a wallet refreshing the hash
+    // while retaining the now-invalid local mint signature.
+    returned.signatures[nextIndex] = Uint8Array.from(built.transaction.signatures[previousIndex]);
+  }
+  returned.sign([payer]);
+  const checked = await lib.checkedVersionedSignature(expectedMessage, returned, ephemeralSigners);
+  for (const signer of ephemeralSigners) {
+    const index = returned.message.staticAccountKeys.findIndex(key => key.equals(signer.publicKey));
+    assert.notDeepEqual(checked.signatures[index], returned.signatures[index], "the stale local signature must be refreshed after verifying the wallet signature");
+  }
+  let savedSignature;
+  const signature = await lib.sendCheckedVersionedTransaction(connection, checked, id => { savedSignature = id; });
+  assert.equal(signature, savedSignature, "the exact wallet-signed ID is recorded before sending and confirmed afterward");
+  return signature;
+}
+
+const mobileHandle = "mobile.local";
+await refreshedWalletTransaction(owner, [
+  lib.initCreatorVaultInstruction(owner.publicKey, mobileHandle),
+  lib.requestCreatorProofInstruction(mobileHandle, owner.publicKey, lib.generateCreatorProofNonce()),
+  lib.attachCreatorProofVideoInstruction(mobileHandle, owner.publicKey, "1234567890123456789"),
+]);
+const mobileProof = await lib.readCreatorProof(connection, mobileHandle, owner.publicKey);
+assert.ok(mobileProof?.beneficiary.equals(owner.publicKey));
+const expectedApproval = lib.approveCreatorProofInstruction(mobileHandle, owner.publicKey, await lib.creatorProofHash(mobileProof));
+const expected = await tx(admin, [expectedApproval]);
+const expectedMessage = Uint8Array.from(expected.transaction.message.serialize());
+const changedApproval = lib.approveCreatorProofInstruction(mobileHandle, owner.publicKey, await lib.creatorProofHash(mobileProof));
+changedApproval.keys[3].pubkey = attacker.publicKey;
+const malicious = await tx(admin, [changedApproval]);
+malicious.transaction.sign([admin]);
+const ownerBeforeMutation = BigInt(await connection.getBalance(owner.publicKey));
+const adminBeforeMutation = BigInt(await connection.getBalance(admin.publicKey));
+await assert.rejects(lib.checkedVersionedSignature(expectedMessage, malicious.transaction), /Wallet transaction blocked/);
+assert.equal(BigInt(await connection.getBalance(owner.publicKey)), ownerBeforeMutation);
+assert.equal(BigInt(await connection.getBalance(admin.publicKey)), adminBeforeMutation);
+assert.equal((await lib.creatorVaultClaimable(connection, mobileHandle)).beneficiary, null);
+
+const mobileRent = BigInt((await connection.getAccountInfo(lib.creatorProof(mobileHandle, owner.publicKey))).lamports);
+const mobileBeforeCancel = BigInt(await connection.getBalance(owner.publicKey));
+const mobileCancelSignature = await refreshedWalletTransaction(owner, [lib.cancelCreatorProofInstruction(mobileHandle, owner.publicKey)]);
+const mobileCancelReceipt = await connection.getTransaction(mobileCancelSignature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+assert.equal(mobileCancelReceipt.meta.fee, 6_000, "the bounded wallet priority fee is charged exactly once");
+assert.equal(BigInt(await connection.getBalance(owner.publicKey)) - mobileBeforeCancel, mobileRent - BigInt(mobileCancelReceipt.meta.fee));
+assert.equal(await lib.readCreatorProof(connection, mobileHandle, owner.publicKey), null);
+console.log("PASS: refreshed wallet blockhash and bounded fee, changed beneficiary blocked before broadcast, exact signed-ID refund");
+
+// Actual pump.fun mint creation requires both the wallet and a temporary mint
+// signature. The production checker refreshes only the latter after hash changes.
+const mobileMint = Keypair.generate();
+const mobileUri = "https://example.com/mobile-local.json";
+const withoutCompute = transaction => TransactionMessage.decompile(transaction.message).instructions.filter(ix => !ix.programId.equals(ComputeBudgetProgram.programId));
+const originalCreate = await lib.createTikTokTransaction(connection, {
+  user: owner.publicKey, mint: mobileMint.publicKey, name: "Mobile Native Test", symbol: "MOB", uri: mobileUri,
+});
+await refreshedWalletTransaction(owner, withoutCompute(originalCreate), { originalTransaction: originalCreate, ephemeralSigners: [mobileMint], units: 400_000 });
+assert.ok((await connection.getAccountInfo(mobileMint.publicKey)).owner.equals(require("@solana/spl-token").TOKEN_2022_PROGRAM_ID));
+for (const finalize of await lib.finishTikTokLaunchTransactions(connection, owner.publicKey, mobileMint.publicKey, mobileHandle, 0)) {
+  await refreshedWalletTransaction(owner, withoutCompute(finalize), { originalTransaction: finalize, units: 400_000 });
+}
+assert.equal(await lib.tikTokLaunchState(connection, mobileMint.publicKey, { handle: mobileHandle, launcher: owner.publicKey, launcherBps: 0, metadataUri: mobileUri }), "done");
+const mobileBuy = await lib.buyTransaction(connection, owner.publicKey, mobileMint.publicKey, 10_000_000n);
+await refreshedWalletTransaction(owner, withoutCompute(mobileBuy.tx), { originalTransaction: mobileBuy.tx, units: 400_000 });
+const { OnlinePumpSdk } = require("@pump-fun/pump-sdk");
+assert.ok((await new OnlinePumpSdk(connection).fetchBondingCurve(mobileMint.publicKey)).realQuoteReserves.gtn(0));
+console.log("PASS: actual native mint co-signature refreshed, permanent split finalized and 0.01 SOL buy confirmed via checked wallet IDs");

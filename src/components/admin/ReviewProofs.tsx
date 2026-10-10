@@ -15,11 +15,13 @@ import {
 } from "@/lib/solana/creator-proof";
 import { assertTikTokEscrowDeployed } from "@/lib/solana/pump";
 import { isTikTokLaunchReady, tikTokProfileUrl, VERIFIER } from "@/lib/tiktok-config";
+import { checkedVersionedSignature } from "@/lib/solana/versioned-signing";
+import { sendCheckedVersionedTransaction, VersionedTransactionFailedError, VersionedTransactionPreflightError } from "@/lib/solana/versioned-send";
 
 type Receipt = {
   signature: string;
   handle: string;
-  state: "pending" | "confirmed" | "failed";
+  state: "pending" | "confirmed" | "failed" | "rejected";
 };
 
 function evidenceKey(proof: CreatorProof): string {
@@ -178,28 +180,20 @@ export function ReviewProofs({
       }).compileToV0Message());
       const expectedMessage = transaction.message.serialize();
       setBusy({ account: proof.account, text: "Sign the creator proof approval in your admin wallet…" });
-      const signed = await signTransaction(transaction);
+      const signed = await checkedVersionedSignature(expectedMessage, await signTransaction(transaction));
       assertAccess();
-      if (!Buffer.from(signed.message.serialize()).equals(Buffer.from(expectedMessage))) {
-        throw new Error("The wallet changed the approval transaction. No transaction was broadcast.");
-      }
       setBusy({ account: proof.account, text: "Sending the approval to Solana mainnet…" });
-      signature = await connection.sendRawTransaction(signed.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: "confirmed",
-        maxRetries: 3,
+      signature = await sendCheckedVersionedTransaction(connection, signed, (id) => {
+        signature = id;
+        setReceipts((currentReceipts) => [...currentReceipts, { signature: id, handle: current.handle, state: "pending" }]);
+        setBusy({ account: proof.account, text: "Waiting for the on-chain approval receipt…" });
       });
-      setReceipts((currentReceipts) => [...currentReceipts, { signature: signature!, handle: current.handle, state: "pending" }]);
-      setBusy({ account: proof.account, text: "Waiting for the on-chain approval receipt…" });
-      const result = await connection.confirmTransaction({ signature, ...lifetime }, "confirmed");
-      if (result.value.err) {
-        updateReceipt(signature, "failed");
-        throw new Error(`Approval failed on Solana: ${JSON.stringify(result.value.err)}`);
-      }
       updateReceipt(signature, "confirmed");
       setChecked((previous) => { const next = { ...previous }; delete next[proof.account]; return next; });
       setMessage({ ok: true, text: `@${current.handle}'s proof was approved on Solana. The creator must activate it with the requesting wallet before withdrawing fees.` });
     } catch (error) {
+      if (error instanceof VersionedTransactionFailedError) updateReceipt(error.signature, "failed");
+      if (error instanceof VersionedTransactionPreflightError) updateReceipt(error.signature, "rejected");
       setMessage({ ok: false, text: `${errorMessage(error)}${signature ? " Check the transaction receipt before submitting another approval." : ""}` });
     } finally {
       inFlight.current = false;

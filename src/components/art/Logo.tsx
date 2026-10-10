@@ -1,9 +1,8 @@
-/** An original split-play mark: the feed becomes a creator's share. */
+/** The approved Tiksplit monogram, shared with the profile image and social banner. */
 export function LogoMark({ size = 32, className }: { size?: number; className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" className={className} aria-hidden>
-      <path d="M7 4.5 22 13v14L7 35.5V4.5Z" fill="var(--lime)" />
-      <path d="m26 15.3 8.5 4.7-8.5 4.7v-9.4Z" fill="var(--coral)" />
+    <svg width={size} height={size} viewBox="24 24 144 144" fill="none" className={className} aria-hidden>
+      <image href="/brand/tiksplit-logo.png" width="192" height="192" />
     </svg>
   );
 }

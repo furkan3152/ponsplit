@@ -23,6 +23,10 @@ const { CreatorReel } = require(join(out, "CreatorReel.cjs"));
 
 const colors = { lime: "#4df3e0", coral: "#ff5a75" };
 let svg = renderToStaticMarkup(React.createElement(LogoMark, { size: 64 }));
+// Inline the approved raster mark in SVG icons so favicon/share rendering never
+// depends on an external image fetch. The small web asset preserves the approved design.
+const brandImage = readFileSync(join(root, "public/brand/tiksplit-logo.png"));
+svg = svg.replace('href="/brand/tiksplit-logo.png"', `href="data:image/png;base64,${brandImage.toString("base64")}"`);
 svg = svg.replace(/var\(--([\w-]+)(?:,\s*[^)]+)?\)/g, (m, name) => colors[name] ?? m);
 if (svg.includes("var(")) throw new Error(`unresolved color in ${svg}`);
 svg = svg.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ').replace(/ aria-hidden="true"| focusable="false"/g, "");
