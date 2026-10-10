@@ -112,7 +112,12 @@ try {
           if (await launchButton.isDisabled()) failures.push(`${viewport}: ready launch cannot open the wallet connection`);
           else {
             await launchButton.click();
-            if (!(await page.locator('.wallet-adapter-modal').isVisible())) failures.push(`${viewport}: launch wallet guard did not open the wallet modal`);
+            // First-time launch opens the existing acknowledgement before the wallet picker.
+            // Exercise the real dialog without connecting a wallet or requesting a signature.
+            const launchNotice = page.getByRole('dialog', { name: 'Before you continue', exact: true });
+            await launchNotice.waitFor({ state: 'visible' });
+            await launchNotice.getByRole('button', { name: 'I understand', exact: true }).click();
+            await page.locator('.wallet-adapter-modal').waitFor({ state: 'visible' });
             await page.locator('.wallet-adapter-modal-button-close').click();
           }
         }
