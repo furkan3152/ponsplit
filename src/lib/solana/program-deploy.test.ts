@@ -5,7 +5,7 @@ import { PublicKey, SystemProgram, Transaction, SYSVAR_CLOCK_PUBKEY, SYSVAR_RENT
 import {
   ESCROW_ARTIFACT_MANIFEST, UPGRADEABLE_LOADER, WRITE_CHUNK_SIZE, MAX_ARTIFACT_BYTES,
   initializeBufferInstruction, writeBufferInstruction, deployProgramInstruction, closeBufferInstruction,
-  programDataAddress, validateEscrowArtifact, deployEscrowProgram, closeDeploymentBuffer,
+  programDataAddress, validateEscrowArtifact, deployEscrowProgram, closeDeploymentBuffer, assertDeploymentNetwork,
   type ProgramArtifact,
 } from "./program-deploy";
 import { ADMIN_WALLET } from "../admin-config";
@@ -68,4 +68,14 @@ test("non-admin wallets are rejected before RPC access, signing, or artifact dep
   // No RPC double is needed: authorization must reject before dereferencing connection.
   await assert.rejects(deployEscrowProgram({ connection: null!, wallet, artifact }), /configured admin/);
   await assert.rejects(closeDeploymentBuffer({ connection: null!, wallet, buffer }), /configured admin/);
+});
+
+test("deployment network accepts the complete mainnet genesis hash and rejects a truncated identifier", async () => {
+  // Full hash read from the official mainnet RPC, independent of application constants.
+  const rpc = { rpcEndpoint: "https://api.mainnet-beta.solana.com", getGenesisHash: async () => "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d" };
+  await assertDeploymentNetwork(rpc as never);
+  rpc.getGenesisHash = async () => "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+  await assert.rejects(assertDeploymentNetwork(rpc as never), /mainnet/);
+  rpc.getGenesisHash = async () => SystemProgram.programId.toBase58();
+  await assert.rejects(assertDeploymentNetwork(rpc as never), /mainnet/);
 });

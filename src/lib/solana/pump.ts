@@ -16,7 +16,7 @@ import BN from "bn.js";
 import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, socialFeePda } from "@pump-fun/pump-sdk";
 import { OnlinePumpAmmSdk, PUMP_AMM_SDK, buyQuoteInput, canonicalPumpPoolPda, sellBaseInput } from "@pump-fun/pump-swap-sdk";
 import { ALLOWED_PLATFORM_BPS, LAUNCH_FEE_LAMPORTS, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
-import { ADMIN_WALLET } from "../admin-config";
+import { ADMIN_WALLET, MAINNET_GENESIS_HASH } from "../admin-config";
 import { ESCROW_PROGRAM_ID, VERIFIER, isTikTokLaunchReady, isValidTikTokHandle, normalizeTikTokHandle } from "../tiktok-config";
 import { creatorFeeSplit } from "../tiktok-fees";
 import { creatorVault, decodeCreatorVault, initCreatorVaultInstruction } from "./tiktok-escrow";
@@ -211,7 +211,7 @@ export async function assertTikTokEscrowDeployed(c: Connection) {
   const [program, genesis] = await Promise.all([c.getAccountInfo(ESCROW_PROGRAM_ID!, "confirmed"), c.getGenesisHash()]);
   const rpc = new URL(c.rpcEndpoint);
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(rpc.hostname);
-  if (genesis !== "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp" && !local) throw new Error("Tiksplit launches require Solana mainnet.");
+  if (genesis !== MAINNET_GENESIS_HASH && !local) throw new Error("Tiksplit launches require Solana mainnet.");
   if (!program?.executable) throw new Error("The configured TikTok escrow program is not deployed on this network.");
   if (!local && !await inspectDeployedProgram(c, ESCROW_PROGRAM_ID!, await loadEscrowArtifact())) throw new Error("The escrow code or upgrade authority does not match this deployment.");
 }

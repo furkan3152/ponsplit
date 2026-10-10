@@ -60,11 +60,14 @@ TikTok OAuth daha sonra opsiyonel olarak açılabilir: gerçek approved Login Ki
 
 ## 7. Geçmiş coin'ler ve bütçe
 
+**Canlı mainnet teklifi (10 Ekim 2026):** Resmi mainnet RPC üzerinden 63,552 byte ortak program için başlangıç bakiyesi `0.325586360 SOL`, final rent + fee `0.324931120 SOL` ölçüldü. Bunun `0.324556120 SOL` kısmı program rent'i, `0.000375000 SOL` kısmı 73 işlemin ücreti; başlangıç bakiyesinde ayrıca `0.000650240 SOL` cüzdan rent rezervi ve `0.000005 SOL` recovery payı var. Mainnet rent tarifesi aşağıdaki eski validator sürümünün yerel tarifesinden düşük. Bu bir teklif sorgusudur; mainnet'e program kurulmadı veya para gönderilmedi. Panel her kurulumda yeniden hesaplar. Bu ortak program tek sefer kurulur; coin oluşturma ve varsa ilk alım bütçesi ayrıca hesaplanır.
+
+
 Final olmuş eski %10 platform veya launcher paylı coin'ler kendi orijinal split'ini korur. `pastPlatformBps: [1000]` bunları okumak içindir; yeni coin'ler %20/%80 kullanır. Eski GitHub pump.fun sosyal hesapları TikTok escrow'una dönüşmez. Program/verifier değişikliği eski coin'in alıcı adresini taşımaz.
 
 | Kalem | 10 Ekim 2026 başlangıç bilgisi |
 | --- | --- |
-| Program | Güncel 63,552 byte build için yerel RPC tahmini: `0.445042440 SOL` final rent + fee, `0.445938320 SOL` başlangıç bakiyesi. Canlı mainnet tutarı `/admin` panelinde yeniden hesaplanır; bu ölçüm canlı deployment sonucu değildir. |
+| Program | 10 Ekim 2026 canlı mainnet RPC teklifi: `0.324931120 SOL` rent + fee, `0.325586360 SOL` başlangıç bakiyesi. **Güncel tutarı `/admin` yeniden hesaplar.** Bu bir fiyat sorgusudur; mainnet deployment yapılmadı. |
 | Proof hesabı | 143 byte; yerel varsayılan rent `0.00188616 SOL`, canlı tutar panelde. Rent iptal/onayda geri döner; işlem ücretleri dönmez. |
 | Vercel Pro | [$20/ay + kullanım aşımı](https://vercel.com/pricing). |
 | RPC | Mevcut RPC veya isteğe bağlı [Helius Developer $49/ay](https://www.helius.dev/pricing). |
