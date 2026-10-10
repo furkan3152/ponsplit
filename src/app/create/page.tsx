@@ -5,13 +5,11 @@ import { useRouter } from "next/navigation";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Keypair, PublicKey, type VersionedTransaction } from "@solana/web3.js";
-import { OnlinePumpSdk } from "@pump-fun/pump-sdk";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { useRiskGate } from "@/components/RiskNotice";
 import {
-  compact,
   errorMessage,
   formatSol,
   pct,
@@ -28,10 +26,8 @@ import {
 } from "@/lib/tiktok-config";
 import { LAUNCH_FEE_LAMPORTS, PLATFORM_BPS } from "@/lib/solana/config";
 import {
-  createTransaction,
+  createTikTokTransaction,
   finishTikTokLaunchTransactions,
-  firstBuyTokens,
-  newCurvePreview,
   tikTokLaunchState,
 } from "@/lib/solana/pump";
 
@@ -99,16 +95,6 @@ function updatePending(wallet: string, launch: PendingLaunch, remove = false) {
   localStorage.setItem(PENDING_KEY, JSON.stringify(all));
 }
 
-function parseSol(value: string): bigint | undefined {
-  const text = value.trim().replace(",", ".");
-  if (!text) return 0n;
-  if (!/^\d*\.?\d{0,9}$/.test(text) || text === ".") return undefined;
-  const [whole, fraction = ""] = text.split(".");
-  return (
-    BigInt(whole || "0") * 1_000_000_000n + BigInt(fraction.padEnd(9, "0"))
-  );
-}
-
 export default function CreatePage() {
   const router = useRouter();
   const { connection } = useConnection();
@@ -134,7 +120,6 @@ export default function CreatePage() {
   const [handleInput, setHandleInput] = useState("");
   const [description, setDescription] = useState("");
   const [image, setImage] = useState("");
-  const [buyInput, setBuyInput] = useState("");
   const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -145,26 +130,12 @@ export default function CreatePage() {
   const handle = normalizeTikTokHandle(handleInput);
   const launcherBps = 0;
   const creatorBps = 10_000 - PLATFORM_BPS;
-  const firstBuy = parseSol(buyInput);
   const imageUrl = image ? safeUrl(image) : undefined;
   const refreshPending = () => setPending(address ? readPending(address) : []);
   useEffect(() => {
     setPending(address ? readPending(address) : []);
   }, [address]);
 
-  const terms = useQuery({
-    queryKey: ["pump-terms"],
-    staleTime: 60_000,
-    enabled: configured,
-    queryFn: async () => {
-      const sdk = new OnlinePumpSdk(connection);
-      const [global, feeConfig] = await Promise.all([
-        sdk.fetchGlobal(),
-        sdk.fetchFeeConfig().catch(() => null),
-      ]);
-      return { global, feeConfig };
-    },
-  });
   const recovery = useQuery({
     queryKey: ["tiktok-launch-recovery", address, pending],
     enabled: Boolean(configured && address && pending.length),
@@ -216,23 +187,9 @@ export default function CreatePage() {
       list.push("Enter a valid TikTok username.");
     if (creatorBps <= 0)
       list.push("The creator must receive a positive share.");
-    if (firstBuy === undefined)
-      list.push("Enter a SOL amount with up to 9 decimals for the first buy.");
     return list;
-  }, [name, symbol, imageUrl, description, handle, creatorBps, firstBuy]);
-  const quote = useMemo(() => {
-    if (!terms.data || firstBuy === undefined) return undefined;
-    try {
-      const tokens =
-        firstBuy > 0n
-          ? firstBuyTokens(terms.data.global, terms.data.feeConfig, firstBuy)
-          : 0n;
-      return { tokens, ...newCurvePreview(terms.data.global, tokens) };
-    } catch {
-      return undefined;
-    }
-  }, [terms.data, firstBuy]);
-  const total = (firstBuy ?? 0n) + LAUNCH_FEE_LAMPORTS;
+  }, [name, symbol, imageUrl, description, handle, creatorBps]);
+  const total = LAUNCH_FEE_LAMPORTS;
   const insufficient =
     connected &&
     balance.data !== undefined &&
@@ -326,7 +283,6 @@ export default function CreatePage() {
     if (
       !ready ||
       problems.length ||
-      firstBuy === undefined ||
       uploading ||
       inFlight.current
     )
@@ -368,13 +324,12 @@ export default function CreatePage() {
         launcherBps,
         PLATFORM_BPS,
       );
-      const create = await createTransaction(connection, {
+      const create = await createTikTokTransaction(connection, {
         user: publicKey,
         mint: mint.publicKey,
         name: name.trim(),
         symbol: symbol.trim().toUpperCase(),
         uri: metadata.uri,
-        firstBuyLamports: firstBuy,
       });
       create.sign([mint]);
       const record: PendingLaunch = {
@@ -626,58 +581,25 @@ export default function CreatePage() {
           </section>
 
           <section className="card p-5 sm:p-7">
-            <div className="eyebrow">03 · Launch settings</div>
+            <div className="eyebrow">03 · Launch, then trade</div>
             <h2 className="mt-2 text-[23px] font-semibold">
-              Choose your first buy
+              Lock the split before buying
             </h2>
-            <div className="mt-5">
-              <div>
-                <label className="label" htmlFor="first-buy">
-                  First buy (SOL){" "}
-                  <span className="font-normal text-ink-3">· optional</span>
-                </label>
-                <input
-                  id="first-buy"
-                  className="input"
-                  inputMode="decimal"
-                  value={buyInput}
-                  onChange={(event) => setBuyInput(event.target.value)}
-                  placeholder="0"
-                />
-                <p className="mt-2 text-[12px] leading-relaxed text-ink-3">
-                  Bought in the same transaction as the mint. pump.fun trading
-                  fees apply.
-                </p>
-              </div>
-            </div>
-            {quote && firstBuy !== undefined && firstBuy > 0n ? (
-              <p className="mt-4 rounded-xl bg-card-2 p-3 text-[13px] text-ink-2">
-                Estimated first buy:{" "}
-                <span className="font-semibold text-ink">
-                  {compact(Number(quote.tokens) / 1e6)} ${symbol || "COIN"}
-                </span>{" "}
-                ·{" "}
-                {quote.supplyShare.toLocaleString("en-US", {
-                  maximumFractionDigits: 2,
-                })}
-                % of supply.
-              </p>
-            ) : null}
-            {terms.isError && firstBuy !== undefined && firstBuy > 0n ? (
-              <p className="mt-3 text-[13px] text-down-ink">
-                The live pump.fun quote is unavailable. Try again before buying.
-              </p>
-            ) : null}
+            <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
+              Launching creates your coin and locks its 20% / 80% creator fee
+              split. Once confirmed, the coin page opens so you can review a live
+              quote and buy with a separate wallet approval. No tokens are bought
+              during launch, and a first-trade price is not guaranteed.
+            </p>
+            <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
+              Launch uses several transactions. Until the final split is
+              confirmed, the coin is unfinished and is not listed here. If
+              interrupted, use the saved launch below to finish it.
+            </p>
           </section>
 
           <section className="card p-5 sm:p-7">
             <dl className="space-y-2 text-[13px]">
-              <div className="flex justify-between gap-4">
-                <dt className="text-ink-2">First buy</dt>
-                <dd>
-                  {firstBuy === undefined ? "—" : `${formatSol(firstBuy)} SOL`}
-                </dd>
-              </div>
               {LAUNCH_FEE_LAMPORTS > 0n ? (
                 <div className="flex justify-between gap-4">
                   <dt className="text-ink-2">Platform launch fee</dt>

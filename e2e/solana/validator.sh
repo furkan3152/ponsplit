@@ -6,10 +6,21 @@ dir="$(cd "$(dirname "$0")" && pwd)/fixtures"
 ledger="${1:-/tmp/splidev-ledger}"
 shift || true
 args=()
-for f in "$dir"/programs/*.so; do
-  id=$(basename "$f" .so)
+# Compressed snapshots retain the exact mainnet program bytes, including padding.
+program_dir="${ledger}-programs"
+mkdir -p "$program_dir"
+for f in "$dir"/programs/*.so "$dir"/programs/*.so.gz; do
+  [ -f "$f" ] || continue
+  id=$(basename "$f")
+  id=${id%.gz}
+  id=${id%.so}
   case "$id" in Token*) continue ;; esac # the validator ships the token programs
-  args+=(--upgradeable-program "$id" "$f" none)
+  program_file="$f"
+  if [[ "$f" == *.gz ]]; then
+    program_file="$program_dir/$id.so"
+    gzip -dc -- "$f" > "$program_file"
+  fi
+  args+=(--upgradeable-program "$id" "$program_file" none)
 done
 for f in "$dir"/accounts/*.json; do args+=(--account "$(basename "$f" .json)" "$f"); done
 solana-test-validator --ledger "$ledger" --reset --quiet "${args[@]}" "$@" > "$ledger.log" 2>&1 &

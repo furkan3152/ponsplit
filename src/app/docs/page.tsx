@@ -99,7 +99,7 @@ export default function DocsPage() {
               <>Open {b("Launch")} and enter the coin&apos;s name, ticker, image and any description or links.</>,
               <>Choose {b("one TikTok handle")} to receive 80% of this coin&apos;s creator fees. Check its spelling before signing.</>,
               <>Review the fixed {b("20% platform / 80% creator")} fee split before signing.</>,
-              <>Choose an optional first buy. Review the launch fee (<LaunchFee />), account rent and network fees in your wallet.</>,
+              <>Review the launch fee (<LaunchFee />), account rent and network fees in your wallet. Launch does not buy tokens. After the fee split is confirmed, open the coin page to review a live quote and buy.</>,
               <>Sign the launch transactions and wait for the app to confirm that the fee-sharing configuration is finalized.</>,
             ]} />
             <Note>

@@ -33,6 +33,7 @@ jobs:
           while read -r p; do
             [ -n "$p" ] || continue
             solana program dump -um "$p" "e2e/solana/fixtures/programs/$p.so"
+            gzip -n "e2e/solana/fixtures/programs/$p.so"
           done < e2e/solana/fixtures/programs.txt
           ls -la e2e/solana/fixtures/programs
       - name: Commit

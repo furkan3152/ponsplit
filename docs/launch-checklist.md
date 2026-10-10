@@ -2,6 +2,14 @@
 
 10 Ekim 2026. Yeni coin paylaşımı **%20 platform / %80 tek TikTok creator escrow'u**dur. Bugünkü doğrulama **orijinal TikTok videosuna admin'in elle bakmasıdır**. TikTok developer app, API, otomatik scraper veya harici signer kurulumu bugünkü akış için gerekli değildir.
 
+## Deploy öncesi son kontrol — 10 Ekim 2026
+
+72 web birim testi, production build ve 22 desktop/mobile sayfa kontrolü geçti. Ayrıca mainnet'teki pump.fun, PumpSwap ve fee programları doğrudan okunup 5 Ekim test snapshot'larının güncel sürümle farklı olduğu saptandı. Fixture programları ve ilgili hesaplar 10 Ekim mainnet verisiyle yenilendi; sıkıştırılmış `.so.gz` dosyaları programın padding dahil birebir byte'larını korur. Güncel programlarla yerel validator üzerinde açılış, ilk alımdaki %20/%80 ücret yönlendirmesi, kesintiden tamamlanma, yetkisiz claim reddi, creator claim ve PumpSwap'a geçiş/işlem/claim geçti. Bunlar mainnet üzerinde gerçek para ile yapılmış işlemler değildir.
+
+UseReels'in [10 Ekim'de okunan dokümanındaki](https://www.usereels.app/docs) temel creator ücret biriktirme/doğrulama/çekme akışı uygulanır. Bu sürüm SOL cüzdan ödemesi ve manuel TikTok video doğrulaması kullanır; UseReels'in PayPal/banka/kart ödemeleri, Clips kampanyaları, $REELS yakımı ve Pons/ETH desteği bu kapsamda yoktur. Mevcut fonksiyonların test edilmesi bütün UseReels özelliklerinin tamamlandığı veya bağımsız audit yapıldığı anlamına gelmez.
+
+Canlı program ID'si bağlanıp gerçek TikTok video kanıtı ve küçük tutarlı mainnet coin → alım → dağıtım → creator claim makbuzları doğrulanana kadar genel yayına hazır kabul etmeyin. Public runtime durumu bu kontrolde `launchesReady: false`, program adresi boştu; eksik kurulumda yeni coin açılışı kapalıdır.
+
 ## 1. Mevcut hosting'i hazırlayın
 
 - [ ] Mevcut Vercel production RPC ve Blob/Pinata storage ayarlarını koruyun; erişimleri doğrulayın.
@@ -40,6 +48,12 @@ Kod kullanıcı adı, tam cüzdan adresi ve rastgele nonce'a bağlıdır; herkes
 - [ ] Uygun kanıtı admin cüzdanıyla zincirde onaylayın. Onay proof hesabını kapatıp rent rezervini istek sahibine iade eder.
 
 Bu karar manual admin attestation'dır. Admin yanlış sahiplik kanıtını kabul ederse yanlış wallet'a onay verebilir; kaynak bağımsız denetimden geçmiş veya hatasız gibi sunulmaz. Admin'in creator escrow'undan para çekme yetkisi yoktur.
+
+## Açılış ve ilk alım kontrolü
+
+- [ ] Mint işlemi token alımı içermemeli. Uygulama ilk alımı coin sayfasında, paylaşım tamamlandıktan sonra ayrı wallet onayına bırakır.
+- [ ] Mint sonrası kesintide coin henüz listelenmemeli; kayıtlı launch aynı wallet ile tamamlanabilmeli. Bu akış atomik değildir: aradaki dış pump.fun işlemleri henüz kilitlenmemiş geçici launcher'a creator ücreti oluşturabilir.
+- [ ] Paylaşım tamamlandıktan sonraki **ilk alımın** creator ücreti de %20/%80 dağıtıma dahil olmalı; yalnız sonraki işlemleri kontrol etmek yeterli değildir.
 
 ## 5. Creator aktive edip küçük tutarlı claim'i test etsin
 
