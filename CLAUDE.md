@@ -16,6 +16,11 @@ D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm wallet only, via a locally verified
 signed wallet challenge and native wallet-signed transactions. Optional server hosting mutations
 require signed server sessions with durable Redis replay prevention in production. Program deployment
 uses hash-pinned public SBF, browser-memory temporary keys, and admin upgrade authority.
+The owner explicitly retains upgrade authority (no renounce). Admin rent recovery covers upload
+buffers and cancellation of an unused, never-configured deployment. ProgramData closure permanently
+disables the program; its small Program account rent remains locked. The panel blocks configured
+programs and any owned accounts, rechecks after wallet signing, and requires typed public program-ID
+confirmation. These RPC checks are not an atomic shutdown lock; never close a used creator program.
 The owner has no TikTok developer app yet and explicitly chose video proof to finish today.
 Use `.github/workflows/splidev.yml`'s current TikTok checks.
 Keep the existing default branch; push only there, and do not open PRs unless requested.

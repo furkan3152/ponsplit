@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { build } from "esbuild";
-import { Connection, Keypair, PublicKey, SystemProgram, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, sendAndConfirmTransaction } from "@solana/web3.js";
 
 const c = new Connection(process.env.RPC || "http://127.0.0.1:8909", "confirmed");
 if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(c.rpcEndpoint).hostname)) throw new Error("Disposable deployment keys may be used only on a local validator.");
@@ -80,3 +80,58 @@ assert.equal(await c.getAccountInfo(new PublicKey(refundable)), null);
 assert.equal(after - before, info.lamports - quote.recoveryFeeLamports);
 await assert.rejects(lib.closeDeploymentBuffer({ connection: c, wallet, buffer: new PublicKey(result.programId) }), /buffer/);
 console.log("PASS admin-only close returns all buffer rent minus actual transaction fee");
+
+
+// Close only an unused deployment, with all refunds fixed to the admin.
+const deployed = new PublicKey(result.programId);
+const refundQuote = await lib.quoteUnusedProgramRefund(c, deployed, artifact);
+assert.equal(refundQuote.refundLamports, BigInt((await c.getAccountInfo(lib.programDataAddress(deployed))).lamports));
+assert.equal(refundQuote.retainedProgramLamports, BigInt((await c.getAccountInfo(deployed)).lamports));
+await assert.rejects(sendAndConfirmTransaction(c, new Transaction().add(lib.closeProgramInstruction(deployed, attacker.publicKey)), [attacker]));
+assert.equal(await lib.inspectDeployedProgram(c, deployed, artifact), true);
+await assert.rejects(lib.closeUnusedProgram({ connection: c, wallet: { ...wallet, signTransaction: async (tx) => {
+  tx.instructions[0].keys[1].pubkey = attacker.publicKey;
+  return wallet.signTransaction(tx);
+} }, program: deployed, artifact, confirmedProgramId: deployed.toBase58() }), /wallet changed/);
+assert.equal(await lib.inspectDeployedProgram(c, deployed, artifact), true);
+await assert.rejects(lib.quoteUnusedProgramRefund(c, SystemProgram.programId, artifact), /not an active verified/);
+const beforeProgramRefund = BigInt(await c.getBalance(admin.publicKey));
+const closeSignature = await lib.closeUnusedProgram({ connection: c, wallet, program: deployed, artifact, confirmedProgramId: deployed.toBase58() });
+const closeReceipt = await c.getTransaction(closeSignature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+assert.ok(closeReceipt?.meta && !closeReceipt.meta.err);
+assert.equal(BigInt(await c.getBalance(admin.publicKey)) - beforeProgramRefund, refundQuote.refundLamports - BigInt(closeReceipt.meta.fee));
+assert.equal(await c.getAccountInfo(lib.programDataAddress(deployed)), null);
+assert.equal(BigInt((await c.getAccountInfo(deployed)).lamports), refundQuote.retainedProgramLamports);
+assert.equal(await lib.inspectDeployedProgram(c, deployed, artifact), false);
+await assert.rejects(lib.quoteUnusedProgramRefund(c, deployed, artifact), /not an active verified/);
+console.log("PASS unused program closure: only admin receives ProgramData rent, exact fee, address rent retained, program cannot run");
+
+const second = await lib.deployEscrowProgram({ connection: c, wallet, artifact });
+const secondProgram = new PublicKey(second.programId);
+// Loader v3 intentionally forbids closing in the deployment slot.
+const deploymentSlot = Number((await c.getAccountInfo(lib.programDataAddress(secondProgram), "confirmed")).data.readBigUInt64LE(4));
+for (let tries = 0; await c.getSlot("confirmed") <= deploymentSlot; tries++) {
+  assert.ok(tries < 100, "validator must advance beyond the deployment slot");
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
+let walletPromptReached = false;
+const raceHandle = Buffer.from("rent.protection");
+const [vault] = PublicKey.findProgramAddressSync([Buffer.from("creator"), admin.publicKey.toBuffer(), raceHandle], secondProgram);
+const initVault = new TransactionInstruction({ programId: secondProgram, keys: [
+  { pubkey: admin.publicKey, isSigner: true, isWritable: true },
+  { pubkey: vault, isSigner: false, isWritable: true },
+  { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+], data: Buffer.concat([Buffer.from([0, raceHandle.length]), raceHandle, admin.publicKey.toBuffer()]) });
+await assert.rejects(lib.closeUnusedProgram({ connection: c, wallet: { ...wallet, signTransaction: async (tx) => {
+  walletPromptReached = true;
+  // A creator vault appears while the close-wallet prompt is open.
+  await sendAndConfirmTransaction(c, new Transaction().add(initVault), [admin]);
+  return wallet.signTransaction(tx);
+} }, program: secondProgram, artifact, confirmedProgramId: second.programId }), /owns creator or other accounts/);
+assert.ok(walletPromptReached);
+assert.equal(await lib.inspectDeployedProgram(c, secondProgram, artifact), true);
+await assert.rejects(lib.closeUnusedProgram({ connection: c, wallet: { ...wallet, signTransaction: async () => { assert.fail("an existing vault must block before signing"); } }, program: secondProgram, artifact, confirmedProgramId: second.programId }), /owns creator or other accounts/);
+if (process.env.NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID) {
+  await assert.rejects(lib.quoteUnusedProgramRefund(c, new PublicKey(process.env.NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID), artifact), /configured escrow program/);
+}
+console.log("PASS existing empty creator vault and accounts created during wallet approval block closure; configured program is protected");

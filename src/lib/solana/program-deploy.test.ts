@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { PublicKey, SystemProgram, Transaction, SYSVAR_CLOCK_PUBKEY, SYSVAR_RENT_PUBKEY } from "@solana/web3.js";
 import {
   ESCROW_ARTIFACT_MANIFEST, UPGRADEABLE_LOADER, WRITE_CHUNK_SIZE, MAX_ARTIFACT_BYTES,
-  initializeBufferInstruction, writeBufferInstruction, deployProgramInstruction, closeBufferInstruction,
+  initializeBufferInstruction, writeBufferInstruction, deployProgramInstruction, closeBufferInstruction, closeProgramInstruction, closeUnusedProgram,
   programDataAddress, validateEscrowArtifact, deployEscrowProgram, closeDeploymentBuffer, assertDeploymentNetwork,
   type ProgramArtifact,
 } from "./program-deploy";
@@ -46,6 +46,12 @@ test("upgradeable-loader instruction ABI preserves admin buffer/deploy/close aut
   assert.ok(deploy.keys[6].pubkey.equals(SystemProgram.programId));
   assert.ok(deploy.keys[0].pubkey.equals(authority) && deploy.keys[0].isSigner);
   assert.ok(deploy.keys[7].pubkey.equals(authority) && deploy.keys[7].isSigner);
+  const closeProgram = closeProgramInstruction(program, authority);
+  assert.equal(closeProgram.data.readUInt32LE(0), 5);
+  assert.ok(closeProgram.keys[0].pubkey.equals(programDataAddress(program)));
+  assert.ok(closeProgram.keys[1].pubkey.equals(authority) && closeProgram.keys[1].isWritable);
+  assert.ok(closeProgram.keys[2].pubkey.equals(authority) && closeProgram.keys[2].isSigner);
+  assert.ok(closeProgram.keys[3].pubkey.equals(program) && closeProgram.keys[3].isWritable);
   const close = closeBufferInstruction(buffer, authority);
   assert.equal(close.data.readUInt32LE(0), 5);
   assert.ok(close.keys[1].pubkey.equals(authority) && close.keys[1].isWritable);
@@ -68,6 +74,9 @@ test("non-admin wallets are rejected before RPC access, signing, or artifact dep
   // No RPC double is needed: authorization must reject before dereferencing connection.
   await assert.rejects(deployEscrowProgram({ connection: null!, wallet, artifact }), /configured admin/);
   await assert.rejects(closeDeploymentBuffer({ connection: null!, wallet, buffer }), /configured admin/);
+  await assert.rejects(closeUnusedProgram({ connection: null!, wallet, program, artifact, confirmedProgramId: program.toBase58() }), /configured admin/);
+  const adminWallet = { ...wallet, publicKey: ADMIN_WALLET };
+  await assert.rejects(closeUnusedProgram({ connection: null!, wallet: adminWallet, program, artifact, confirmedProgramId: "" }), /exact program ID/);
 });
 
 test("deployment network accepts the complete mainnet genesis hash and rejects a truncated identifier", async () => {
