@@ -1,5 +1,6 @@
 "use client";
 
+import { MAINNET_GENESIS_HASH } from "@/lib/admin-config";
 import Link from "next/link";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
@@ -30,8 +31,6 @@ import {
   claimCreatorInstruction,
   creatorVaultClaimable,
 } from "@/lib/solana/tiktok-escrow";
-
-const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
 export function CreatorFees({
   initialHandle = "",

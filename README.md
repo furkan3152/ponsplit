@@ -64,9 +64,12 @@ Program/verifier adresinin değiştirilmesi yeni escrow PDA'ları üretir; final
 
 ## Maliyet — 10 Ekim 2026
 
+**Canlı mainnet teklifi (10 Ekim 2026):** Resmi mainnet RPC üzerinden 63,552 byte ortak program için başlangıç bakiyesi `0.325586360 SOL`, final rent + fee `0.324931120 SOL` ölçüldü. Bunun `0.324556120 SOL` kısmı program rent'i, `0.000375000 SOL` kısmı 73 işlemin ücreti; başlangıç bakiyesinde ayrıca `0.000650240 SOL` cüzdan rent rezervi ve `0.000005 SOL` recovery payı var. Mainnet rent tarifesi aşağıdaki eski validator sürümünün yerel tarifesinden düşük. Bu bir teklif sorgusudur; mainnet'e program kurulmadı veya para gönderilmedi. Panel her kurulumda yeniden hesaplar. Bu ortak program tek sefer kurulur; coin oluşturma ve varsa ilk alım bütçesi ayrıca hesaplanır.
+
+
 | Kalem | Tahmin / kaynak |
 | --- | --- |
-| Mainnet program deployment | **Güncel `/admin` mainnet RPC teklifini kullanın.** Güncel 63,552 byte manual-proof build için yerel RPC tahmini final rent + fee `0.445042440 SOL`; başlangıç bakiyesi `0.445938320 SOL`. Bu yerel ölçüm, mainnet'teki kesin fiyat veya canlı deployment sonucu değildir. |
+| Mainnet program deployment | 10 Ekim 2026 canlı mainnet RPC teklifi: `0.324931120 SOL` rent + fee, `0.325586360 SOL` başlangıç bakiyesi. **Güncel tutarı `/admin` yeniden hesaplar.** Bu bir fiyat sorgusudur; mainnet deployment yapılmadı. |
 | Creator proof isteği | 143 byte için varsayılan yerel rent `0.00188616 SOL`; uygulama gerçek RPC tutarını gösterir. İptal/onayda rent geri döner; network ücretleri harcanır. |
 | Vercel Pro | [$20/ay + kullanım aşımı](https://vercel.com/pricing). Hobby kişisel/ticari olmayan kullanım içindir. |
 | RPC | Mevcut endpoint kullanılabilir; isteğe bağlı [Helius Developer $49/ay](https://www.helius.dev/pricing). Public RPC yoğun trafikte limitlenebilir. |
