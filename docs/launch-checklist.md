@@ -12,8 +12,9 @@ Canlı program ID'si bağlanıp gerçek TikTok video kanıtı ve küçük tutarl
 
 ## 1. Mevcut hosting'i hazırlayın
 
-- [ ] Mevcut Vercel production RPC ve Blob/Pinata storage ayarlarını koruyun; erişimleri doğrulayın.
-- [ ] `SITE_URL` için gerçek HTTPS public origin'i kullanın; path/query/hash eklemeyin. Browser RPC origin kısıtı bu domain'i kapsamalı.
+- [ ] Mevcut Blob/Pinata storage ayarlarını koruyun; erişimleri doğrulayın. Browser PublicNode, server resmi Solana public mainnet RPC kullanır. İndeksli hesap sorguları yalnız uygulamanın izin verdiği read-only `/api/solana/accounts` yolundan geçer. Eski `SOLANA_RPC_URL` / `NEXT_PUBLIC_SOLANA_RPC_URL` değerleri okunmaz; Vercel’den kaldırılabilir.
+- [ ] Vercel'de `tiksplit.com` domain'ini `ponsplit` projesinin production ortamına bağlayın; `tiksplit.com` için `www.tiksplit.com` adresine yönlendirme kullanın. Domain satın almak tek başına deployment'a bağlamaz. HTTPS ve `/admin` erişimini doğrulayın.
+- [ ] Production `SITE_URL=https://www.tiksplit.com` olarak ayarlayıp rebuild edin; path/query/hash eklemeyin. Public RPC için domain izin listesi/API anahtarı gerekmez. Yeni domainin tarayıcısından `getGenesisHash` ve rent sorgusunu doğrulayın; HTTP 200 sayfa yanıtı RPC erişimini kanıtlamaz. Eski domain yönlendirmesini yeni domainin HTTPS erişimi doğrulandıktan sonra açın. Mevcut Solana program/verifier adresleri domain değişikliğiyle değişmez.
 - [ ] Admin ve varsayılan manual verifier public adresinin `D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm` olduğunu kontrol edin. Owner'ın private key/seed'ini environment'a veya uygulamaya girmeyin.
 - [ ] Güncel kodu publish/rebuild edin. Public `/privacy` ve `/terms` sayfalarının erişilebilir olduğuna bakın.
 

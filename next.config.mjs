@@ -37,6 +37,7 @@ const nextConfig = {
       "/api/admin/configuration": ["./public/programs/tiktok-escrow.so"],
       "/api/tiktok/verify": ["./public/programs/tiktok-escrow.so"],
       "/api/runtime-status": ["./public/programs/tiktok-escrow.so"],
+      "/api/solana/accounts": ["./public/programs/tiktok-escrow.so"],
       "/api/metadata": ["./public/programs/tiktok-escrow.so"],
     },
   },
