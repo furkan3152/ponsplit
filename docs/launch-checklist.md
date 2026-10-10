@@ -14,7 +14,7 @@ Varsayılan `/admin` unlock, deployment, proof review/onay ve para işlemleri ad
 ## 2. Güncel programı bir kez mainnet'e deploy edin
 
 - [ ] Admin cüzdanını `/admin` sayfasına bağlayıp wallet challenge'ını imzalayın.
-- [ ] Güncel 104,568 byte manual-verification program artifact'ını ve mainnet RPC'nin SOL teklifini inceleyin. Aşağıdaki yerel RPC tahminini mainnet'in kesin fiyatı olarak kabul etmeyin.
+- [ ] Güncel 63,552 byte manual-verification program artifact'ını ve mainnet RPC'nin SOL teklifini inceleyin. Aşağıdaki yerel RPC tahminini mainnet'in kesin fiyatı olarak kabul etmeyin.
 - [ ] Cüzdanda teklif ekranındaki konservatif rezervi bulundurun; **Deploy** işlemini cüzdanınızda imzalayın.
 - [ ] Kesintide kaydedilmiş public buffer adresiyle devam edin. Mevcut programın durumunu kontrol etmeden yeniden deploy etmeyin. Vazgeçilen buffer için admin recovery/close kullanılabilir.
 - [ ] Son program ID ve transaction receipt'ini kaydedin; executable, artifact eşleşmesi ve admin upgrade authority kontrolleri geçmelidir.
@@ -64,13 +64,13 @@ Final olmuş eski %10 platform veya launcher paylı coin'ler kendi orijinal spli
 
 | Kalem | 10 Ekim 2026 başlangıç bilgisi |
 | --- | --- |
-| Program | Güncel 104,568 byte build için yerel RPC tahmini: `0.730743800 SOL` final rent + fee, `1.459690480 SOL` konservatif başlangıç rezervi. Canlı mainnet tutarı `/admin` panelinde yeniden hesaplanır; bu ölçüm canlı deployment sonucu değildir. |
+| Program | Güncel 63,552 byte build için yerel RPC tahmini: `0.445042440 SOL` final rent + fee, `0.445938320 SOL` başlangıç bakiyesi. Canlı mainnet tutarı `/admin` panelinde yeniden hesaplanır; bu ölçüm canlı deployment sonucu değildir. |
 | Proof hesabı | 143 byte; yerel varsayılan rent `0.00188616 SOL`, canlı tutar panelde. Rent iptal/onayda geri döner; işlem ücretleri dönmez. |
 | Vercel Pro | [$20/ay + kullanım aşımı](https://vercel.com/pricing). |
 | RPC | Mevcut RPC veya isteğe bağlı [Helius Developer $49/ay](https://www.helius.dev/pricing). |
 | Redis/signer | Bugünkü manual proof için ek hizmet zorunlu değil. Opsiyonel server Redis için [Free kota / $0.20 per 100 bin komut](https://upstash.com/pricing/redis); gelecekteki OAuth signer maliyeti sağlayıcıya bağlı. |
 | Storage, domain, audit | Mevcut hizmet/kullanım ve kapsamına göre ayrı maliyet. |
 
-Yerel deployment tahmini 119 işlemden oluşur: 117 write + 1 buffer create + 1 deploy. Final tutar `0.730138800 SOL` program rent'i + `0.000605000 SOL` işlem ücreti içerir. Konservatif rezerv ayrıca `0.728941680 SOL` geçici buffer rent'i ve `0.000005 SOL` recovery ücreti içerir. Buffer rent'i deployment/close sırasında geri döner; işlem ücretleri harcanır.
+Yerel deployment tahmini 73 işlemden oluşur: 71 write + 1 buffer create + 1 deploy. Final tutar `0.444667440 SOL` program rent'i + `0.000375000 SOL` işlem ücreti içerir. Başlangıç bakiyesi ayrıca `0.000890880 SOL` cüzdan rent rezervi ve `0.000005 SOL` recovery ücreti içerir. `0.443470320 SOL` buffer bakiyesi deployment sırasında ProgramData hesabı oluşturulmadan önce yeniden kullanılır; ikinci kez gerekli bakiyeye eklenmez. İptalde buffer rent'i geri alınır; işlem ücretleri harcanır.
 
 Sabit aylık Vercel/RPC tabanı $20 veya Helius seçilirse $69; tüm projenin toplam maliyeti değildir. SOL dolar karşılığı sabitlenmez.

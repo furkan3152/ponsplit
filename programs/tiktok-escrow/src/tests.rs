@@ -948,3 +948,14 @@ fn proof_spoofing_and_refund_overflow_cannot_mutate_vault_or_money() {
     );
     assert_eq!(f.beneficiary_balance, u64::MAX);
 }
+
+#[test]
+fn compact_system_instructions_match_official_sdk() {
+    let from = Pubkey::new_unique();
+    let to = Pubkey::new_unique();
+    for amount in [0, 1, 1_000_000_000, u64::MAX] {
+        assert_eq!(super::system_instruction::transfer(&from, &to, amount), solana_program::system_instruction::transfer(&from, &to, amount));
+        assert_eq!(super::system_instruction::allocate(&from, amount), solana_program::system_instruction::allocate(&from, amount));
+    }
+    assert_eq!(super::system_instruction::assign(&from, &to), solana_program::system_instruction::assign(&from, &to));
+}

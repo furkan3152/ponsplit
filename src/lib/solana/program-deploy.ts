@@ -24,7 +24,7 @@ export type DeployWallet = {
 };
 export type DeploymentQuote = {
   binaryBytes: number; maxDataLen: number; writeTransactions: number; totalTransactions: number;
-  bufferRentLamports: bigint; programRentLamports: bigint; programDataRentLamports: bigint;
+  walletRentLamports: bigint; bufferRentLamports: bigint; programRentLamports: bigint; programDataRentLamports: bigint;
   lockedRentLamports: bigint; transactionFeesLamports: bigint; recoveryFeeLamports: bigint;
   createFeeLamports: bigint; writeFeeLamports: bigint; deployFeeLamports: bigint;
   requiredLamports: bigint; finalCostLamports: bigint; balanceLamports: bigint; sufficientBalance: boolean;
@@ -197,11 +197,12 @@ export async function quoteProgramDeployment(connection: Connection, authority: 
   const buffer = PublicKey.findProgramAddressSync([Buffer.from("quote-buffer"), authority.toBuffer()], UPGRADEABLE_LOADER)[0];
   const program = PublicKey.findProgramAddressSync([Buffer.from("quote-program"), authority.toBuffer()], UPGRADEABLE_LOADER)[0];
   deployProgramInstruction(program, buffer, authority, maxDataLen);
-  const [bufferRent, programRent, programDataRent, balance] = await Promise.all([
+  const [bufferRent, programRent, programDataRent, balance, walletRent] = await Promise.all([
     connection.getMinimumBalanceForRentExemption(BUFFER_HEADER_SIZE + artifact.bytes.length, "confirmed"),
     connection.getMinimumBalanceForRentExemption(PROGRAM_ACCOUNT_SIZE, "confirmed"),
     connection.getMinimumBalanceForRentExemption(PROGRAM_DATA_HEADER_SIZE + maxDataLen, "confirmed"),
     connection.getBalance(authority, "confirmed"),
+    connection.getMinimumBalanceForRentExemption(0, "confirmed"),
   ]);
   const [createFee, writeFee, deployFee, recoveryFeeLamports] = await Promise.all([
     fee(connection, authority, createBufferTransaction(authority, buffer, artifact.bytes.length, bufferRent)),
@@ -213,14 +214,22 @@ export async function quoteProgramDeployment(connection: Connection, authority: 
   const transactionFeesLamports = createFee + writeFee * BigInt(writeTransactions) + deployFee;
   const lockedRentLamports = exact(programRent) + exact(programDataRent);
   const finalCostLamports = lockedRentLamports + transactionFeesLamports;
-  // Conservative reserve: temporary buffer funding is listed separately. The
-  // loader recycles/refunds that balance during deployment; it is not an extra fee.
-  const requiredLamports = exact(bufferRent) + finalCostLamports + recoveryFeeLamports;
+  // Loader v3 drains the buffer into the payer BEFORE funding ProgramData.
+  // Count that SOL once and retain a rent-exempt payer balance plus a recovery fee.
+  const requiredLamports = finalCostLamports + exact(walletRent) + recoveryFeeLamports;
   return { binaryBytes: artifact.bytes.length, maxDataLen, writeTransactions, totalTransactions: writeTransactions + 2,
-    bufferRentLamports: exact(bufferRent), programRentLamports: exact(programRent), programDataRentLamports: exact(programDataRent),
+    walletRentLamports: exact(walletRent), bufferRentLamports: exact(bufferRent), programRentLamports: exact(programRent), programDataRentLamports: exact(programDataRent),
     lockedRentLamports, transactionFeesLamports, recoveryFeeLamports, requiredLamports, finalCostLamports,
     createFeeLamports: createFee, writeFeeLamports: writeFee, deployFeeLamports: deployFee,
     balanceLamports: exact(balance), sufficientBalance: exact(balance) >= requiredLamports };
+}
+
+/** Required wallet balance when an authenticated upload buffer is already funded. */
+export function remainingDeploymentBalance(quote: DeploymentQuote, bufferLamports: bigint, remainingChunks: number): bigint {
+  if (bufferLamports < 0n || !Number.isSafeInteger(remainingChunks) || remainingChunks < 0 || remainingChunks > quote.writeTransactions) throw new Error("Invalid deployment balance inputs.");
+  const dataTopUp = quote.programDataRentLamports > bufferLamports ? quote.programDataRentLamports - bufferLamports : 0n;
+  // The Program account is created before the loader releases buffer SOL.
+  return quote.programRentLamports + dataTopUp + quote.writeFeeLamports * BigInt(remainingChunks) + quote.deployFeeLamports + quote.walletRentLamports + quote.recoveryFeeLamports;
 }
 
 async function simulate(connection: Connection, transaction: Transaction): Promise<void> {
@@ -276,7 +285,7 @@ export async function deployEscrowProgram(options: {
   const progress = (phase: DeployProgress["phase"], extra: Partial<DeployProgress> = {}) => onProgress?.({ phase, buffer: buffer?.toBase58() ?? null, writtenBytes, totalBytes: artifact.bytes.length, ...extra });
   progress("checking");
   const quote = await quoteProgramDeployment(connection, authority, artifact, { maxDataLen: options.maxDataLen });
-  if (!buffer && !quote.sufficientBalance) throw new Error("The admin wallet does not have the conservative SOL reserve required for deployment and recovery.");
+  if (!buffer && !quote.sufficientBalance) throw new Error("The admin wallet does not have the SOL balance required for deployment and recovery.");
   if (!buffer) {
     const temporary = Keypair.generate();
     buffer = temporary.publicKey;
@@ -295,8 +304,7 @@ export async function deployEscrowProgram(options: {
   const info = await connection.getAccountInfo(buffer, "confirmed");
   const pending = pendingChunks(bufferBytes(info, authority, artifact.bytes.length), artifact);
   writtenBytes = artifact.bytes.length - pending.reduce((sum, chunk) => sum + chunk.bytes.length, 0);
-  const remainingWriteFees = quote.writeFeeLamports * BigInt(pending.length) + quote.deployFeeLamports;
-  if (exact(await connection.getBalance(authority, "confirmed")) < quote.lockedRentLamports + remainingWriteFees + quote.recoveryFeeLamports) throw new Error("Insufficient SOL remains for deployment. The admin can close the saved buffer to recover its rent.");
+  if (exact(await connection.getBalance(authority, "confirmed")) < remainingDeploymentBalance(quote, exact(info!.lamports), pending.length)) throw new Error("Insufficient SOL remains for deployment. The admin can close the saved buffer to recover its rent.");
   progress("writing");
   // Batches keep blockhashes fresh and work with wallets that sign all at once.
   for (let start = 0; start < pending.length; start += 16) {
@@ -324,7 +332,9 @@ export async function deployEscrowProgram(options: {
   const program = Keypair.generate();
   const transaction = await prepare(connection, authority, createProgramTransaction(authority, program.publicKey, buffer, quote.maxDataLen, Number(quote.programRentLamports)));
   const finalFee = await fee(connection, authority, transaction);
-  if (exact(await connection.getBalance(authority, "confirmed")) < quote.lockedRentLamports + finalFee + quote.recoveryFeeLamports) throw new Error("Insufficient SOL remains to deploy. Buffer rent can be recovered by the admin.");
+  const finalBuffer = await connection.getAccountInfo(buffer, "confirmed");
+  bufferBytes(finalBuffer, authority, artifact.bytes.length);
+  if (exact(await connection.getBalance(authority, "confirmed")) < remainingDeploymentBalance({ ...quote, deployFeeLamports: finalFee }, exact(finalBuffer!.lamports), 0)) throw new Error("Insufficient SOL remains to deploy. Buffer rent can be recovered by the admin.");
   progress("simulating", { programId: program.publicKey.toBase58() });
   await simulate(connection, transaction);
   transaction.partialSign(program);

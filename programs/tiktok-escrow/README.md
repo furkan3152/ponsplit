@@ -51,3 +51,9 @@ node --experimental-strip-types --import ./src/lib/test-hooks.mjs --test src/lib
 Native Rust testleri doğrudan program işlemcisini, hesap imzalarını, otorite/owner/PDA kontrollerini, talep süresini, incelenmiş veri hash'ini, kalıcı bağlamayı, aktivasyon öncesi çekim engelini, kira rezervini, iadeyi, para transferini ve taşmaları doğrular. TypeScript testleri talimat ABI'sini, doğrulanan hesap okumasını ve lamport hesaplarını doğrular. Gerçek validator testleri `e2e/solana/tiktok-local.mjs` ve `e2e/solana/manual-proof-local.mjs` içindedir.
 
 Solana CLI 2.3.13 / platform-tools 1.48 (Rust 1.84.1) ile SBF build doğrulanır. `Cargo.lock` bu toolchain için uyumlu sürümleri sabitler; lock dosyası güncellenirken SBF build tekrar kontrol edilmelidir.
+
+## Düşük maliyetli build
+
+Release build boyut optimizasyonu (`opt-level=s`, fat LTO, tek codegen unit) ve taşma kontrolleri kullanır. Sadece kullanılan System Program transfer/allocate/assign talimatları doğrudan sabit ABI ile kodlanır; native test resmi SDK ile byte ve hesap yetkilerini karşılaştırır. Genel amaçlı serializer kodu zincire yüklenmez. Kompakt panic handler işlemeyi abort eder; ayrıntılı biçimlendirilmiş panic çıktısı yerine sabit mesaj üretir. Normal doğrulama hata kodları, para akışı, hesap düzenleri ve imza kontrolleri korunur.
+
+63,552 byte build için yerel minimum bütçe testi yalnız `0.445938320 SOL` cüzdan bakiyesiyle gerçek loader deployment/resume işlemini tamamlar. Final rent+fee `0.445042440 SOL`; kalan bakiye cüzdan rent rezervi ve recovery ücretidir. Loader buffer SOL'unu ProgramData oluşturmadan önce yeniden kullanır. Mainnet teklifi panelde RPC üzerinden hesaplanır.
