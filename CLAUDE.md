@@ -24,7 +24,11 @@ OKX defaults to single-transaction upload signing; other wallets use four-write 
 Recover existing buffers by verified public address, including /admin?buffer=... links.
 Save each transaction ID before submission and reconcile confirmation transport failures on chain.
 Deployment signature checks permit only bounded compute-budget fee changes (max 5,000 lamports/tx),
-with their reserve included in quotes. All other instruction/account/authority/blockhash changes are rejected.
+with their reserve included in quotes, plus wallet-refreshed blockhashes. Instruction/account/authority
+changes are rejected. Verify the admin signature over the returned wire message before refreshing
+in-memory temporary buffer/program co-signatures. A refreshed hash must not reuse the original hash's
+expiry or wallet-supplied lastValidBlockHeight: confirm its exact signature with a bounded timeout,
+and reconcile uncertain responses on chain. RPC preflight validates the actual signed hash.
 The owner explicitly retains upgrade authority (no renounce). Admin rent recovery covers upload
 buffers and cancellation of an unused, never-configured deployment. ProgramData closure permanently
 disables the program; its small Program account rent remains locked. The panel blocks configured
