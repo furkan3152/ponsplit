@@ -4,6 +4,7 @@ import {
   type AccountInfo, type Connection,
 } from "@solana/web3.js";
 import { ADMIN_WALLET, MAINNET_GENESIS_HASH } from "../admin-config";
+import { ESCROW_PROGRAM_ID } from "../tiktok-config";
 import artifactManifest from "../../../public/programs/tiktok-escrow.manifest.json";
 
 const manifest = Object.freeze({ ...artifactManifest, sourceFiles: Object.freeze([...artifactManifest.sourceFiles]) });
@@ -35,6 +36,10 @@ export type DeployProgress = {
 };
 export type DeploymentBuffer = { buffer: string; writtenBytes: number; complete: boolean; lamports: bigint; remainingChunks: number };
 export type DeployResult = { programId: string; buffer: string; signature: string };
+export type ProgramRefundQuote = {
+  programId: string; programData: string; refundLamports: bigint;
+  retainedProgramLamports: bigint; feeLamports: bigint;
+};
 
 const exact = (n: number) => {
   if (!Number.isSafeInteger(n) || n < 0) throw new Error("RPC returned an unsafe lamport amount.");
@@ -136,6 +141,71 @@ export function closeBufferInstruction(buffer: PublicKey, authority: PublicKey):
     { pubkey: authority, isWritable: true, isSigner: false },
     { pubkey: authority, isWritable: false, isSigner: true },
   ], data: tag(5) });
+}
+
+/** Loader v3 closes ProgramData; the small executable address account remains funded. */
+export function closeProgramInstruction(program: PublicKey, authority: PublicKey): TransactionInstruction {
+  if (program.equals(authority) || program.equals(SystemProgram.programId)) throw new Error("Invalid program address.");
+  return new TransactionInstruction({ programId: UPGRADEABLE_LOADER, keys: [
+    { pubkey: programDataAddress(program), isWritable: true, isSigner: false },
+    { pubkey: authority, isWritable: true, isSigner: false },
+    { pubkey: authority, isWritable: false, isSigner: true },
+    { pubkey: program, isWritable: true, isSigner: false },
+  ], data: tag(5) });
+}
+
+async function assertUnusedProgram(connection: Connection, program: PublicKey): Promise<void> {
+  if (ESCROW_PROGRAM_ID?.equals(program)) throw new Error("The site's configured escrow program cannot be closed from this panel.");
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection.rpcEndpoint).hostname);
+  if (!local) {
+    // Also check the current server configuration: an older browser tab may be stale.
+    const response = await fetch("/api/runtime-status", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new Error("Current site configuration could not be checked. Program closure is blocked.");
+    const status = await response.json();
+    const address = status?.configuration?.escrowProgram?.address;
+    if (address !== null && (typeof address !== "string" || !address)) throw new Error("Current site configuration is invalid. Program closure is blocked.");
+    if (address && new PublicKey(address).equals(program)) throw new Error("The site's configured escrow program cannot be closed from this panel.");
+  }
+  // No size/discriminator filters: any owned account blocks closure, even an empty vault.
+  const accounts = await connection.getProgramAccounts(program, { commitment: "confirmed", dataSlice: { offset: 0, length: 0 } });
+  if (accounts.length) throw new Error("This program owns creator or other accounts. Closing it could strand present or future fees and is blocked.");
+}
+
+export async function quoteUnusedProgramRefund(connection: Connection, program: PublicKey, artifact: ProgramArtifact): Promise<ProgramRefundQuote> {
+  await assertDeploymentNetwork(connection);
+  if (ESCROW_PROGRAM_ID?.equals(program)) throw new Error("The site's configured escrow program cannot be closed from this panel.");
+  if (!await inspectDeployedProgram(connection, program, artifact)) throw new Error("This is not an active verified deployment with the configured admin upgrade authority.");
+  await assertUnusedProgram(connection, program);
+  const programData = programDataAddress(program);
+  const [info, data, closeFee] = await Promise.all([
+    connection.getAccountInfo(program, "confirmed"),
+    connection.getAccountInfo(programData, "confirmed"),
+    fee(connection, ADMIN_WALLET, new Transaction().add(closeProgramInstruction(program, ADMIN_WALLET))),
+  ]);
+  if (!info || !data) throw new Error("Program accounts changed. Inspect the deployment again.");
+  return { programId: program.toBase58(), programData: programData.toBase58(), refundLamports: exact(data.lamports), retainedProgramLamports: exact(info.lamports), feeLamports: closeFee };
+}
+
+/** Explicit, irreversible cancellation of an unused deployment, never a routine fee claim.
+ * RPC checks are panel safeguards, not an on-chain shutdown lock. The admin must attest that
+ * this deployment has never been used/configured anywhere and must not publish it concurrently.
+ */
+export async function closeUnusedProgram(options: {
+  connection: Connection; wallet: DeployWallet; program: PublicKey; artifact: ProgramArtifact;
+  confirmedProgramId: string; onSent?: (signature: string) => void;
+}): Promise<string> {
+  const { connection, wallet, program, artifact } = options;
+  const authority = admin(wallet);
+  if (options.confirmedProgramId !== program.toBase58()) throw new Error("Type the exact program ID to confirm permanent closure.");
+  await quoteUnusedProgramRefund(connection, program, artifact);
+  const transaction = await prepare(connection, authority, new Transaction().add(closeProgramInstruction(program, authority)));
+  await simulate(connection, transaction);
+  const expected = transaction.serializeMessage();
+  const signed = await wallet.signTransaction(transaction);
+  if (!equal(expected, signed.serializeMessage())) throw new Error("The wallet changed the program refund transaction.");
+  // Reject accounts created or a program configured/upgraded while the wallet prompt was open.
+  await quoteUnusedProgramRefund(connection, program, artifact);
+  return broadcast(connection, checkedSigned(transaction, signed), options.onSent);
 }
 
 function bufferBytes(info: AccountInfo<Buffer> | null, authority: PublicKey, length: number): Uint8Array {

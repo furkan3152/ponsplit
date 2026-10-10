@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ADMIN_WALLET } from "@/lib/admin-config";
 import { errorMessage, formatSol, shortAddress } from "@/lib/format";
+import { ProgramRentRecovery } from "./ProgramRentRecovery";
 import {
   closeDeploymentBuffer,
   deployEscrowProgram,
@@ -181,7 +182,7 @@ export function ProgramDeployment({
             signTransaction: (transaction: Transaction) => {
               if (!currentAccess.current)
                 throw new Error(
-                  "Unlock the dashboard with the admin wallet to continue this upload.",
+                  "Unlock the dashboard with the admin wallet to continue this operation.",
                 );
               return signTransaction(transaction);
             },
@@ -190,7 +191,7 @@ export function ProgramDeployment({
                   signAllTransactions: (transactions: Transaction[]) => {
                     if (!currentAccess.current)
                       throw new Error(
-                        "Unlock the dashboard with the admin wallet to continue this upload.",
+                        "Unlock the dashboard with the admin wallet to continue this operation.",
                       );
                     return signAllTransactions(transactions);
                   },
@@ -328,7 +329,8 @@ export function ProgramDeployment({
       <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
         The verified build is uploaded to a Solana buffer, checked, then
         deployed with your admin wallet as upgrade authority. You approve each
-        wallet transaction in this workflow.
+        wallet transaction in this workflow. Upgrade authority stays with you;
+        this panel does not renounce it.
       </p>
       {artifact.isLoading ? (
         <p className="mt-5 text-[13px] text-ink-3">
@@ -430,6 +432,10 @@ export function ProgramDeployment({
                   ? errorMessage(buffer.error)
                   : "Checking this buffer's owner, authority and uploaded bytes…"}
           </p>
+          {buffer.data ? <p className="mt-2 text-[12px] text-ink-2">
+            Refundable upload balance: {formatSol(buffer.data.lamports, 6)} SOL,
+            minus the network fee. The refund goes only to the admin wallet.
+          </p> : null}
           <button
             className="btn-secondary mt-3 px-3 py-2 text-[12px]"
             disabled={busy || !wallet}
@@ -527,6 +533,12 @@ export function ProgramDeployment({
           Refresh cost
         </button>
       </div>
+      <ProgramRentRecovery wallet={wallet} artifact={artifact.data} authorize={authorize} onBusyChange={setBusy} disabled={busy}
+        onClosed={(programId) => {
+          if (saved?.programId === programId) { remember(null); onProgramId(""); }
+          void quote.refetch();
+          void queryClient.invalidateQueries({ queryKey: ["admin-deployed-program"] });
+        }} />
     </section>
   );
 }

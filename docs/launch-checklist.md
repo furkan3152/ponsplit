@@ -30,6 +30,13 @@ Varsayılan `/admin` unlock, deployment, proof review/onay ve para işlemleri ad
 
 Program hesaplarındaki rent rezervi aylık ücret değildir. Geçici buffer deployment sırasında geri dönüştürülür/iade edilir. Kaynak/artifact hash kontrolü bağımsız audit yerine geçmez; program upgrade edilebiliyorsa admin authority güven modeli içindedir.
 
+Admin upgrade yetkisi korunur; panelde feragat/renounce işlemi yoktur. Rent iadesi iki farklı işlemdir:
+- Yarım kalan upload buffer'ı kapatılıp tüm mevcut bakiyesi, işlem ücreti düşüldükten sonra admin'e geri alınabilir.
+- **Hiç kullanılmamış ve hiçbir siteye bağlanmamış** güncel doğrulanmış deployment, panelde “Recover rent from an unused program” ile incelenebilir. Program ID tekrar yazılıp ayrı wallet işlemiyle kalıcı kapatma onaylanır. ProgramData bakiyesi admin'e döner; küçük program-adresi hesabının rent'i ve network ücretleri dönmez. Program artık çalışmaz. Bu, çalışan programdan rent çekme özelliği değildir.
+
+Panel hem tarayıcı hem güncel sunucu yapılandırmasındaki programı korur; programın sahip olduğu herhangi bir account (bakiyesi yalnız rent olan boş creator kasası dahil) kapatmayı engeller. Kontroller wallet imzasından sonra tekrar yapılır. Bunlar RPC üzerinden yapılan panel kontrolleridir, atomik bir zincir üstü shutdown kilidi değildir: kapatılan deployment başka bir siteye bağlı olmamalı ve aynı sırada kullanılmamalıdır. Mevcut veya gelecekteki creator ücretleri bağlanmış bir program kapatılmaz. Owner upgrade yetkisi ayrıca bir güven varsayımıdır; yetkili cüzdanın panel dışındaki loader işlemlerini bu UI engelleyemez.
+
+
 ## 3. Gerçek TikTok hesabıyla proof isteği
 
 - [ ] Creator'ın kontrol ettiği, erişimini kaybetmeyeceği cüzdanı bağlayın ve `/claim` sayfasında kendi güncel TikTok handle'ını seçin.
