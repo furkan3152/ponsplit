@@ -5,15 +5,15 @@ import {
   ComputeBudgetProgram,
   PublicKey,
   SystemProgram,
+  TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
   type Connection,
-  type TransactionInstruction,
 } from "@solana/web3.js";
-import { NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import BN from "bn.js";
-import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, feeSharingConfigPda, getBuyTokenAmountFromSolAmount, getSellSolAmountFromTokenAmount, socialFeePda } from "@pump-fun/pump-sdk";
-import { OnlinePumpAmmSdk, PUMP_AMM_SDK, buyQuoteInput, canonicalPumpPoolPda, sellBaseInput } from "@pump-fun/pump-swap-sdk";
+import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, creatorVaultPda, feeSharingConfigPda, getBuyTokenAmountFromSolAmount, getPumpAmmProgram, getSellSolAmountFromTokenAmount, socialFeePda } from "@pump-fun/pump-sdk";
+import { OnlinePumpAmmSdk, PUMP_AMM_SDK, buyQuoteInput, canonicalPumpPoolPda, coinCreatorVaultAuthorityPda, sellBaseInput } from "@pump-fun/pump-swap-sdk";
 import { ALLOWED_PLATFORM_BPS, LAUNCH_FEE_LAMPORTS, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
 import { ADMIN_WALLET, MAINNET_GENESIS_HASH } from "../admin-config";
 import { ESCROW_PROGRAM_ID, VERIFIER, isTikTokLaunchReady, isValidTikTokHandle, normalizeTikTokHandle } from "../tiktok-config";
@@ -223,6 +223,67 @@ export async function assertTikTokEscrowDeployed(c: Connection) {
   if (!local && !await inspectDeployedProgram(c, ESCROW_PROGRAM_ID!, await loadEscrowArtifact())) throw new Error("The escrow code or upgrade authority does not match this deployment.");
 }
 
+/** Current pump ABI: curve trades can retain creator fees on the curve itself.
+ * This must run in the SAME transaction as creator migration/share updates, so a
+ * trade arriving after wallet approval cannot refill the bucket between them.
+ * Source: pump-fun/pump-public-docs@2293f9a66c654e9fe82dc5e8f4618538f24bb35f,
+ * idl/pump.json, sweep_creator_fee. The installed SDK predates this instruction.
+ * SOL only: the quote ATAs are required account addresses but ignored by the program.
+ * Pre-split fees go to the original creator's pump vault; this never collects them.
+ */
+export function sweepCurveCreatorFeeInstruction(payer: PublicKey, mint: PublicKey, creator: PublicKey): TransactionInstruction {
+  const curve = bondingCurvePda(mint);
+  const recipient = creatorVaultPda(creator);
+  const global = PublicKey.findProgramAddressSync([Buffer.from("global")], PUMP_PROGRAM_ID)[0];
+  const eventAuthority = PublicKey.findProgramAddressSync([Buffer.from("__event_authority")], PUMP_PROGRAM_ID)[0];
+  return new TransactionInstruction({
+    programId: PUMP_PROGRAM_ID,
+    keys: [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: global, isSigner: false, isWritable: false },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: NATIVE_MINT, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: curve, isSigner: false, isWritable: true },
+      { pubkey: getAssociatedTokenAddressSync(NATIVE_MINT, curve, true), isSigner: false, isWritable: true },
+      { pubkey: recipient, isSigner: false, isWritable: true },
+      { pubkey: getAssociatedTokenAddressSync(NATIVE_MINT, recipient, true), isSigner: false, isWritable: true },
+      { pubkey: eventAuthority, isSigner: false, isWritable: false },
+      { pubkey: PUMP_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from([32, 246, 191, 52, 8, 201, 73, 186]),
+  });
+}
+
+/** The matching current AMM instruction moves a pool's creator bucket into its
+ * fixed creator-vault ATA before the existing SDK consolidation/distribution.
+ * Source: the same official IDL commit, idl/pump_amm.json, sweep_creator_fee.
+ */
+export function sweepPoolCreatorFeeInstruction(payer: PublicKey, poolKey: PublicKey, pool: { quoteMint: PublicKey; poolQuoteTokenAccount: PublicKey; coinCreator: PublicKey }): TransactionInstruction {
+  if (!pool.quoteMint.equals(NATIVE_MINT)) throw new Error("Tiksplit fee distribution requires a SOL-quoted pool.");
+  const recipient = coinCreatorVaultAuthorityPda(pool.coinCreator);
+  return new TransactionInstruction({
+    programId: PUMP_AMM_PROGRAM_ID,
+    keys: [
+      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: PublicKey.findProgramAddressSync([Buffer.from("global_config")], PUMP_AMM_PROGRAM_ID)[0], isSigner: false, isWritable: false },
+      { pubkey: poolKey, isSigner: false, isWritable: true },
+      { pubkey: NATIVE_MINT, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: pool.poolQuoteTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: recipient, isSigner: false, isWritable: false },
+      { pubkey: getAssociatedTokenAddressSync(NATIVE_MINT, recipient, true), isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: PublicKey.findProgramAddressSync([Buffer.from("__event_authority")], PUMP_AMM_PROGRAM_ID)[0], isSigner: false, isWritable: false },
+      { pubkey: PUMP_AMM_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from([32, 246, 191, 52, 8, 201, 73, 186]),
+  });
+}
+
 export async function finishTikTokLaunchTransactions(c: Connection, user: PublicKey, mint: PublicKey, handle: string, launcherBps: number, platformBps = PLATFORM_BPS): Promise<VersionedTransaction[]> {
   const expected = tikTokShareholders(handle, user, launcherBps, platformBps);
   await assertTikTokEscrowDeployed(c);
@@ -249,7 +310,11 @@ export async function finishTikTokLaunchTransactions(c: Connection, user: Public
     newShareholders: expected, quoteMint: NATIVE_MINT, quoteTokenProgram: TOKEN_PROGRAM_ID,
   });
   const fee = LAUNCH_FEE_LAMPORTS > 0n ? [SystemProgram.transfer({ fromPubkey: user, toPubkey: TREASURY!, lamports: LAUNCH_FEE_LAMPORTS })] : [];
-  txs.push(await v0(c, user, [...budget(400_000), ...(sharing ? [sharing] : []), update, ...fee]));
+  // A new config migrates creator from the launcher to its config PDA. Existing
+  // configs already own their fees. Always sweep before changing either state,
+  // even if today's balance is zero: another trade may land during signing.
+  const sweep = sweepCurveCreatorFeeInstruction(user, mint, cfg ? feeSharingConfigPda(mint) : user);
+  txs.push(await v0(c, user, [...budget(400_000), sweep, ...(sharing ? [sharing] : []), update, ...fee]));
   if (txs.some(tx => tx.serialize().length > TX_BYTES_LIMIT)) throw new Error("The fee-sharing transaction exceeds Solana's size limit.");
   return txs;
 }
@@ -438,9 +503,34 @@ export async function sellTransaction(c: Connection, user: PublicKey, mint: Publ
 /**
  * Moves a coin's accumulated creator fees to its shareholders (Splitdev and the GitHub fee accounts),
  * through pump.fun's permissionless distribution; for a graduated coin it first sweeps the pool's
- * creator fees. Anyone can send it and pays only the network fee.
+ * creator fees. Anyone can send it and pays the network fee and any required account rent.
  */
 export async function distributeTransaction(c: Connection, payer: PublicKey, mint: PublicKey) {
-  const { instructions } = await new OnlinePumpSdk(c).buildDistributeCreatorFeesInstructions(mint, { payer });
-  return v0(c, payer, [...budget(400_000), ...instructions]);
+  const sharingConfigAddress = feeSharingConfigPda(mint);
+  const poolAddress = canonicalPumpPoolPda(mint);
+  const [configInfo, curveInfo, poolInfo] = await c.getMultipleAccountsInfo([sharingConfigAddress, bondingCurvePda(mint), poolAddress], "confirmed");
+  if (!configInfo?.owner.equals(PUMP_FEES_PROGRAM_ID)) throw new Error("The coin's fee-sharing account is unavailable.");
+  const sharingConfig = PUMP_SDK.decodeSharingConfig(configInfo);
+  if (!sharingConfig.mint.equals(mint)) throw new Error("Fee-sharing mint does not match.");
+  if (!curveInfo?.owner.equals(PUMP_PROGRAM_ID)) throw new Error("The coin's bonding curve is unavailable.");
+  const curve = PUMP_SDK.decodeBondingCurve(curveInfo);
+  if (!curve.creator.equals(sharingConfigAddress) || (curve.quoteMint && !curve.quoteMint.equals(NATIVE_MINT) && !curve.quoteMint.equals(PublicKey.default))) throw new Error("The coin does not have the expected SOL fee-sharing curve.");
+  // Always sweep, even if the quoted bucket is empty: another trade can land
+  // during approval. Only creator buckets move; protocol fees remain untouched.
+  const instructions = [sweepCurveCreatorFeeInstruction(payer, mint, sharingConfigAddress)];
+  if (poolInfo) {
+    if (!poolInfo.owner.equals(PUMP_AMM_PROGRAM_ID)) throw new Error("The coin's canonical pool has an invalid owner.");
+    const pool = PUMP_AMM_SDK.decodePoolNullable(poolInfo);
+    if (!pool || !pool.baseMint.equals(mint) || !pool.coinCreator.equals(sharingConfigAddress)) throw new Error("The coin's canonical pool does not match its fee-sharing config.");
+    instructions.push(sweepPoolCreatorFeeInstruction(payer, poolAddress, pool));
+    // Include consolidation even when the ATA did not exist at the initial read:
+    // the preceding sweep creates it idempotently when necessary.
+    instructions.push(await getPumpAmmProgram(c).methods.transferCreatorFeesToPump().accountsPartial({
+      wsolMint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ID, coinCreator: sharingConfigAddress,
+    }).instruction());
+  }
+  instructions.push(await PUMP_SDK.distributeCreatorFees({ mint, sharingConfig, sharingConfigAddress }));
+  const transaction = await v0(c, payer, [...budget(400_000), ...instructions]);
+  if (transaction.serialize().length > TX_BYTES_LIMIT) throw new Error("The fee distribution exceeds Solana's transaction size limit.");
+  return transaction;
 }

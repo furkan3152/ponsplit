@@ -8,10 +8,11 @@ import { unpack as unpackMetadata } from "@solana/spl-token-metadata";
 import { PUMP_SDK, feeSharingConfigPda, bondingCurvePda, creatorVaultPda, socialFeePda, Platform } from "@pump-fun/pump-sdk";
 import { canonicalPumpPoolPda, coinCreatorVaultAtaPda, coinCreatorVaultAuthorityPda, PUMP_AMM_SDK } from "@pump-fun/pump-swap-sdk";
 import { ALLOWED_PLATFORM_BPS, HIDDEN, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
-import { PUMP_FEES_PROGRAM_ID, PUMP_PROGRAM_ID } from "./pump";
+import { PUMP_AMM_PROGRAM_ID, PUMP_FEES_PROGRAM_ID, PUMP_PROGRAM_ID } from "./pump";
 import { decodeCreatorVault } from "./tiktok-escrow";
 import { isTikTokLaunchReady } from "../tiktok-config";
 import { creatorFeeSplit } from "../tiktok-fees";
+import { pendingCurveCreatorFees, pendingPoolCreatorFees } from "./pump-curve-fees";
 
 /** One GitHub account's part of a coin's creator fees. */
 export type Recipient = { handle: string; feeAccount: string; /** of all creator fees, in bps */ shareBps: number; verified: boolean; wallet?: string };
@@ -38,7 +39,7 @@ export type Coin = {
   progress: number;
   /** SOL in the curve (or the pool's SOL side once graduated). */
   liquiditySol: number;
-  /** Creator fees waiting to be distributed (curve vault), in lamports. */
+  /** Creator fees waiting in the curve bucket and creator vaults, in lamports. */
   pendingFees: bigint;
 };
 
@@ -182,7 +183,7 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
       marketCap: price * (supply / TOKEN_UNITS),
       progress: curve.complete ? 100 : Math.max(0, Math.min(100, 100 * (1 - rt / INITIAL_REAL_TOKENS))),
       liquiditySol: Number(curve.realQuoteReserves.toString()) / LAMPORTS,
-      pendingFees: BigInt(Math.max(0, vault - rent)),
+      pendingFees: BigInt(Math.max(0, vault - rent)) + pendingCurveCreatorFees(curveInfo.data),
     });
     if (curve.complete) graduated.push(coins.length - 1);
   });
@@ -198,7 +199,7 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
       coins[i].pendingFees += tokenAmount(poolVaultInfos[j], poolVaults[j]);
     });
     const pools = await many(c, graduated.map((i) => canonicalPumpPoolPda(new PublicKey(coins[i].token))));
-    const decoded = pools.map((p) => (p ? PUMP_AMM_SDK.decodePoolNullable(p) : null));
+    const decoded = pools.map((p) => (p?.owner.equals(PUMP_AMM_PROGRAM_ID) ? PUMP_AMM_SDK.decodePoolNullable(p) : null));
     const reserves = await many(c, decoded.flatMap((p) => (p ? [p.poolBaseTokenAccount, p.poolQuoteTokenAccount] : [])));
     let r = 0;
     decoded.forEach((p, j) => {
@@ -208,6 +209,8 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
       // pump.fun's pools price with virtual SOL on top of the real reserve.
       const effectiveQuote = quote + Number(p.virtualQuoteReserves?.toString() ?? 0);
       const coin = coins[graduated[j]];
+      if (!p.baseMint.equals(new PublicKey(coin.token)) || !p.quoteMint.equals(NATIVE_MINT) || !p.coinCreator.equals(configOf.get(coin.token)!)) throw new Error("Invalid creator fee pool.");
+      coin.pendingFees += pendingPoolCreatorFees(pools[j]!.data);
       if (base > 0) {
         coin.price = effectiveQuote / LAMPORTS / (base / TOKEN_UNITS);
         coin.marketCap = coin.price * 1e9;
