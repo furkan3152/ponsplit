@@ -1,5 +1,6 @@
 import bs58 from "bs58";
 import { checkedDeploymentSignature, MAX_WALLET_PRIORITY_FEE_LAMPORTS } from "./deployment-signing";
+import { sendUploadQueue } from "./deployment-upload";
 export { MAX_WALLET_PRIORITY_FEE_LAMPORTS } from "./deployment-signing";
 import {
   Keypair, PublicKey, SystemProgram, SYSVAR_CLOCK_PUBKEY, SYSVAR_RENT_PUBKEY,
@@ -17,6 +18,7 @@ export const BUFFER_HEADER_SIZE = 37;
 export const PROGRAM_ACCOUNT_SIZE = 36;
 export const PROGRAM_DATA_HEADER_SIZE = 45;
 export const WRITE_CHUNK_SIZE = 900;
+export const MAX_UPLOAD_SIGNING_BATCH = 80;
 export const MAX_ARTIFACT_BYTES = 256 * 1024;
 export const ESCROW_ARTIFACT_MANIFEST = manifest;
 
@@ -34,7 +36,7 @@ export type DeploymentQuote = {
   requiredLamports: bigint; finalCostLamports: bigint; balanceLamports: bigint; sufficientBalance: boolean;
 };
 export type DeployProgress = {
-  phase: "checking" | "creating-buffer" | "writing" | "simulating" | "deploying" | "complete";
+  phase: "checking" | "creating-buffer" | "awaiting-upload-approval" | "writing" | "simulating" | "deploying" | "complete";
   buffer: string | null; writtenBytes: number; totalBytes: number; programId?: string; signature?: string;
 };
 export type DeploymentBuffer = { buffer: string; writtenBytes: number; complete: boolean; lamports: bigint; remainingChunks: number };
@@ -365,8 +367,8 @@ export async function deployEscrowProgram(options: {
 }): Promise<DeployResult> {
   const { connection, wallet, onProgress } = options;
   const authority = admin(wallet);
-  const requestedBatchSize = options.writeBatchSize ?? 4;
-  if (!Number.isInteger(requestedBatchSize) || requestedBatchSize < 1 || requestedBatchSize > 16) throw new Error("Invalid upload signing batch size.");
+  const requestedBatchSize = options.writeBatchSize ?? MAX_UPLOAD_SIGNING_BATCH;
+  if (!Number.isInteger(requestedBatchSize) || requestedBatchSize < 1 || requestedBatchSize > MAX_UPLOAD_SIGNING_BATCH) throw new Error("Invalid upload signing batch size.");
   // A wallet without batch signing must send each signed transaction immediately.
   const batchSize = wallet.signAllTransactions ? requestedBatchSize : 1;
   // Snapshot bytes: callers cannot alter chunks while a wallet approval is pending.
@@ -396,7 +398,8 @@ export async function deployEscrowProgram(options: {
   writtenBytes = artifact.bytes.length - pending.reduce((sum, chunk) => sum + chunk.bytes.length, 0);
   if (exact(await connection.getBalance(authority, "confirmed")) < remainingDeploymentBalance(quote, exact(info!.lamports), pending.length)) throw new Error("Insufficient SOL remains for deployment. The admin can close the saved buffer to recover its rent.");
   progress("writing");
-  // Batches keep blockhashes fresh and work with wallets that sign all at once.
+  // One approval request covers the current artifact's writes. Bounded concurrent sending
+  // avoids expiring the signed batch while waiting for each preceding confirmation.
   for (let start = 0; start < pending.length; start += batchSize) {
     const chunks = pending.slice(start, start + batchSize);
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
@@ -407,15 +410,18 @@ export async function deployEscrowProgram(options: {
     });
     const messages = transactions.map((transaction) => transaction.serializeMessage());
     const signed: Transaction[] = [];
+    progress("awaiting-upload-approval");
     if (batchSize > 1 && wallet.signAllTransactions) signed.push(...await wallet.signAllTransactions(transactions));
     else for (const transaction of transactions) signed.push(await wallet.signTransaction(transaction));
     if (signed.length !== transactions.length) throw new Error("The wallet returned an incomplete deployment batch.");
-    for (let i = 0; i < signed.length; i++) {
-      const verified = checkedDeploymentSignature(messages[i], signed[i], lastValidBlockHeight);
-      await broadcast(connection, verified, options.onTransaction);
+    // Validate the ENTIRE batch before sending any of it, including every admin signature.
+    const verified = signed.map((transaction, i) => checkedDeploymentSignature(messages[i], transaction, lastValidBlockHeight));
+    progress("writing");
+    await sendUploadQueue(verified, async (transaction, i) => {
+      await broadcast(connection, transaction, options.onTransaction);
       writtenBytes += chunks[i].bytes.length;
       progress("writing");
-    }
+    });
   }
   if (!(await inspectDeploymentBuffer(connection, buffer, artifact)).complete) throw new Error("Program buffer readback failed. Resume the saved buffer before deployment.");
   const program = Keypair.generate();
