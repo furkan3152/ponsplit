@@ -204,8 +204,8 @@ export async function closeUnusedProgram(options: {
   const transaction = await prepare(connection, authority, new Transaction().add(closeProgramInstruction(program, authority)));
   await simulate(connection, transaction);
   const expected = transaction.serializeMessage();
-  const signed = await wallet.signTransaction(transaction);
-  checkedDeploymentSignature(expected, signed, transaction.lastValidBlockHeight);
+  const expectedHeight = transaction.lastValidBlockHeight;
+  const signed = checkedDeploymentSignature(expected, await wallet.signTransaction(transaction), expectedHeight);
   // Reject accounts created or a program configured/upgraded while the wallet prompt was open.
   await quoteUnusedProgramRefund(connection, program, artifact);
   return broadcast(connection, signed, options.onSent);
@@ -319,9 +319,15 @@ async function broadcast(connection: Connection, transaction: Transaction, onSen
   // Save the signed transaction ID BEFORE submission: a lost HTTP response must not hide it.
   onSent?.(signature);
   try {
-    const returned = await connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 3, preflightCommitment: "confirmed" });
+    // Wallets may pick a newer processed hash. Preflight checks that exact signed hash and
+    // every signature; confirmed reads remain the success criterion after submission.
+    const returned = await connection.sendRawTransaction(bytes, { skipPreflight: false, maxRetries: 3, preflightCommitment: "processed" });
     if (returned !== signature) throw new Error("RPC returned a different transaction signature.");
-    const response = await connection.confirmTransaction({ signature, blockhash: transaction.recentBlockhash!, lastValidBlockHeight: transaction.lastValidBlockHeight! }, "confirmed");
+    // A wallet-refreshed hash has no trusted lastValidBlockHeight. Use the SDK's bounded
+    // signature confirmation in that case, never pair it with another hash's expiry.
+    const response = transaction.lastValidBlockHeight === undefined
+      ? await connection.confirmTransaction(signature, "confirmed")
+      : await connection.confirmTransaction({ signature, blockhash: transaction.recentBlockhash!, lastValidBlockHeight: transaction.lastValidBlockHeight }, "confirmed");
     if (response.value.err) throw new Error(`Program transaction failed: ${JSON.stringify(response.value.err)}`);
   } catch (error) {
     // Mobile/websocket disconnects may happen AFTER a successful payment or write.
@@ -379,8 +385,8 @@ export async function deployEscrowProgram(options: {
     await simulate(connection, transaction);
     transaction.partialSign(temporary);
     const expectedMessage = transaction.serializeMessage();
-    const signed = await wallet.signTransaction(transaction);
-    checkedDeploymentSignature(expectedMessage, signed, transaction.lastValidBlockHeight);
+    const expectedHeight = transaction.lastValidBlockHeight;
+    const signed = checkedDeploymentSignature(expectedMessage, await wallet.signTransaction(transaction), expectedHeight, [temporary]);
     // Store the public buffer key before sending: uncertain confirmation must not lose it.
     options.onBufferCreated?.(buffer.toBase58());
     await broadcast(connection, signed, options.onTransaction);
@@ -405,8 +411,8 @@ export async function deployEscrowProgram(options: {
     else for (const transaction of transactions) signed.push(await wallet.signTransaction(transaction));
     if (signed.length !== transactions.length) throw new Error("The wallet returned an incomplete deployment batch.");
     for (let i = 0; i < signed.length; i++) {
-      checkedDeploymentSignature(messages[i], signed[i], transactions[i].lastValidBlockHeight);
-      await broadcast(connection, signed[i], options.onTransaction);
+      const verified = checkedDeploymentSignature(messages[i], signed[i], lastValidBlockHeight);
+      await broadcast(connection, verified, options.onTransaction);
       writtenBytes += chunks[i].bytes.length;
       progress("writing");
     }
@@ -422,8 +428,8 @@ export async function deployEscrowProgram(options: {
   await simulate(connection, transaction);
   transaction.partialSign(program);
   const expectedMessage = transaction.serializeMessage();
-  const signed = await wallet.signTransaction(transaction);
-  checkedDeploymentSignature(expectedMessage, signed, transaction.lastValidBlockHeight);
+  const expectedHeight = transaction.lastValidBlockHeight;
+  const signed = checkedDeploymentSignature(expectedMessage, await wallet.signTransaction(transaction), expectedHeight, [program]);
   progress("deploying", { programId: program.publicKey.toBase58() });
   let signature = "";
   try {
@@ -448,7 +454,7 @@ export async function closeDeploymentBuffer(options: { connection: Connection; w
   const transaction = await prepare(connection, authority, new Transaction().add(closeBufferInstruction(buffer, authority)));
   await simulate(connection, transaction);
   const expected = transaction.serializeMessage();
-  const signed = await wallet.signTransaction(transaction);
-  checkedDeploymentSignature(expected, signed, transaction.lastValidBlockHeight);
+  const expectedHeight = transaction.lastValidBlockHeight;
+  const signed = checkedDeploymentSignature(expected, await wallet.signTransaction(transaction), expectedHeight);
   return broadcast(connection, signed);
 }

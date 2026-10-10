@@ -17,11 +17,36 @@ for (const who of [admin, attacker]) {
   const signature = await c.requestAirdrop(who.publicKey, 5_000_000_000);
   await c.confirmTransaction(signature, "confirmed");
 }
+let hashRefreshes = 0, coSignatureRefreshes = 0, signatureConfirmations = 0;
+async function okxStyleSign(tx) {
+  const original = tx.recentBlockhash;
+  // Reproduce the reported wallet behavior with real validator blockhashes, including
+  // in-place mutation, untrusted expiry metadata, and now-stale local partial signatures.
+  for (let attempts = 0; tx.recentBlockhash === original; attempts++) {
+    assert.ok(attempts < 80, "validator must produce a fresh blockhash");
+    tx.recentBlockhash = (await c.getLatestBlockhash("processed")).blockhash;
+    if (tx.recentBlockhash === original) await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  hashRefreshes++;
+  if (tx.signatures.some(s => s.signature && !s.publicKey.equals(admin.publicKey))) coSignatureRefreshes++;
+  tx.lastValidBlockHeight = 1;
+  tx.partialSign(admin);
+  return Transaction.from(tx.serialize({ requireAllSignatures: false, verifySignatures: false }));
+}
 const wallet = {
   publicKey: admin.publicKey,
-  signTransaction: async (tx) => { tx.partialSign(admin); return Transaction.from(tx.serialize()); },
-  signAllTransactions: async (txs) => txs.map((tx) => { tx.partialSign(admin); return Transaction.from(tx.serialize()); }),
+  signTransaction: okxStyleSign,
+  signAllTransactions: async (txs) => Promise.all(txs.map(okxStyleSign)),
 };
+const checkedConnection = new Proxy(c, { get(target, key) {
+  if (key === "confirmTransaction") return async (strategy, ...rest) => {
+    assert.equal(typeof strategy, "string", "refreshed hashes must never use the old or wallet-supplied block-height expiry");
+    signatureConfirmations++;
+    return target.confirmTransaction(strategy, ...rest);
+  };
+  const value = Reflect.get(target, key, target);
+  return typeof value === "function" ? value.bind(target) : value;
+} });
 const quote = await lib.quoteProgramDeployment(c, admin.publicKey, artifact);
 assert.ok(quote.sufficientBalance);
 assert.equal(quote.writeTransactions, Math.ceil(artifact.bytes.length / lib.WRITE_CHUNK_SIZE));
@@ -48,7 +73,7 @@ const initialAdminBalance = BigInt(await c.getBalance(admin.publicKey));
 let confirmationDropped = false;
 const lastSignatures = [];
 // Real transaction succeeds on the validator, then its confirmation transport disconnects.
-const mobileConnection = new Proxy(c, { get(target, key) {
+const mobileConnection = new Proxy(checkedConnection, { get(target, key) {
   if (key === "confirmTransaction") return async (...args) => {
     const result = await target.confirmTransaction(...args);
     if (!confirmationDropped) { confirmationDropped = true; throw new Error("Mobile confirmation connection lost"); }
@@ -89,26 +114,35 @@ const singleWallet = { publicKey: admin.publicKey, signTransaction: async (tx) =
   }
   return wallet.signTransaction(tx);
 }, signAllTransactions: async () => { assert.fail("single signing must not invoke wallet batch signing"); } };
-const result = await lib.deployEscrowProgram({ connection: c, wallet: singleWallet, writeBatchSize: 1, artifact, resumeBuffer: new PublicKey(savedBuffer), onProgress: (progress) => { if (progress.phase === "writing") resumedBytes = Math.max(resumedBytes, progress.writtenBytes); } });
+const result = await lib.deployEscrowProgram({ connection: checkedConnection, wallet: singleWallet, writeBatchSize: 1, artifact, resumeBuffer: new PublicKey(savedBuffer), onProgress: (progress) => { if (progress.phase === "writing") resumedBytes = Math.max(resumedBytes, progress.writtenBytes); } });
 assert.equal(resumedBytes, artifact.bytes.length);
 assert.equal(singleApprovals, interrupted.remainingChunks + 1);
 assert.equal(await lib.inspectDeployedProgram(c, new PublicKey(result.programId), artifact), true);
 assert.ok((await c.getAccountInfo(new PublicKey(result.programId))).executable);
 assert.equal(initialAdminBalance - BigInt(await c.getBalance(admin.publicKey)), quote.finalCostLamports + walletAddedFees, "actual completed deployment costs exactly the quoted rents and fees; buffer rent is recycled");
 assert.equal(BigInt(await c.getBalance(admin.publicKey)), quote.walletRentLamports + quote.recoveryFeeLamports + quote.walletFeeReserveLamports - walletAddedFees);
-console.log("PASS single-transaction mobile signing, lost-confirmation recovery, exact budget and verified program", result.programId);
+assert.equal(signatureConfirmations, quote.totalTransactions);
+assert.equal(coSignatureRefreshes, 2, "both buffer creation and final program deployment survive refreshed blockhashes");
+console.log("PASS wallet-refreshed blockhashes, local co-signatures, single mobile signing, lost-confirmation recovery, exact budget and verified program", result.programId);
 // Refill only for the independent cancellation/refund scenario.
 await c.confirmTransaction(await c.requestAirdrop(admin.publicKey, 1_000_000_000), "confirmed");
 
 let refundable;
-await assert.rejects(lib.deployEscrowProgram({ connection: c, wallet: { ...wallet, signAllTransactions: async () => { throw new Error("Stop before writes"); } }, artifact, onBufferCreated: (address) => { refundable = address; } }), /Stop before writes/);
+await assert.rejects(lib.deployEscrowProgram({ connection: checkedConnection, wallet: { ...wallet, signAllTransactions: async () => { throw new Error("Stop before writes"); } }, artifact, onBufferCreated: (address) => { refundable = address; } }), /Stop before writes/);
 const info = await lib.inspectDeploymentBuffer(c, new PublicKey(refundable), artifact);
 const before = BigInt(await c.getBalance(admin.publicKey));
 await assert.rejects(lib.closeDeploymentBuffer({ connection: c, wallet: { ...wallet, signTransaction: async tx => {
   tx.add(SystemProgram.transfer({ fromPubkey: admin.publicKey, toPubkey: attacker.publicKey, lamports: 1 }));
   return wallet.signTransaction(tx);
 } }, buffer: new PublicKey(refundable) }), /Wallet transaction blocked/);
-await lib.closeDeploymentBuffer({ connection: c, wallet: { ...wallet, signTransaction: async tx => {
+await assert.rejects(lib.closeDeploymentBuffer({ connection: checkedConnection, wallet: { ...wallet, signTransaction: async tx => {
+  tx.recentBlockhash = SystemProgram.programId.toBase58();
+  tx.sign(admin);
+  return tx;
+} }, buffer: new PublicKey(refundable) }), /[Bb]lockhash not found/);
+assert.equal(BigInt(await c.getBalance(admin.publicKey)), before, "invalid/expired wallet hash fails preflight without charging fees");
+assert.equal((await lib.inspectDeploymentBuffer(c, new PublicKey(refundable), artifact)).lamports, info.lamports);
+await lib.closeDeploymentBuffer({ connection: checkedConnection, wallet: { ...wallet, signTransaction: async tx => {
   tx.instructions.unshift(ComputeBudgetProgram.setComputeUnitLimit({ units: 10000 }), ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100000 }));
   return wallet.signTransaction(tx);
 } }, buffer: new PublicKey(refundable) });
@@ -116,7 +150,7 @@ const after = BigInt(await c.getBalance(admin.publicKey));
 assert.equal(await c.getAccountInfo(new PublicKey(refundable)), null);
 assert.equal(after - before, info.lamports - quote.recoveryFeeLamports - 1000n);
 await assert.rejects(lib.closeDeploymentBuffer({ connection: c, wallet, buffer: new PublicKey(result.programId) }), /buffer/);
-console.log("PASS wallet-added bounded priority fee accepted for refund; hidden transfer rejected");
+console.log("PASS refreshed hash and bounded priority fee accepted for refund; hidden transfer and expired hash rejected without payment");
 
 
 // Close only an unused deployment, with all refunds fixed to the admin.
@@ -133,7 +167,7 @@ await assert.rejects(lib.closeUnusedProgram({ connection: c, wallet: { ...wallet
 assert.equal(await lib.inspectDeployedProgram(c, deployed, artifact), true);
 await assert.rejects(lib.quoteUnusedProgramRefund(c, SystemProgram.programId, artifact), /not an active verified/);
 const beforeProgramRefund = BigInt(await c.getBalance(admin.publicKey));
-const closeSignature = await lib.closeUnusedProgram({ connection: c, wallet, program: deployed, artifact, confirmedProgramId: deployed.toBase58() });
+const closeSignature = await lib.closeUnusedProgram({ connection: checkedConnection, wallet, program: deployed, artifact, confirmedProgramId: deployed.toBase58() });
 const closeReceipt = await c.getTransaction(closeSignature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
 assert.ok(closeReceipt?.meta && !closeReceipt.meta.err);
 assert.equal(BigInt(await c.getBalance(admin.publicKey)) - beforeProgramRefund, refundQuote.refundLamports - BigInt(closeReceipt.meta.fee));
@@ -143,7 +177,7 @@ assert.equal(await lib.inspectDeployedProgram(c, deployed, artifact), false);
 await assert.rejects(lib.quoteUnusedProgramRefund(c, deployed, artifact), /not an active verified/);
 console.log("PASS unused program closure: only admin receives ProgramData rent, exact fee, address rent retained, program cannot run");
 
-const second = await lib.deployEscrowProgram({ connection: c, wallet, artifact });
+const second = await lib.deployEscrowProgram({ connection: checkedConnection, wallet, artifact });
 const secondProgram = new PublicKey(second.programId);
 // Loader v3 intentionally forbids closing in the deployment slot.
 const deploymentSlot = Number((await c.getAccountInfo(lib.programDataAddress(secondProgram), "confirmed")).data.readBigUInt64LE(4));
@@ -172,3 +206,5 @@ if (process.env.NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID) {
   await assert.rejects(lib.quoteUnusedProgramRefund(c, new PublicKey(process.env.NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID), artifact), /configured escrow program/);
 }
 console.log("PASS existing empty creator vault and accounts created during wallet approval block closure; configured program is protected");
+assert.ok(hashRefreshes > 140 && signatureConfirmations > 140);
+console.log("PASS full loader regression with wallet-refreshed hashes", { hashRefreshes, coSignatureRefreshes, signatureConfirmations });
