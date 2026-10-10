@@ -13,6 +13,7 @@ import {
   inspectDeploymentBuffer,
   loadEscrowArtifact,
   quoteProgramDeployment,
+  remainingDeploymentBalance,
   type DeployProgress,
 } from "@/lib/solana/program-deploy";
 
@@ -163,17 +164,9 @@ export function ProgramDeployment({
       ? quote.data.writeFeeLamports * BigInt(buffer.data.remainingChunks) +
         quote.data.deployFeeLamports
       : quote.data?.transactionFeesLamports;
-  const resumeReserve =
-    quote.data && buffer.data
-      ? (quote.data.transactionFeesLamports /
-          BigInt(quote.data.totalTransactions)) *
-        BigInt(buffer.data.remainingChunks + 2)
-      : 0n;
   const requiredBalance =
-    quote.data && resumeBuffer && buffer.data && remainingFees !== undefined
-      ? quote.data.lockedRentLamports +
-        (remainingFees > resumeReserve ? remainingFees : resumeReserve) +
-        quote.data.recoveryFeeLamports
+    quote.data && resumeBuffer && buffer.data
+      ? remainingDeploymentBalance(quote.data, buffer.data.lamports, buffer.data.remainingChunks)
       : quote.data?.requiredLamports;
   const sufficientBalance =
     quote.data && requiredBalance !== undefined
@@ -410,11 +403,10 @@ export function ProgramDeployment({
           </div>
           <p className="text-[11px] leading-relaxed text-ink-3">
             {resumeBuffer && buffer.data
-              ? "The saved buffer is already funded. This remaining balance covers deployment rent and a fee reserve."
-              : "The required balance includes the temporary upload buffer and a fee reserve."}{" "}
+              ? "SOL already in the upload buffer is credited toward deployment. This is the additional wallet balance needed."
+              : "Upload SOL is reused to fund the deployed program, so it is counted once. A small wallet and recovery reserve is included."}{" "}
             The full workflow&apos;s final estimated cost is{" "}
-            {formatSol(quote.data.finalCostLamports, 5)} SOL; unused buffer rent
-            is returned when deployment completes.
+            {formatSol(quote.data.finalCostLamports, 5)} SOL. Buffer funding becomes program rent; any surplus is returned.
           </p>
         </dl>
       ) : null}

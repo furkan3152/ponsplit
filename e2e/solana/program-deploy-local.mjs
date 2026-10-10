@@ -29,6 +29,19 @@ assert.equal(quote.finalCostLamports, quote.lockedRentLamports + quote.transacti
 assert.ok(quote.requiredLamports > quote.finalCostLamports);
 console.log("PASS real RPC rent/fee quote", { bytes: quote.binaryBytes, transactions: quote.totalTransactions, finalCostLamports: quote.finalCostLamports.toString(), requiredLamports: quote.requiredLamports.toString() });
 
+// Prove deployment with only the advertised budget, not a generously funded test wallet.
+const trimLifetime = await c.getLatestBlockhash("confirmed");
+const trim = new Transaction({ feePayer: admin.publicKey, ...trimLifetime }).add(SystemProgram.transfer({ fromPubkey: admin.publicKey, toPubkey: attacker.publicKey, lamports: 1 }));
+const trimFee = (await c.getFeeForMessage(trim.compileMessage(), "confirmed")).value;
+assert.notEqual(trimFee, null);
+const spare = BigInt(await c.getBalance(admin.publicKey)) - quote.requiredLamports - BigInt(trimFee);
+trim.instructions[0] = SystemProgram.transfer({ fromPubkey: admin.publicKey, toPubkey: attacker.publicKey, lamports: spare });
+trim.sign(admin);
+const trimSignature = await c.sendRawTransaction(trim.serialize());
+await c.confirmTransaction({ signature: trimSignature, ...trimLifetime }, "confirmed");
+assert.equal(BigInt(await c.getBalance(admin.publicKey)), quote.requiredLamports);
+assert.equal(quote.requiredLamports, quote.finalCostLamports + quote.walletRentLamports + quote.recoveryFeeLamports);
+
 let savedBuffer;
 let signingBatches = 0;
 const initialAdminBalance = BigInt(await c.getBalance(admin.publicKey));
@@ -52,7 +65,10 @@ assert.equal(resumedBytes, artifact.bytes.length);
 assert.equal(await lib.inspectDeployedProgram(c, new PublicKey(result.programId), artifact), true);
 assert.ok((await c.getAccountInfo(new PublicKey(result.programId))).executable);
 assert.equal(initialAdminBalance - BigInt(await c.getBalance(admin.publicKey)), quote.finalCostLamports, "actual completed deployment costs exactly the quoted rents and fees; buffer rent is recycled");
-console.log("PASS real program deployment + binary readback + admin upgrade authority", result.programId);
+assert.equal(BigInt(await c.getBalance(admin.publicKey)), quote.walletRentLamports + quote.recoveryFeeLamports);
+console.log("PASS exact minimum-budget deployment + binary readback + admin upgrade authority", result.programId);
+// Refill only for the independent cancellation/refund scenario.
+await c.confirmTransaction(await c.requestAirdrop(admin.publicKey, 1_000_000_000), "confirmed");
 
 let refundable;
 await assert.rejects(lib.deployEscrowProgram({ connection: c, wallet: { ...wallet, signAllTransactions: async () => { throw new Error("Stop before writes"); } }, artifact, onBufferCreated: (address) => { refundable = address; } }), /Stop before writes/);

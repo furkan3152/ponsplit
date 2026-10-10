@@ -10,12 +10,47 @@ use solana_program::{
     program_error::ProgramError,
     pubkey::Pubkey,
     rent::Rent,
-    system_instruction, system_program,
+    system_program,
     sysvar::Sysvar,
 };
 
+// Encode the three stable System Program instructions used by this program directly.
+// Avoid retaining the general-purpose serde/bincode enum serializer in the SBF binary.
+// Native tests compare every byte and account privilege against the official SDK.
+mod system_instruction {
+    use solana_program::{instruction::{AccountMeta, Instruction}, pubkey::Pubkey, system_program};
+
+    pub fn transfer(from: &Pubkey, to: &Pubkey, lamports: u64) -> Instruction {
+        let mut data = Vec::with_capacity(12);
+        data.extend_from_slice(&2u32.to_le_bytes());
+        data.extend_from_slice(&lamports.to_le_bytes());
+        Instruction { program_id: system_program::id(), accounts: vec![AccountMeta::new(*from, true), AccountMeta::new(*to, false)], data }
+    }
+    pub fn allocate(account: &Pubkey, space: u64) -> Instruction {
+        let mut data = Vec::with_capacity(12);
+        data.extend_from_slice(&8u32.to_le_bytes());
+        data.extend_from_slice(&space.to_le_bytes());
+        Instruction { program_id: system_program::id(), accounts: vec![AccountMeta::new(*account, true)], data }
+    }
+    pub fn assign(account: &Pubkey, owner: &Pubkey) -> Instruction {
+        let mut data = Vec::with_capacity(36);
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(owner.as_ref());
+        Instruction { program_id: system_program::id(), accounts: vec![AccountMeta::new(*account, true)], data }
+    }
+}
+
 #[cfg(not(feature = "no-entrypoint"))]
 solana_program::entrypoint!(process_instruction);
+
+// A panic still aborts and rolls back the instruction. Omit costly formatted panic
+// diagnostics from the deployed binary; normal validation returns explicit errors.
+#[cfg(all(feature = "custom-panic", target_os = "solana"))]
+#[no_mangle]
+fn custom_panic(_info: &core::panic::PanicInfo<'_>) {
+    solana_program::msg!("Escrow aborted");
+    std::process::abort()
+}
 
 pub const VAULT_LEN: usize = 138;
 pub const MAGIC: &[u8; 8] = b"TIKVAULT";

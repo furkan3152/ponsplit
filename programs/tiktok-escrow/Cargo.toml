@@ -9,8 +9,16 @@ publish = false
 crate-type = ["cdylib", "lib"]
 
 [features]
-default = []
+default = ["custom-panic"]
 no-entrypoint = []
+custom-panic = []
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+overflow-checks = true
 
 [dependencies]
 solana-program = "=2.3.0"
