@@ -82,7 +82,7 @@ const mobileConnection = new Proxy(checkedConnection, { get(target, key) {
   const value = Reflect.get(target, key, target);
   return typeof value === "function" ? value.bind(target) : value;
 } });
-await assert.rejects(lib.deployEscrowProgram({ connection: mobileConnection, onTransaction: (signature) => lastSignatures.push(signature), wallet: { ...wallet, signAllTransactions: async (txs) => {
+await assert.rejects(lib.deployEscrowProgram({ connection: mobileConnection, writeBatchSize: 4, onTransaction: (signature) => lastSignatures.push(signature), wallet: { ...wallet, signAllTransactions: async (txs) => {
   if (++signingBatches === 2) throw new Error("Intentional interruption after first write batch");
   return wallet.signAllTransactions(txs);
 } }, artifact, onBufferCreated: (address) => { savedBuffer = address; } }), /Intentional interruption/);
@@ -131,6 +131,16 @@ let refundable;
 await assert.rejects(lib.deployEscrowProgram({ connection: checkedConnection, wallet: { ...wallet, signAllTransactions: async () => { throw new Error("Stop before writes"); } }, artifact, onBufferCreated: (address) => { refundable = address; } }), /Stop before writes/);
 const info = await lib.inspectDeploymentBuffer(c, new PublicKey(refundable), artifact);
 const before = BigInt(await c.getBalance(admin.publicKey));
+let tamperedBatchSent = 0;
+await assert.rejects(lib.deployEscrowProgram({ connection: checkedConnection, artifact, resumeBuffer: new PublicKey(refundable), onTransaction: () => { tamperedBatchSent++; }, wallet: { ...wallet, signAllTransactions: async txs => {
+  assert.equal(txs.length, quote.writeTransactions, "fast mode requests the full upload together");
+  txs.at(-1).add(SystemProgram.transfer({ fromPubkey: admin.publicKey, toPubkey: attacker.publicKey, lamports: 1 }));
+  return wallet.signAllTransactions(txs);
+} } }), /Wallet transaction blocked/);
+assert.equal(tamperedBatchSent, 0, "the entire batch must be validated before its first send");
+assert.equal(BigInt(await c.getBalance(admin.publicKey)), before);
+assert.equal((await lib.inspectDeploymentBuffer(c, new PublicKey(refundable), artifact)).writtenBytes, 0);
+console.log("PASS tampered final write rejects the whole batch without broadcasting or charging");
 await assert.rejects(lib.closeDeploymentBuffer({ connection: c, wallet: { ...wallet, signTransaction: async tx => {
   tx.add(SystemProgram.transfer({ fromPubkey: admin.publicKey, toPubkey: attacker.publicKey, lamports: 1 }));
   return wallet.signTransaction(tx);
@@ -177,7 +187,26 @@ assert.equal(await lib.inspectDeployedProgram(c, deployed, artifact), false);
 await assert.rejects(lib.quoteUnusedProgramRefund(c, deployed, artifact), /not an active verified/);
 console.log("PASS unused program closure: only admin receives ProgramData rent, exact fee, address rent retained, program cannot run");
 
-const second = await lib.deployEscrowProgram({ connection: checkedConnection, wallet, artifact });
+let fastSingleRequests = 0, fastBatchRequests = 0, activeConfirmations = 0, maxConfirmations = 0;
+const fastConnection = new Proxy(checkedConnection, { get(target, key) {
+  if (key === "confirmTransaction") return async (...args) => {
+    activeConfirmations++;
+    maxConfirmations = Math.max(maxConfirmations, activeConfirmations);
+    try { return await target.confirmTransaction(...args); }
+    finally { activeConfirmations--; }
+  };
+  const value = Reflect.get(target, key, target);
+  return typeof value === "function" ? value.bind(target) : value;
+} });
+const second = await lib.deployEscrowProgram({ connection: fastConnection, artifact, wallet: { ...wallet,
+  signTransaction: async tx => { fastSingleRequests++; return wallet.signTransaction(tx); },
+  signAllTransactions: async txs => { fastBatchRequests++; assert.equal(txs.length, quote.writeTransactions); return wallet.signAllTransactions(txs); },
+} });
+assert.equal(fastSingleRequests, 2, "only create-buffer and final deployment ask individually");
+assert.equal(fastBatchRequests, 1, "all 71 writes share one wallet API approval request");
+assert.ok(maxConfirmations > 1 && maxConfirmations <= 3);
+assert.equal(activeConfirmations, 0);
+console.log("PASS fast deployment: one 71-write approval request, bounded parallel confirmation and verified readback");
 const secondProgram = new PublicKey(second.programId);
 // Loader v3 intentionally forbids closing in the deployment slot.
 const deploymentSlot = Number((await c.getAccountInfo(lib.programDataAddress(secondProgram), "confirmed")).data.readBigUInt64LE(4));
