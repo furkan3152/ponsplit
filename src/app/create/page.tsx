@@ -6,7 +6,7 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Keypair, PublicKey, type VersionedTransaction } from "@solana/web3.js";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { useRiskGate } from "@/components/RiskNotice";
 import {
@@ -32,6 +32,7 @@ import {
 } from "@/lib/solana/pump";
 import { checkedVersionedSignature } from "@/lib/solana/versioned-signing";
 import { sendCheckedVersionedTransaction } from "@/lib/solana/versioned-send";
+import { recoverTikTokLaunch } from "@/lib/solana/launch-recovery";
 
 const PENDING_KEY = "tiksplit:pending-launch:v1";
 const RENT_ESTIMATE = 40_000_000n;
@@ -44,6 +45,7 @@ type PendingLaunch = {
   metadataUri: string;
   at: number;
   signatures?: string[];
+  restored?: boolean;
 };
 type Recovery = {
   launch: PendingLaunch;
@@ -107,6 +109,8 @@ export default function CreatePage() {
   const address = publicKey?.toBase58();
   const currentAddress = useRef(address);
   currentAddress.current = address;
+  const currentEndpoint = useRef(connection.rpcEndpoint);
+  currentEndpoint.current = connection.rpcEndpoint;
   const configured = isTikTokLaunchReady();
   const readiness = useQuery({
     queryKey: ["runtime-launch-readiness"],
@@ -129,6 +133,13 @@ export default function CreatePage() {
   const [error, setError] = useState<string | null>(null);
   const [lastSignature, setLastSignature] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingLaunch[]>([]);
+  const [recoverMint, setRecoverMint] = useState("");
+  const [requestedRecovery, setRequestedRecovery] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState(false);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
+  const [recoveredComplete, setRecoveredComplete] = useState<string | null>(null);
+  const [reviewedRecovery, setReviewedRecovery] = useState<Record<string, boolean>>({});
+  const attemptedRecovery = useRef(new Set<string>());
   const inFlight = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const handle = normalizeTikTokHandle(handleInput);
@@ -138,10 +149,55 @@ export default function CreatePage() {
   const refreshPending = () => setPending(address ? readPending(address) : []);
   useEffect(() => {
     setPending(address ? readPending(address) : []);
+    setReviewedRecovery({});
+    setRecoverError(null);
   }, [address]);
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("recover");
+    if (requested) { setRecoverMint(requested); setRequestedRecovery(requested); }
+  }, []);
+
+  const restoreExistingMint = useCallback(async (input: string) => {
+    if (!publicKey || !address) { setVisible(true); return; }
+    if (!configured || inFlight.current) return;
+    inFlight.current = true;
+    setRecovering(true);
+    setRecoverError(null);
+    setRecoveredComplete(null);
+    const endpoint = connection.rpcEndpoint;
+    try {
+      const result = await recoverTikTokLaunch(connection, input, publicKey);
+      if (currentAddress.current !== address || currentEndpoint.current !== endpoint) throw new Error("Reconnect the original launching wallet before restoring this mint.");
+      if (result.state === "done") {
+        setRecoveredComplete(result.launch.mint);
+      } else {
+        const existing = readPending(address).find((launch) => launch.mint === result.launch.mint);
+        // Chain-validated recipients and policy stay authoritative; restoring a
+        // saved mint must retain its original creation time and payment receipts.
+        updatePending(address, {
+          ...result.launch,
+          at: existing?.at ?? result.launch.at,
+          signatures: existing?.signatures,
+        });
+        setPending(readPending(address));
+      }
+    } catch (error) {
+      setRecoverError(errorMessage(error));
+    } finally {
+      setRecovering(false);
+      inFlight.current = false;
+    }
+  }, [address, configured, connection, publicKey, setVisible]);
+  useEffect(() => {
+    if (!requestedRecovery || !address || !configured) return;
+    const key = `${address}:${requestedRecovery}`;
+    if (attemptedRecovery.current.has(key)) return;
+    attemptedRecovery.current.add(key);
+    void restoreExistingMint(requestedRecovery);
+  }, [address, configured, requestedRecovery, restoreExistingMint]);
 
   const recovery = useQuery({
-    queryKey: ["tiktok-launch-recovery", address, pending],
+    queryKey: ["tiktok-launch-recovery", address, pending, connection.rpcEndpoint],
     enabled: Boolean(configured && address && pending.length),
     refetchInterval: 15_000,
     queryFn: async (): Promise<Recovery[]> =>
@@ -361,6 +417,10 @@ export default function CreatePage() {
 
   async function finishLaunch(launch: PendingLaunch) {
     if (!publicKey || !address || !configured || inFlight.current) return;
+    if (launch.restored && !reviewedRecovery[launch.mint]) {
+      setError("Review the restored TikTok username and permanent fee split before finishing this mint.");
+      return;
+    }
     inFlight.current = true;
     setError(null);
     try {
@@ -419,6 +479,111 @@ export default function CreatePage() {
         </p>
       </header>
 
+      <section className="card p-5 sm:p-7" aria-labelledby="restore-launch-heading">
+        <div className="eyebrow">Existing mint recovery</div>
+        <h2 id="restore-launch-heading" className="mt-2 text-[23px] font-semibold">Already created a coin?</h2>
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-2">
+          Restore its public mint address with the original launching wallet. This checks the existing coin; it does not create another mint or ask for a signature.
+        </p>
+        <form className="mt-4 flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); void restoreExistingMint(recoverMint); }}>
+          <div className="min-w-0 flex-1">
+            <label htmlFor="recover-mint" className="label">Existing coin mint address</label>
+            <input id="recover-mint" className="input font-mono text-[12px]" value={recoverMint} onChange={(event) => setRecoverMint(event.target.value)} placeholder="Paste the Solana mint address" maxLength={44} spellCheck={false} autoCapitalize="none" autoCorrect="off" />
+          </div>
+          <button className="btn-secondary px-4 py-3 text-[13px]" disabled={Boolean(status) || recovering || !configured || !recoverMint.trim()}>{recovering ? "Checking the existing mint…" : connected ? "Check and restore mint" : "Connect original wallet"}</button>
+        </form>
+        {requestedRecovery && !connected ? <p className="mt-3 text-[12px] text-neon">Connect the original launching wallet to restore this coin.</p> : null}
+        {recoverError ? <p role="alert" className="mt-3 text-[13px] text-down-ink">{recoverError}</p> : null}
+        {recoveredComplete ? <p role="status" className="mt-3 text-[13px] text-up-ink">This coin already has its permanent fee split. <Link className="underline" href={`/token/${recoveredComplete}`}>Open existing coin →</Link></p> : null}
+      </section>
+
+      {pending.length ? (
+        <section className="card border-neon p-5 sm:p-7" aria-labelledby="saved-launches-heading">
+          <div className="eyebrow">Saved launches</div>
+          <h2 id="saved-launches-heading" className="mt-2 text-[23px] font-semibold">
+            Finish your saved launch
+          </h2>
+          <p className="mt-2 text-[13px] text-ink-2">
+            Recovery checks the mint and immutable fee split on Solana before
+            sending another transaction. Trades before the permanent split can leave creator fees to sweep; finishing uses the original wallet and existing mint.
+          </p>
+          <ul className="mt-4 divide-y divide-line">
+            {pending.map((launch) => {
+              const checked = recovery.data?.find(
+                (item) => item.launch.mint === launch.mint,
+              );
+              return (
+                <li className="py-4" key={launch.mint}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">
+                        ${launch.symbol} · @{launch.handle}
+                      </div>
+                      <div className="mt-1 text-[12px] text-ink-3">
+                        Creator{" "}
+                        {pct(
+                          10_000 -
+                            (launch.platformBps ?? 1000) -
+                            launch.launcherBps,
+                        )}{" "}
+                        · launcher {pct(launch.launcherBps)} · platform{" "}
+                        {pct(launch.platformBps ?? 1000)}
+                      </div>
+                      <a
+                        href={`https://solscan.io/token/${launch.mint}`}
+                        className="mt-2 block font-mono text-[11px] text-neon hover:underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {shortAddress(launch.mint)} ↗
+                      </a>
+                    </div>
+                    {checked?.state === "needs-split" ? (
+                      <button
+                        className="btn-secondary px-4 py-2.5 text-[13px]"
+                        disabled={Boolean(status) || recovering || !configured || (launch.restored && !reviewedRecovery[launch.mint])}
+                        onClick={() =>
+                          guard(() => {
+                            void finishLaunch(launch);
+                          })
+                        }
+                      >
+                        Finish fee split →
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-[12px] text-ink-2">
+                    {checked?.state === "error"
+                      ? checked.error
+                      : checked?.state === "missing"
+                        ? "The mint is not confirmed on this RPC yet. Check the saved receipt and let the status refresh."
+                        : checked?.state === "needs-split"
+                          ? "This mint already exists. Finish its permanent creator fee split; do not create this coin again."
+                          : checked?.state === "done"
+                            ? "Confirmed with its final fee split."
+                            : configured
+                              ? "Checking the launch…"
+                              : "Configure the escrow to check this launch."}
+                  </p>
+                  {launch.restored ? <label className="mt-3 flex items-start gap-2 text-[12px] leading-relaxed text-ink-2"><input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-neon" checked={Boolean(reviewedRecovery[launch.mint])} onChange={(event) => setReviewedRecovery((current) => ({ ...current, [launch.mint]: event.target.checked }))} /><span>I reviewed the restored recipient @{launch.handle} and permanent {pct(launch.platformBps ?? 1000)} platform / {pct(10_000 - (launch.platformBps ?? 1000) - launch.launcherBps)} creator split before approving. Public metadata alone does not verify TikTok ownership.</span></label> : null}
+                  {launch.signatures?.map((signature, index) => (
+                    <a
+                      className="mr-3 mt-2 inline-block text-[11px] text-neon hover:underline"
+                      key={signature}
+                      href={`https://solscan.io/tx/${signature}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Transaction {index + 1} ↗
+                    </a>
+                  ))}
+                </li>
+              );
+            })}
+          </ul>
+          {error ? <p role="alert" className="mt-3 text-[13px] text-down-ink">{error}</p> : null}
+        </section>
+      ) : null}
       {!ready ? (
         <div
           role="status"
@@ -589,7 +754,7 @@ export default function CreatePage() {
             <p className="mt-3 text-[12px] leading-relaxed text-ink-3">
               Launch uses several transactions. Until the final split is
               confirmed, the coin is unfinished and is not listed here. If
-              interrupted, use the saved launch below to finish it.
+              interrupted, use the saved launch above to finish it.
             </p>
           </section>
 
@@ -744,91 +909,6 @@ export default function CreatePage() {
         </aside>
       </div>
 
-      {pending.length ? (
-        <section className="card p-5 sm:p-7">
-          <div className="eyebrow">Saved launches</div>
-          <h2 className="mt-2 text-[23px] font-semibold">
-            Continue where you left off
-          </h2>
-          <p className="mt-2 text-[13px] text-ink-2">
-            Recovery checks the mint and immutable fee split on Solana before
-            sending another transaction.
-          </p>
-          <ul className="mt-4 divide-y divide-line">
-            {pending.map((launch) => {
-              const checked = recovery.data?.find(
-                (item) => item.launch.mint === launch.mint,
-              );
-              return (
-                <li className="py-4" key={launch.mint}>
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="font-semibold">
-                        ${launch.symbol} · @{launch.handle}
-                      </div>
-                      <div className="mt-1 text-[12px] text-ink-3">
-                        Creator{" "}
-                        {pct(
-                          10_000 -
-                            (launch.platformBps ?? 1000) -
-                            launch.launcherBps,
-                        )}{" "}
-                        · launcher {pct(launch.launcherBps)} · platform{" "}
-                        {pct(launch.platformBps ?? 1000)}
-                      </div>
-                      <a
-                        href={`https://solscan.io/token/${launch.mint}`}
-                        className="mt-2 block font-mono text-[11px] text-neon hover:underline"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {shortAddress(launch.mint)} ↗
-                      </a>
-                    </div>
-                    {checked?.state === "needs-split" ? (
-                      <button
-                        className="btn-secondary px-4 py-2.5 text-[13px]"
-                        disabled={Boolean(status) || !configured}
-                        onClick={() =>
-                          guard(() => {
-                            void finishLaunch(launch);
-                          })
-                        }
-                      >
-                        Finish fee split →
-                      </button>
-                    ) : null}
-                  </div>
-                  <p className="mt-2 text-[12px] text-ink-2">
-                    {checked?.state === "error"
-                      ? checked.error
-                      : checked?.state === "missing"
-                        ? "The mint is not confirmed on this RPC yet. Check the saved receipt and let the status refresh."
-                        : checked?.state === "needs-split"
-                          ? "Mint confirmed; the creator fee split still needs to be locked."
-                          : checked?.state === "done"
-                            ? "Confirmed with its final fee split."
-                            : configured
-                              ? "Checking the launch…"
-                              : "Configure the escrow to check this launch."}
-                  </p>
-                  {launch.signatures?.map((signature, index) => (
-                    <a
-                      className="mr-3 mt-2 inline-block text-[11px] text-neon hover:underline"
-                      key={signature}
-                      href={`https://solscan.io/tx/${signature}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Transaction {index + 1} ↗
-                    </a>
-                  ))}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
       {dialog}
     </div>
   );
