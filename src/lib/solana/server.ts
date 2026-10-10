@@ -27,6 +27,19 @@ export function serverConnection(): Connection {
   return conn;
 }
 
+let publicConn: Connection | null = null;
+/** Ordinary account/status reads do not consume the indexed provider's scan quota. */
+export function serverPublicConnection(): Connection {
+  if (!publicConn) {
+    publicConn = new Connection(rpcUrls()[0], {
+      commitment: "confirmed",
+      disableRetryOnRateLimit: true,
+      fetch: async (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(5_000) }),
+    });
+  }
+  return publicConn;
+}
+
 let tradeConnections: Connection[] | undefined;
 /** Indexed account scans and transaction history have different public RPC limits. */
 function historyConnections(): Connection[] {

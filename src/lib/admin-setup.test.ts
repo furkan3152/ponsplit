@@ -4,21 +4,47 @@ import { PublicKey, type AccountInfo } from "@solana/web3.js";
 import { ADMIN_WALLET, MAINNET_GENESIS_HASH } from "./admin-config";
 import { applyVercelConfiguration, configuredProgramStatus, serverEscrowArtifact, VERCEL_PROJECT_ID } from "./admin-setup";
 import { PROGRAM_DATA_HEADER_SIZE, UPGRADEABLE_LOADER, programDataAddress } from "./solana/program-deploy";
-import { serverConnection } from "./solana/server";
+import { serverPublicConnection } from "./solana/server";
+import { rpcUrls } from "./solana/config";
+import { PUBLIC_INDEX_RPC, PUBLIC_MAINNET_RPC } from "./solana/rpc";
 
 const program = new PublicKey("6vstPGrbwDSPQtCsketQSmajDiuaDfFyJ24DVzywMH8P");
 const verifier = new PublicKey("F2gqCRwjdLYMRUFjpEd9MATNXmaeSKRs3mWbf5UE4SaA");
 const values = { NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID: program.toBase58(), NEXT_PUBLIC_TIKSPLIT_VERIFIER: verifier.toBase58() };
 const project = { id: VERCEL_PROJECT_ID, name: "test-project", link: { type: "github", repoId: 123, repo: "ponsplit", org: "furkan3152" } };
 
+test("ordinary server RPC preserves the configured endpoint and does not retry rate limits", async (t) => {
+  const connection = serverPublicConnection();
+  assert.equal(connection.rpcEndpoint, rpcUrls()[0]);
+  assert.notEqual(connection.rpcEndpoint, PUBLIC_INDEX_RPC);
+  if (!process.env.NEXT_PUBLIC_SOLANA_LOCAL_RPC_URL?.trim()) assert.equal(connection.rpcEndpoint, PUBLIC_MAINNET_RPC);
+  assert.equal(connection.commitment, "confirmed");
+  assert.equal(serverPublicConnection(), connection);
+  let attempts = 0;
+  const timeout = AbortSignal.timeout;
+  t.mock.method(AbortSignal, "timeout", (milliseconds: number) => {
+    assert.equal(milliseconds, 5_000);
+    return timeout(milliseconds);
+  });
+  t.mock.method(globalThis, "fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    attempts++;
+    assert.equal(String(input), rpcUrls()[0]);
+    assert.ok(init?.signal instanceof AbortSignal);
+    return new Response("rate limited", { status: 429 });
+  });
+  await assert.rejects(connection.getGenesisHash(), /429/);
+  assert.equal(attempts, 1);
+});
+
 test("server artifact validation and program status require exact ELF, zero padding, loader PDA, and admin authority", async (t) => {
   const artifact = await serverEscrowArtifact();
-  const connection = serverConnection();
+  const connection = serverPublicConnection();
   const previousGenesis = connection.getGenesisHash;
   const previousMultiple = connection.getMultipleAccountsInfo;
   const previousSingle = connection.getAccountInfo;
   t.after(() => { connection.getGenesisHash = previousGenesis; connection.getMultipleAccountsInfo = previousMultiple; connection.getAccountInfo = previousSingle; });
-  connection.getGenesisHash = async () => MAINNET_GENESIS_HASH;
+  let genesisCalls = 0, batchCalls = 0;
+  connection.getGenesisHash = async () => { genesisCalls++; return MAINNET_GENESIS_HASH; };
   connection.getAccountInfo = async () => { assert.fail("program checks must read Program and ProgramData in one batch"); };
   const accountData = Buffer.alloc(36);
   accountData.writeUInt32LE(2);
@@ -31,12 +57,17 @@ test("server artifact validation and program status require exact ELF, zero padd
   const account: AccountInfo<Buffer> = { data: accountData, executable: true, owner: UPGRADEABLE_LOADER, lamports: 1, rentEpoch: 0 };
   const data: AccountInfo<Buffer> = { data: code, executable: false, owner: UPGRADEABLE_LOADER, lamports: 1, rentEpoch: 0 };
   connection.getMultipleAccountsInfo = async (keys) => {
+    batchCalls++;
     assert.deepEqual(keys.map((key) => key.toBase58()), [program.toBase58(), programDataAddress(program).toBase58()]);
     return [account, data];
   };
-  assert.deepEqual(await configuredProgramStatus(program), { deployed: true, upgradeAuthority: ADMIN_WALLET.toBase58(), artifactMatches: true });
+  const concurrent = await Promise.all(Array.from({ length: 8 }, () => configuredProgramStatus(program)));
+  for (const result of concurrent) assert.deepEqual(result, { deployed: true, upgradeAuthority: ADMIN_WALLET.toBase58(), artifactMatches: true });
+  assert.equal(genesisCalls, 1, "overlapping status checks share one network validation");
+  assert.equal(batchCalls, 1, "overlapping status checks share one Program/ProgramData read");
   code[code.length - 1] = 1;
   assert.equal((await configuredProgramStatus(program)).artifactMatches, false);
+  assert.equal(batchCalls, 2, "a sequential status check must read changed bytes instead of cached success");
   code[code.length - 1] = 0;
   code[PROGRAM_DATA_HEADER_SIZE + artifact.bytes.length - 1] ^= 1;
   assert.equal((await configuredProgramStatus(program)).artifactMatches, false);
@@ -48,6 +79,9 @@ test("server artifact validation and program status require exact ELF, zero padd
   assert.equal((await configuredProgramStatus(program)).deployed, false);
   connection.getGenesisHash = async () => "testnet";
   await assert.rejects(() => configuredProgramStatus(program), /mainnet/);
+  connection.getGenesisHash = async () => MAINNET_GENESIS_HASH;
+  programDataAddress(program).toBuffer().copy(accountData, 4);
+  assert.equal((await configuredProgramStatus(program)).artifactMatches, true, "a rejected status read must not poison subsequent checks");
 });
 
 test("hosting mutations are allowlisted, linked to the exact repo, and report partial or uncertain results safely", async (t) => {

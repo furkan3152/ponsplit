@@ -4,7 +4,7 @@ import path from "node:path";
 import { PublicKey } from "@solana/web3.js";
 import { ADMIN_WALLET, MAINNET_GENESIS_HASH } from "./admin-config";
 import { ESCROW_ARTIFACT_MANIFEST, PROGRAM_ACCOUNT_SIZE, PROGRAM_DATA_HEADER_SIZE, programDataAddress, UPGRADEABLE_LOADER, validateEscrowArtifact, type ProgramArtifact } from "./solana/program-deploy";
-import { serverConnection } from "./solana/server";
+import { serverPublicConnection } from "./solana/server";
 
 export const VERCEL_PROJECT_ID = process.env.VERCEL_PROJECT_ID || "prj_K4lYPXiOoIIqWqjNvaJxqqiuBeJI";
 export const automaticConfigurationReady = () => Boolean(process.env.VERCEL_DEPLOY_TOKEN?.trim());
@@ -16,8 +16,20 @@ export async function serverEscrowArtifact(): Promise<ProgramArtifact> {
   return artifact;
 }
 
-export async function configuredProgramStatus(program: PublicKey) {
-  const connection = serverConnection();
+// Share overlapping readiness/scan checks only. Completed results are never
+// cached: the next shutdown check must observe upgrades, authority changes or closure.
+const programStatusInflight = new Map<string, Promise<Awaited<ReturnType<typeof readConfiguredProgramStatus>>>>();
+export function configuredProgramStatus(program: PublicKey) {
+  const address = program.toBase58();
+  const current = programStatusInflight.get(address);
+  if (current) return current;
+  const pending = readConfiguredProgramStatus(program).finally(() => { programStatusInflight.delete(address); });
+  programStatusInflight.set(address, pending);
+  return pending;
+}
+
+async function readConfiguredProgramStatus(program: PublicKey) {
+  const connection = serverPublicConnection();
   if (await connection.getGenesisHash() !== MAINNET_GENESIS_HASH) throw new Error("Solana mainnet is required.");
   const address = programDataAddress(program);
   const [accounts, artifact] = await Promise.all([
