@@ -10,7 +10,7 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CreatorProof } from "@/components/CreatorProof";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { coinImage } from "@/lib/coin-ui";
@@ -31,6 +31,8 @@ import {
   claimCreatorInstruction,
   creatorVaultClaimable,
 } from "@/lib/solana/tiktok-escrow";
+import { checkedVersionedSignature } from "@/lib/solana/versioned-signing";
+import { sendCheckedVersionedTransaction } from "@/lib/solana/versioned-send";
 
 export function CreatorFees({
   initialHandle = "",
@@ -52,11 +54,27 @@ export function CreatorFees({
   const inFlight = useRef(false);
   const handle = normalizeTikTokHandle(useDebounced(input, 350));
   const valid = isValidTikTokHandle(handle);
+  const mounted = useRef(false);
+  const access = useRef({ address, connected, handle: normalizeTikTokHandle(input), endpoint: connection.rpcEndpoint });
+  access.current = { address, connected, handle: normalizeTikTokHandle(input), endpoint: connection.rpcEndpoint };
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  function assertContext() {
+    const current = access.current;
+    if (!mounted.current || !current.connected || current.address !== address || current.handle !== handle || current.endpoint !== connection.rpcEndpoint) {
+      throw new Error("The creator, wallet or connection changed. Refresh before signing another transaction.");
+    }
+  }
   const coins = useCoins();
   const vault = useQuery({
-    queryKey: ["creator-vault", handle],
+    queryKey: ["creator-vault", handle, connection.rpcEndpoint],
     enabled: valid && configured,
-    queryFn: () => creatorVaultClaimable(connection, handle),
+    queryFn: async () => {
+      if ((await connection.getGenesisHash()) !== MAINNET_GENESIS_HASH) throw new Error("Read creator balances from Solana mainnet.");
+      return creatorVaultClaimable(connection, handle);
+    },
     refetchInterval: 15_000,
   });
   const mine = useMemo(
@@ -93,29 +111,6 @@ export function CreatorFees({
     address && beneficiary === address && vault.data?.verified,
   );
 
-  async function confirmed(signature: string) {
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const result = (
-        await connection
-          .getSignatureStatuses([signature], { searchTransactionHistory: true })
-          .catch(() => null)
-      )?.value[0];
-      if (result?.err)
-        throw new Error(
-          "The transaction was rejected on Solana. Check its receipt and refresh the balance.",
-        );
-      if (
-        result?.confirmationStatus === "confirmed" ||
-        result?.confirmationStatus === "finalized"
-      )
-        return;
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-    throw new Error(
-      "Solana is still confirming this transaction. Check its receipt before retrying.",
-    );
-  }
-
   function recordReceipt(signature: string) {
     setReceipts((list) => [...list, signature]);
   }
@@ -146,14 +141,16 @@ export function CreatorFees({
     try {
       setBusy("Checking your creator balance…");
       await assertMainnet();
+      assertContext();
       const current = await creatorVaultClaimable(connection, handle);
+      assertContext();
       if (!current.verified || current.beneficiary !== publicKey.toBase58())
         throw new Error("Connect the wallet verified for this TikTok creator.");
       if (current.claimable <= 0n)
         throw new Error(
           "There are no fees ready to claim yet. Distribute pending coin fees first.",
         );
-      const { blockhash, lastValidBlockHeight } =
+      const { blockhash } =
         await connection.getLatestBlockhash("confirmed");
       const transaction = new VersionedTransaction(
         new TransactionMessage({
@@ -162,19 +159,13 @@ export function CreatorFees({
           instructions: [claimCreatorInstruction(handle, publicKey)],
         }).compileToV0Message(),
       );
+      const expected = transaction.message.serialize();
+      assertContext();
       setBusy("Approve your claim in the wallet…");
-      const signed = await signTransaction(transaction);
-      const receipt = await connection.sendRawTransaction(signed.serialize(), {
-        maxRetries: 3,
-      });
-      recordReceipt(receipt);
+      const signed = await checkedVersionedSignature(expected, await signTransaction(transaction));
+      assertContext();
       setBusy("Confirming the SOL payment…");
-      const result = await connection.confirmTransaction(
-        { signature: receipt, blockhash, lastValidBlockHeight },
-        "confirmed",
-      );
-      if (result.value.err)
-        throw new Error("The claim failed on Solana. Check its receipt.");
+      await sendCheckedVersionedTransaction(connection, signed, recordReceipt);
       setMessage({
         ok: true,
         text: "Claim confirmed. Creator fees were sent to your verified wallet.",
@@ -207,6 +198,7 @@ export function CreatorFees({
     try {
       setBusy("Checking Solana mainnet…");
       await assertMainnet();
+      assertContext();
       const batchSize = signAllTransactions ? 5 : 1;
       // Later batches are prepared after confirmation, so their blockhashes remain fresh.
       for (let offset = 0; offset < distributable.length; offset += batchSize) {
@@ -219,20 +211,18 @@ export function CreatorFees({
             distributeTransaction(connection, publicKey, new PublicKey(mint)),
           ),
         );
+        const expected = transactions.map((transaction) => transaction.message.serialize());
+        assertContext();
         setBusy("Approve fee distribution in your wallet…");
-        const signed = signAllTransactions
+        const returned = signAllTransactions
           ? await signAllTransactions(transactions)
           : [await signTransaction!(transactions[0])];
+        if (returned.length !== transactions.length) throw new Error("The wallet returned an incomplete distribution batch. No transaction was submitted.");
+        const signed = await Promise.all(returned.map((transaction, index) => checkedVersionedSignature(expected[index], transaction)));
+        assertContext();
         // Broadcast the signed batch together to avoid expiry while another transaction confirms.
         const sent = await Promise.allSettled(
-          signed.map(async (transaction) => {
-            const receipt = await connection.sendRawTransaction(
-              transaction.serialize(),
-              { maxRetries: 3 },
-            );
-            recordReceipt(receipt);
-            return receipt;
-          }),
+          signed.map((transaction) => sendCheckedVersionedTransaction(connection, transaction, recordReceipt)),
         );
         let failure: unknown;
         for (const result of sent) {
@@ -240,15 +230,7 @@ export function CreatorFees({
             failure ??= result.reason;
             continue;
           }
-          setBusy(
-            `Confirming coin fees · ${success + 1}/${distributable.length}…`,
-          );
-          try {
-            await confirmed(result.value);
-            success++;
-          } catch (e) {
-            failure ??= e;
-          }
+          success++;
         }
         if (failure) throw failure;
       }

@@ -2,13 +2,31 @@
 
 10 Ekim 2026. Yeni coin paylaşımı **%20 platform / %80 tek TikTok creator escrow'u**dur. Bugünkü doğrulama **orijinal TikTok videosuna admin'in elle bakmasıdır**. TikTok developer app, API, otomatik scraper veya harici signer kurulumu bugünkü akış için gerekli değildir.
 
-## Deploy öncesi son kontrol — 10 Ekim 2026
+## Mainnet kurulum doğrulaması — 10 Ekim 2026
 
-72 web birim testi, production build ve 22 desktop/mobile sayfa kontrolü geçti. Ayrıca mainnet'teki pump.fun, PumpSwap ve fee programları doğrudan okunup 5 Ekim test snapshot'larının güncel sürümle farklı olduğu saptandı. Fixture programları ve ilgili hesaplar 10 Ekim mainnet verisiyle yenilendi; sıkıştırılmış `.so.gz` dosyaları programın padding dahil birebir byte'larını korur. Güncel programlarla yerel validator üzerinde açılış, ilk alımdaki %20/%80 ücret yönlendirmesi, kesintiden tamamlanma, yetkisiz claim reddi, creator claim ve PumpSwap'a geçiş/işlem/claim geçti. Bunlar mainnet üzerinde gerçek para ile yapılmış işlemler değildir.
+Program [`2ns8wbrKD54m5ExMtyKhZiqHkjTe7aNb1Y2jRmapp7ri`](https://solscan.io/account/2ns8wbrKD54m5ExMtyKhZiqHkjTe7aNb1Y2jRmapp7ri) mainnet'e kuruldu. [İşlem](https://solscan.io/tx/4pUAo16ARurUCBG6aY1cduj6Ns7dA3dvgtnMAt6EUbHNZ8QoWAsDgvPXeyhtG1GPvmgCboPbeYw8eS4qZ9ivZE26) finalized. ProgramData `CMxWR9hAgmQJV911Hoyfzy9gvjgbmdTEuCDEBbKbne81`, 63,552 byte program hash'i `ea990737e64d98db25d53dd3d00547a03fd8a805071e0b8e0b7a56f5bd865ea4` ve admin upgrade authority birebir doğrulandı. Buffer kapandı; parası program rent'ine dönüştü. **Yeniden deploy veya program rent ödemesi gerekmiyor.**
+
+Aynı yayınlanmış artifact ve 10 Ekim mainnet pump.fun/PumpSwap program snapshot'larıyla yerel testlerde açılış, %20/%80 paylaşım, kesintiden tamamlanma, video proof, admin review, creator aktivasyonu, yetkisiz claim reddi, rent koruması ve PumpSwap'a geçiş/işlem/claim geçti. Bunlar mainnet'te gerçek TikTok videosu ve creator claim denendiği anlamına gelmez.
 
 UseReels'in [10 Ekim'de okunan dokümanındaki](https://www.usereels.app/docs) temel creator ücret biriktirme/doğrulama/çekme akışı uygulanır. Bu sürüm SOL cüzdan ödemesi ve manuel TikTok video doğrulaması kullanır; UseReels'in PayPal/banka/kart ödemeleri, Clips kampanyaları, $REELS yakımı ve Pons/ETH desteği bu kapsamda yoktur. Mevcut fonksiyonların test edilmesi bütün UseReels özelliklerinin tamamlandığı veya bağımsız audit yapıldığı anlamına gelmez.
 
-Canlı program ID'si bağlanıp gerçek TikTok video kanıtı ve küçük tutarlı mainnet coin → alım → dağıtım → creator claim makbuzları doğrulanana kadar genel yayına hazır kabul etmeyin. Public runtime durumu bu kontrolde `launchesReady: false`, program adresi boştu; eksik kurulumda yeni coin açılışı kapalıdır.
+Canlı program ID'si bağlanıp gerçek TikTok video kanıtı ve küçük tutarlı mainnet coin → alım → dağıtım → creator claim makbuzları doğrulanana kadar genel yayına hazır kabul etmeyin. Yayın sonrası `/api/runtime-status` içinde `launchesReady: true`, `artifactMatches: true` ve yukarıdaki program adresini kontrol edin. Eksik veya doğrulanamayan kurulumda yeni coin açılışı kapalı kalır.
+
+## Telefonda uçtan uca küçük tutarlı test
+
+İki kontrol ettiğiniz cüzdan kullanın: **A = mevcut D2Ts…Wtvm admin**, **B = TikTok sahibi creator cüzdanı**. B'yi kaybetmeyin: ilk aktivasyon kalıcıdır. Kendi TikTok hesabınızı kullanın.
+
+1. B ile `/create` üzerinden kendi TikTok kullanıcı adınıza bir test coin açın. Açılışta alım yapılmaz. Platform launch ücreti `0.01 SOL`; panel yaklaşık `0.04 SOL` rent/ağ payı ayırır. Bu pay tahmindir, tamamı harcanmış kabul edilmez. Cüzdanın gerçek işlem tutarını inceleyin.
+2. Coin sayfasında paylaşımın **20% platform / 80% creator** olduğunu görün. Sonra ayrı onayla küçük bir alım, örneğin `0.01 SOL`, yapın. Fiyat/slippage nedeniyle alım tutarı garanti değildir; satışı da ayrıca küçük tutarla deneyebilirsiniz.
+3. A ile `/admin` → **Platform fees** bölümünden dağıtımı çalıştırın. %20 A'ya, %80 creator escrow'una gitmeli. B henüz doğrulanmadığı için biriken payı çekememeli. Paylaşım işlem hacminden değil, pump.fun'ın creator ücretinden hesaplanır.
+4. B ile `/claim` → kendi TikTok handle'ınız → **Create my verification code**. Tam kodu kendi hesabınızdan public videoda/caption'da yayınlayın. Orijinal video bağlantısını girip **Submit video for admin review** işlemini imzalayın.
+5. A ile `/admin` → video incelemesi: profil, handle ve tam kodu kontrol edip onaylayın. B'nin claim'i aktivasyona kadar kapalı kalmalı. Onaylanan proof hesabının rent'i B'ye döner.
+6. B ile `/claim` → **Activate approved wallet**, ardından **Claim**. Creator kasasında yalnız rent tabanı kalmalı; B'nin artışı çekilen pay eksi ağ ücreti olmalı. A creator payını çekememeli.
+7. Yeni küçük alım/satım sonrası dağıtım ve B claim'ini tekrarlayın. Her adımın Solscan linkini saklayın; işlem tekrarlandı diye aynı ücret ikinci kez ödenmemeli.
+
+İlk test için B'de yaklaşık **0.07–0.08 SOL** çalışma bakiyesi, A'da işlem ücretlerini karşılayacak bakiye bırakmak panelin mevcut yaklaşık rezervleriyle uyumludur. Bu harcanacak sabit ücret değildir: alım/satım fiyat etkisi, rent ve güncel ağ ücretleri ayrıdır. Büyük işlem hacmi oluşturmaya gerek yoktur. Dağıtımda lamport yuvarlaması ve işlem ücretlerini ayrı tutun; wallet bakiyelerindeki farkları doğrudan 20/80 diye karşılaştırmayın.
+
+Yerel gerçek program testi örneği: B'deki `0.07 SOL` ile açılış, `0.01 SOL` alım ve bütün manuel proof/claim akışı tamamlandı. Pump creator ücreti `29,630 lamport` oldu; bunun `5,926` lamport'u platforma, `23,704` lamport'u creator'a dağıtıldı. Bu örnek canlı fiyat garantisi değildir; küçük testte ağ ücretleri kazanılan creator ücretinden yüksek olabilir.
 
 ## 1. Mevcut hosting'i hazırlayın
 
@@ -20,14 +38,12 @@ Canlı program ID'si bağlanıp gerçek TikTok video kanıtı ve küçük tutarl
 
 Varsayılan `/admin` unlock, deployment, proof review/onay ve para işlemleri admin cüzdanı içinde imzalanır; Redis veya TikTok OAuth kurulumu bunların ön koşulu değildir.
 
-## 2. Güncel programı bir kez mainnet'e deploy edin
+## 2. Kurulu programı kullanın (tamamlandı)
 
-- [ ] Admin cüzdanını `/admin` sayfasına bağlayıp wallet challenge'ını imzalayın.
-- [ ] Güncel 63,552 byte manual-verification program artifact'ını ve mainnet RPC'nin SOL teklifini inceleyin. Aşağıdaki yerel RPC tahminini mainnet'in kesin fiyatı olarak kabul etmeyin.
-- [ ] Cüzdanda teklif ekranındaki konservatif rezervi bulundurun; **Deploy** işlemini cüzdanınızda imzalayın.
-- [ ] Kesintide kaydedilmiş public buffer adresiyle devam edin. Mevcut programın durumunu kontrol etmeden yeniden deploy etmeyin. Vazgeçilen buffer için admin recovery/close kullanılabilir.
-- [ ] Son program ID ve transaction receipt'ini kaydedin; executable, artifact eşleşmesi ve admin upgrade authority kontrolleri geçmelidir.
-- [ ] `NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID` için gerçek program ID'sini Vercel'e girin. `NEXT_PUBLIC_TIKSPLIT_VERIFIER` default admin public adresini kullanır. Public environment değişikliği sonrası production rebuild yapın.
+- [x] Mainnet programı executable, artifact birebir eşleşiyor, upgrade authority admin cüzdanında.
+- [x] Public adres `src/tiktok-deployment.json` ile production varsayılanına kaydedildi. `NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID` ayrıca zorunlu değildir; varsa override aynı adrese işaret etmelidir.
+- [ ] `/admin` sayfasında cüzdan challenge'ını imzalayın; program doğrulaması ve video verification hazır durumunu görün.
+- [ ] Aynı programı kullanın. Yeni deployment başlatmayın.
 
 Program hesaplarındaki rent rezervi aylık ücret değildir. Geçici buffer deployment sırasında geri dönüştürülür/iade edilir. Kaynak/artifact hash kontrolü bağımsız audit yerine geçmez; program upgrade edilebiliyorsa admin authority güven modeli içindedir.
 
@@ -41,7 +57,7 @@ Panel hem tarayıcı hem güncel sunucu yapılandırmasındaki programı korur; 
 ## 3. Gerçek TikTok hesabıyla proof isteği
 
 - [ ] Creator'ın kontrol ettiği, erişimini kaybetmeyeceği cüzdanı bağlayın ve `/claim` sayfasında kendi güncel TikTok handle'ını seçin.
-- [ ] **Request verification** işlemini cüzdanda imzalayın. Zincirde wallet + handle + 128 bit nonce kaydı açılır. Proof hesabı 143 byte'tır; gösterilen rent mainnet RPC'den hesaplanır (varsayılan yerel hesap `0.00188616 SOL`).
+- [ ] **Create my verification code** işlemini cüzdanda imzalayın. Zincirde wallet + handle + 128 bit nonce kaydı açılır. Proof hesabı 143 byte'tır; gösterilen rent mainnet RPC'den hesaplanır (varsayılan yerel hesap `0.00188616 SOL`).
 - [ ] Uygulamadaki **kullanıcı adı + tam beneficiary cüzdan adresi + nonce'a bağlı bütün kanıt kodunu** kısaltmadan kendi TikTok hesabınızdan yayınladığınız public videonun caption'ına veya videoda görünür biçimde ekleyin. Yalnız nonce yayınlamak yeterli değildir.
 - [ ] İlgili orijinal `https://www.tiktok.com/@aynı.handle/video/<id>` URL'sini uygulamaya ekleyip cüzdanınızla imzalayın. İstekteki handle ve video handle'ı aynı olmalıdır. Ekran görüntüsü/başka profil yeterli değildir.
 - [ ] İstek 48 saat içinde incelenmezse yeni proof sürecini başlatmadan önce mevcut isteğin durumunu kontrol edin. İstek sahibi iptal edip rent'i geri alabilir; network ücretleri iade edilmez.
@@ -76,26 +92,26 @@ Gerçek video → manual review → owner aktivasyonu → mainnet dağıtım/cla
 
 ## 6. İsteğe bağlı server otomasyonu ve sonraki OAuth
 
-Server'ın Vercel environment'ını otomatik değiştirmesi/rebuild başlatması istenirse ayrıca `ADMIN_SESSION_SECRET` (en az 32 byte), güvenilen `SITE_URL`, production Redis REST URL/token ve server-only `VERCEL_DEPLOY_TOKEN` yapılandırılır. Bu yol olmadan public program ID'si Vercel'e elle girilebilir; default on-chain review için Redis zorunlu değildir.
+Server'ın Vercel environment'ını otomatik değiştirmesi/rebuild başlatması istenirse ayrıca `ADMIN_SESSION_SECRET` (en az 32 byte), güvenilen `SITE_URL`, production Redis REST URL/token ve server-only `VERCEL_DEPLOY_TOKEN` yapılandırılır. Mevcut public program ID'si repoda kayıtlıdır; ayrıca token/Redis kurulumu gerekmez. İleride bu yol olmadan public konfigürasyon repo veya Vercel üzerinden güncellenebilir; default on-chain review için Redis zorunlu değildir.
 
 TikTok OAuth daha sonra opsiyonel olarak açılabilir: gerçek approved Login Kit app, `user.info.basic` + `user.info.profile`, aynı public origin'deki `/api/tiktok/callback`, client key/secret, session secret ve uygun attestation signer gerekir. Onay garantisi yoktur. Resmi [Web Login Kit](https://developers.tiktok.com/doc/login-kit-web), [scopes](https://developers.tiktok.com/doc/tiktok-api-scopes/) ve [review](https://developers.tiktok.com/doc/app-review-guidelines/) belgeleri geçerlidir. Verifier/program adresi değişikliği yeni PDA üretir; mevcut manual kasaların claim yolunu korumadan geçiş yapılmaz.
 
 ## 7. Geçmiş coin'ler ve bütçe
 
-**Canlı mainnet teklifi (10 Ekim 2026):** Resmi mainnet RPC üzerinden 63,552 byte ortak program için başlangıç bakiyesi `0.325586360 SOL`, final rent + fee `0.324931120 SOL` ölçüldü. Bunun `0.324556120 SOL` kısmı program rent'i, `0.000375000 SOL` kısmı 73 işlemin ücreti; başlangıç bakiyesinde ayrıca `0.000650240 SOL` cüzdan rent rezervi ve `0.000005 SOL` recovery payı var. Mainnet rent tarifesi aşağıdaki eski validator sürümünün yerel tarifesinden düşük. Bu bir teklif sorgusudur; mainnet'e program kurulmadı veya para gönderilmedi. Panel her kurulumda yeniden hesaplar. Bu ortak program tek sefer kurulur; coin oluşturma ve varsa ilk alım bütçesi ayrıca hesaplanır.
+**Mevcut program kuruldu:** Program hesabında `0.000833120 SOL`, ProgramData hesabında `0.323723000 SOL`, toplam `0.324556120 SOL` rent tutuluyor. Eski buffer kapandı. Kurulum ücreti tekrar ödenmez; creator proof, yeni coin ve alım/satımın ağ/rent maliyetleri ayrıdır.
 
 
 Final olmuş eski %10 platform veya launcher paylı coin'ler kendi orijinal split'ini korur. `pastPlatformBps: [1000]` bunları okumak içindir; yeni coin'ler %20/%80 kullanır. Eski GitHub pump.fun sosyal hesapları TikTok escrow'una dönüşmez. Program/verifier değişikliği eski coin'in alıcı adresini taşımaz.
 
 | Kalem | 10 Ekim 2026 başlangıç bilgisi |
 | --- | --- |
-| Program | 10 Ekim 2026 canlı mainnet RPC teklifi: `0.324931120 SOL` rent + fee, `0.325586360 SOL` başlangıç bakiyesi. **Güncel tutarı `/admin` yeniden hesaplar.** Bu bir fiyat sorgusudur; mainnet deployment yapılmadı. |
+| Program | Kuruldu. Mevcut hesaplarda toplam `0.324556120 SOL` rent; yeniden deploy gerekmez. |
 | Proof hesabı | 143 byte; yerel varsayılan rent `0.00188616 SOL`, canlı tutar panelde. Rent iptal/onayda geri döner; işlem ücretleri dönmez. |
 | Vercel Pro | [$20/ay + kullanım aşımı](https://vercel.com/pricing). |
-| RPC | Mevcut RPC veya isteğe bağlı [Helius Developer $49/ay](https://www.helius.dev/pricing). |
+| RPC | PublicNode + resmi Solana public RPC; mevcut kurulumda aylık RPC aboneliği yok. Paylaşılan servis limitleri geçerlidir. |
 | Redis/signer | Bugünkü manual proof için ek hizmet zorunlu değil. Opsiyonel server Redis için [Free kota / $0.20 per 100 bin komut](https://upstash.com/pricing/redis); gelecekteki OAuth signer maliyeti sağlayıcıya bağlı. |
 | Storage, domain, audit | Mevcut hizmet/kullanım ve kapsamına göre ayrı maliyet. |
 
-Yerel deployment tahmini 73 işlemden oluşur: 71 write + 1 buffer create + 1 deploy. Final tutar `0.444667440 SOL` program rent'i + `0.000375000 SOL` işlem ücreti içerir. Başlangıç bakiyesi ayrıca `0.000890880 SOL` cüzdan rent rezervi ve `0.000005 SOL` recovery ücreti içerir. `0.443470320 SOL` buffer bakiyesi deployment sırasında ProgramData hesabı oluşturulmadan önce yeniden kullanılır; ikinci kez gerekli bakiyeye eklenmez. İptalde buffer rent'i geri alınır; işlem ücretleri harcanır.
+Yerel deployment tahmini 73 işlemden oluşur: 71 write + 1 buffer create + 1 deploy. Final tutar `0.444667440 SOL` program rent'i + `0.000376775 SOL` işlem ücreti içerir. Başlangıç bakiyesi ayrıca `0.000890880 SOL` cüzdan rent rezervi, `0.000005 SOL` recovery ücreti ve azami cüzdan öncelik ücretleri için `0.000370000 SOL` pay içerir. `0.443470320 SOL` buffer bakiyesi deployment sırasında ProgramData hesabı oluşturulmadan önce yeniden kullanılır; ikinci kez gerekli bakiyeye eklenmez. İptalde buffer rent'i geri alınır; işlem ücretleri harcanır.
 
 Sabit aylık Vercel/RPC tabanı $20 veya Helius seçilirse $69; tüm projenin toplam maliyeti değildir. SOL dolar karşılığı sabitlenmez.

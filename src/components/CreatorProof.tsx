@@ -33,6 +33,9 @@ import {
   requestCreatorProofInstruction,
   CREATOR_PROOF_SIZE,
 } from "@/lib/solana/creator-proof";
+import { checkedVersionedSignature } from "@/lib/solana/versioned-signing";
+import { sendCheckedVersionedTransaction, VersionedTransactionFailedError, VersionedTransactionPreflightError } from "@/lib/solana/versioned-send";
+import { MAX_WALLET_PRIORITY_FEE_LAMPORTS } from "@/lib/solana/deployment-signing";
 
 export function CreatorProof({ handle }: { handle: string }) {
   const { connection } = useConnection();
@@ -53,26 +56,50 @@ export function CreatorProof({ handle }: { handle: string }) {
   >([]);
   const [now, setNow] = useState(() => Date.now());
   const inFlight = useRef(false);
+  const mounted = useRef(false);
+  const access = useRef({ address, handle, ready, connected, endpoint: connection.rpcEndpoint });
+  access.current = { address, handle, ready, connected, endpoint: connection.rpcEndpoint };
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  useEffect(() => {
+    setVideoUrl("");
+    setMessage(null);
+    setReceipts([]);
+  }, [address]);
+  function assertContext() {
+    const current = access.current;
+    if (!mounted.current || !current.ready || !current.connected || current.address !== address || current.handle !== handle || current.endpoint !== connection.rpcEndpoint) {
+      throw new Error("The creator, wallet or connection changed. Refresh this page before signing a new request.");
+    }
+  }
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(timer);
   }, []);
   const proof = useQuery({
-    queryKey: ["creator-proof", handle, address],
+    queryKey: ["creator-proof", handle, address, connection.rpcEndpoint],
     enabled: Boolean(ready && address),
-    queryFn: () => readCreatorProof(connection, handle, publicKey!),
+    queryFn: async () => {
+      if ((await connection.getGenesisHash()) !== MAINNET_GENESIS_HASH) throw new Error("Read creator verification from Solana mainnet.");
+      return readCreatorProof(connection, handle, publicKey!);
+    },
     refetchInterval: 10_000,
     retry: false,
   });
   const vault = useQuery({
-    queryKey: ["creator-vault", handle],
+    queryKey: ["creator-vault", handle, connection.rpcEndpoint],
     enabled: ready,
-    queryFn: () => creatorVaultClaimable(connection, handle),
+    queryFn: async () => {
+      if ((await connection.getGenesisHash()) !== MAINNET_GENESIS_HASH) throw new Error("Read creator verification from Solana mainnet.");
+      return creatorVaultClaimable(connection, handle);
+    },
     refetchInterval: 10_000,
     retry: false,
   });
   const requestQuote = useQuery({
-    queryKey: ["creator-proof-rent", handle, address, vault.data?.exists],
+    queryKey: ["creator-proof-rent", handle, address, vault.data?.exists, connection.rpcEndpoint],
     enabled: Boolean(
       ready &&
         publicKey &&
@@ -89,7 +116,7 @@ export function CreatorProof({ handle }: { handle: string }) {
       )
         throw new Error("Verification costs must be read from Solana mainnet.");
       await assertTikTokEscrowDeployed(connection);
-      const [proofRent, vaultRent, walletBalance, latest] = await Promise.all([
+      const [proofRent, vaultRent, walletBalance, walletRent, latest] = await Promise.all([
         connection.getMinimumBalanceForRentExemption(
           CREATOR_PROOF_SIZE,
           "confirmed",
@@ -101,6 +128,7 @@ export function CreatorProof({ handle }: { handle: string }) {
               "confirmed",
             ),
         connection.getBalance(publicKey, "confirmed"),
+        connection.getMinimumBalanceForRentExemption(0, "confirmed"),
         connection.getLatestBlockhash("confirmed"),
       ]);
       const instructions = [
@@ -122,18 +150,20 @@ export function CreatorProof({ handle }: { handle: string }) {
         .value;
       if (
         fee === null ||
-        ![proofRent, vaultRent, walletBalance, fee].every(
+        ![proofRent, vaultRent, walletBalance, walletRent, fee].every(
           (value) => Number.isSafeInteger(value) && value >= 0,
         )
       )
         throw new Error(
           "Mainnet could not provide a reliable verification cost quote.",
         );
-      const required = BigInt(proofRent) + BigInt(vaultRent) + BigInt(fee);
+      const reserve = BigInt(walletRent) + MAX_WALLET_PRIORITY_FEE_LAMPORTS;
+      const required = BigInt(proofRent) + BigInt(vaultRent) + BigInt(fee) + reserve;
       return {
         proofRent: BigInt(proofRent),
         vaultRent: BigInt(vaultRent),
         fee: BigInt(fee),
+        reserve,
         balance: BigInt(walletBalance),
         required,
         sufficient: BigInt(walletBalance) >= required,
@@ -165,6 +195,30 @@ export function CreatorProof({ handle }: { handle: string }) {
       queryClient.invalidateQueries({ queryKey: ["snapshot"] }),
     ]);
   }
+  const pendingSignatures = receipts.filter((receipt) => receipt.status === "pending").map((receipt) => receipt.signature).join(",");
+  const { refetch: refetchProof } = proof;
+  const { refetch: refetchVault } = vault;
+  useEffect(() => {
+    if (!pendingSignatures) return;
+    let cancelled = false;
+    const signatures = pendingSignatures.split(",");
+    const poll = async () => {
+      try {
+        const statuses = await connection.getSignatureStatuses(signatures, { searchTransactionHistory: true });
+        if (cancelled) return;
+        for (let index = 0; index < statuses.value.length; index++) {
+          const status = statuses.value[index];
+          if (!status?.err && status?.confirmationStatus !== "confirmed" && status?.confirmationStatus !== "finalized") continue;
+          setReceipts((list) => list.map((receipt) => receipt.signature === signatures[index] ? { ...receipt, status: status.err ? "failed" : "confirmed" } : receipt));
+          void refetchProof();
+          void refetchVault();
+        }
+      } catch { /* Keep the receipt pending until the actual chain status is known. */ }
+    };
+    void poll();
+    const timer = setInterval(() => { void poll(); }, 5_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [connection, pendingSignatures, refetchProof, refetchVault]);
   async function preflight() {
     if (!ready)
       throw new Error(
@@ -177,11 +231,12 @@ export function CreatorProof({ handle }: { handle: string }) {
     await assertTikTokEscrowDeployed(connection);
   }
   async function send(instructions: TransactionInstruction[], title: string) {
+    assertContext();
     if (!publicKey || !signTransaction)
       throw new Error(
         "Connect a Solana wallet that supports transaction signing.",
       );
-    const { blockhash, lastValidBlockHeight } =
+    const { blockhash } =
       await connection.getLatestBlockhash("confirmed");
     const transaction = new VersionedTransaction(
       new TransactionMessage({
@@ -191,34 +246,21 @@ export function CreatorProof({ handle }: { handle: string }) {
       }).compileToV0Message(),
     );
     const expected = transaction.message.serialize();
+    assertContext();
     setBusy(`${title}: approve in your wallet…`);
-    const signed = await signTransaction(transaction);
-    const actual = signed.message.serialize();
-    if (
-      expected.length !== actual.length ||
-      !expected.every((byte, index) => byte === actual[index])
-    )
-      throw new Error("The wallet changed the verification transaction.");
-    const signature = await connection.sendRawTransaction(signed.serialize(), {
-      maxRetries: 3,
-    });
-    setReceipts((list) => [...list, { signature, status: "pending" }]);
-    setBusy(`${title}: confirming on Solana…`);
-    const result = await connection.confirmTransaction(
-      { signature, blockhash, lastValidBlockHeight },
-      "confirmed",
-    );
-    setReceipts((list) =>
-      list.map((receipt) =>
-        receipt.signature === signature
-          ? { ...receipt, status: result.value.err ? "failed" : "confirmed" }
-          : receipt,
-      ),
-    );
-    if (result.value.err)
-      throw new Error(
-        "The verification transaction failed. Check its receipt before retrying.",
-      );
+    const signed = await checkedVersionedSignature(expected, await signTransaction(transaction));
+    assertContext();
+    try {
+      const signature = await sendCheckedVersionedTransaction(connection, signed, (signature) => {
+        setReceipts((list) => [...list, { signature, status: "pending" }]);
+        setBusy(`${title}: confirming on Solana…`);
+      });
+      setReceipts((list) => list.map((receipt) => receipt.signature === signature ? { ...receipt, status: "confirmed" } : receipt));
+    } catch (error) {
+      if (error instanceof VersionedTransactionFailedError) setReceipts((list) => list.map((receipt) => receipt.signature === error.signature ? { ...receipt, status: "failed" } : receipt));
+      if (error instanceof VersionedTransactionPreflightError) setReceipts((list) => list.map((receipt) => receipt.signature === error.signature ? { ...receipt, status: "rejected" } : receipt));
+      throw error;
+    }
   }
   async function run(action: "request" | "attach" | "cancel" | "activate") {
     if (!connected || !publicKey) {
@@ -231,7 +273,9 @@ export function CreatorProof({ handle }: { handle: string }) {
     try {
       setBusy("Checking the reviewed mainnet program…");
       await preflight();
+      assertContext();
       const currentVault = await creatorVaultClaimable(connection, handle);
+      assertContext();
       if (action === "request") {
         if (currentVault.beneficiary)
           throw new Error(
@@ -254,6 +298,7 @@ export function CreatorProof({ handle }: { handle: string }) {
             "Add enough SOL for proof rent, any escrow initialization rent and the network fee.",
           );
         const nonce = generateCreatorProofNonce();
+        assertContext();
         await send(
           [
             ...(!currentVault.exists
@@ -327,7 +372,7 @@ export function CreatorProof({ handle }: { handle: string }) {
       }
       await refresh();
     } catch (error) {
-      setMessage({ ok: false, text: errorMessage(error) });
+      if (mounted.current) setMessage({ ok: false, text: errorMessage(error) });
     } finally {
       setBusy(null);
       inFlight.current = false;
@@ -551,6 +596,7 @@ export function CreatorProof({ handle }: { handle: string }) {
                 ? `Escrow initialization rent: ${formatSol(requestQuote.data.vaultRent, 8)} SOL, retained in the escrow. `
                 : ""}
               Network fee: about {formatSol(requestQuote.data.fee, 8)} SOL.
+              {" "}Wallet and maximum priority-fee reserve: {formatSol(requestQuote.data.reserve, 8)} SOL; unused reserve stays in your wallet.
               Required balance: {formatSol(requestQuote.data.required, 8)} SOL;
               your wallet: {formatSol(requestQuote.data.balance, 8)} SOL.
             </p>
@@ -584,6 +630,16 @@ export function CreatorProof({ handle }: { handle: string }) {
           </p>
         </div>
       )}
+      {ready && connected && proof.data && vault.data?.beneficiary ? (
+        <div className="mt-5 border border-line bg-card-2 p-4">
+          <p className="text-[12px] leading-relaxed text-ink-2">
+            Your separate verification request is still open. You can cancel it and recover its remaining rent even though this creator already has an approved payout wallet.
+          </p>
+          <button type="button" className="btn-secondary mt-3 px-3 py-2 text-[12px]" disabled={Boolean(busy) || !signTransaction} onClick={() => { void run("cancel"); }}>
+            Cancel my open request and recover proof rent
+          </button>
+        </div>
+      ) : null}
       {busy ? (
         <p
           role="status"

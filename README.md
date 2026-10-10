@@ -4,7 +4,7 @@ TikTok kullanıcıları adına **Solana mainnet / pump.fun** token başlatan uyg
 
 ## Akış
 
-1. `/create`: tek TikTok kullanıcı adı, token bilgileri ve isteğe bağlı ilk alım seçilir. Cüzdan pump.fun token'ını oluşturup native fee sharing'i tamamlar. Yeni launch'ta creator ücretinin %20'si platform hazinesine, %80'i creator escrow'una gider; launcher payı yoktur. Oranlar toplam işlem tutarına veya token arzına uygulanmaz. Ayrı launch ücreti `0.01 SOL`'dur.
+1. `/create`: tek TikTok kullanıcı adı ve token bilgileri seçilir; ilk alım paylaşım tamamlandıktan sonra coin sayfasında ayrı yapılır. Cüzdan pump.fun token'ını oluşturup native fee sharing'i tamamlar. Yeni launch'ta creator ücretinin %20'si platform hazinesine, %80'i creator escrow'una gider; launcher payı yoktur. Oranlar toplam işlem tutarına veya token arzına uygulanmaz. Ayrı launch ücreti `0.01 SOL`'dur.
 2. `/token/[mint]`: gerçek bonding curve / pump.fun pool verileri, alım satım ve herkesin çalıştırabildiği ücret dağıtımı. Dağıtım, biriken creator ücretlerini native pump.fun vault'undan hissedarlara gönderir. Kullanıcı henüz doğrulanmamışken de escrow'unda SOL birikebilir.
 3. `/claim`: creator cüzdanıyla zincirde bir doğrulama isteği açılır. İstek kullanıcı adı, cüzdan ve rastgele **128 bit nonce** içerir; uygulama **kullanıcı adı + tam beneficiary cüzdan adresi + nonce'a bağlı tam kanıt kodunu** gösterir. Kullanıcı uygulamanın ürettiği kodun tamamını kısaltmadan **kendi TikTok hesabından yayınladığı herkese açık videonun açıklamasına veya videoda görünür biçimde** ekler. Yalnız nonce yayınlamak yeterli değildir.
 4. Kullanıcı `https://www.tiktok.com/@aynı.kullanıcı/video/<id>` biçimindeki **orijinal video URL'sini** kendi cüzdanıyla imzalayarak isteğe bağlar. Başka kullanıcı adı, ekran görüntüsü veya başka profilden video sahiplik kanıtı sayılmaz.
@@ -36,13 +36,15 @@ Bugün gerekenler:
 | `SITE_URL` | Gerçek HTTPS public origin; path/query/hash eklenmez. |
 | `NEXT_PUBLIC_TIKSPLIT_ADMIN_WALLET` | Yayınlanmış admin public adresi; cüzdan imzaları bu kimlikle karşılaştırılır. |
 | `NEXT_PUBLIC_TIKSPLIT_VERIFIER` | Manual review için aynı admin public adresi. |
-| `NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID` | Güncel manual proof/approval programının gerçek mainnet public adresi. |
+| `NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID` | İsteğe bağlı override. Varsayılan doğrulanmış mainnet programı `src/tiktok-deployment.json` içindedir; boş değer testlerde kurulumu kapatır. |
 | `NEXT_PUBLIC_SOLANA_LOCAL_RPC_URL` | Yalnız yerel validator testleri için loopback URL. Production’da boş bırakın. Browser `https://solana-rpc.publicnode.com`, server ve kısıtlı hesap taramaları resmi `https://api.mainnet-beta.solana.com` kullanır; eski `SOLANA_RPC_URL` / `NEXT_PUBLIC_SOLANA_RPC_URL` artık okunmaz. |
 | `BLOB_READ_WRITE_TOKEN` veya `PINATA_JWT` | Kalıcı görsel/metadata depolama; mevcut üretim sağlayıcısı kullanılabilir. |
 
 `/admin` içindeki varsayılan cüzdan imzalı unlock, deployment, manual review/onay ve financial işlemler için TikTok API, harici signer veya Redis gerekmez. Sadece cüzdan bağlanması uygulamanın sahiplik kanıtını onaylamaz; her zincir işlemi yetkili cüzdandan imza ister.
 
 `NEXT_PUBLIC_*` değerleri build sırasında browser bundle'ına girer; değiştiklerinde production rebuild gerekir. RPC server token'ı, depolama credential'ı veya session/Vercel secret'ı bu prefix ile tanımlanmaz.
+
+**Doğrulanmış mainnet deployment:** [`2ns8wbrKD54m5ExMtyKhZiqHkjTe7aNb1Y2jRmapp7ri`](https://solscan.io/account/2ns8wbrKD54m5ExMtyKhZiqHkjTe7aNb1Y2jRmapp7ri). [Kurulum işlemi](https://solscan.io/tx/4pUAo16ARurUCBG6aY1cduj6Ns7dA3dvgtnMAt6EUbHNZ8QoWAsDgvPXeyhtG1GPvmgCboPbeYw8eS4qZ9ivZE26) finalized; 63,552 byte artifact ve admin upgrade authority resmi RPC'den birebir doğrulandı. `src/tiktok-deployment.json` yalnız public kurulum bilgilerini içerir; private key saklamaz. Production bu programı varsayılan kullanır ve çalışırken zincirde artifact/authority kontrolünü sürdürür.
 
 Sıralı deployment ve gerçek video testi [docs/launch-checklist.md](docs/launch-checklist.md) dosyasındadır. Web yayını, mainnet programın deploy edildiği veya creator claim'inin canlıda denendiği anlamına gelmez. **Gerçek creator hesabından yayınlanan kodlu video → admin review → owner aktivasyonu → küçük tutarlı mainnet claim** tamamlanmadan bu akışın canlı doğrulandığı söylenmez.
 
@@ -70,12 +72,12 @@ Açılış birden fazla Solana işlemidir; atomik değildir. Mint ile paylaşım
 
 ## Maliyet — 10 Ekim 2026
 
-**Canlı mainnet teklifi (10 Ekim 2026):** 63,552 byte ortak programın rent'i `0.324556120 SOL`, 73 işlemin uygulama tarafından istenen ağ ücreti `0.000376775 SOL`; toplam `0.324932895 SOL`. Cüzdan rent rezervi, kurtarma ücreti ve izin verilen azami cüzdan öncelik ücretleri için pay dahil yeni kurulumun gerekli bakiyesi yaklaşık `0.325958135 SOL`. Bu payın kullanılmayan kısmı cüzdanda kalır. Mainnet rent tarifesi aşağıdaki eski validator sürümünün yerel tarifesinden düşük. Program henüz mainnet'e kurulmadı. Panel her kurulumda yeniden hesaplar. Ortak program bir kez kurulur; coin oluşturma bütçesi ayrıca hesaplanır.
+**Canlı mainnet teklifi (10 Ekim 2026):** 63,552 byte ortak programın rent'i `0.324556120 SOL`, 73 işlemin uygulama tarafından istenen ağ ücreti `0.000376775 SOL`; toplam `0.324932895 SOL`. Cüzdan rent rezervi, kurtarma ücreti ve izin verilen azami cüzdan öncelik ücretleri için pay dahil yeni kurulumun gerekli bakiyesi yaklaşık `0.325958135 SOL`. Bu payın kullanılmayan kısmı cüzdanda kalır. Mainnet rent tarifesi aşağıdaki eski validator sürümünün yerel tarifesinden düşük. Program 10 Ekim 2026’da aşağıdaki işlemle mainnet'e kuruldu; bu rakamlar yeni kurulum tahminidir, yeniden ödeme gerekmez. Panel her kurulumda yeniden hesaplar. Ortak program bir kez kurulur; coin oluşturma bütçesi ayrıca hesaplanır.
 
 
 | Kalem | Tahmin / kaynak |
 | --- | --- |
-| Mainnet program deployment | 10 Ekim 2026 canlı mainnet RPC teklifi: `0.324932895 SOL` rent + fee, azami cüzdan fee rezervi dahil `0.325958135 SOL` başlangıç bakiyesi. **Güncel tutarı `/admin` yeniden hesaplar.** Bu bir fiyat sorgusudur; mainnet deployment yapılmadı. |
+| Mainnet program deployment | 10 Ekim 2026 canlı mainnet RPC teklifi: `0.324932895 SOL` rent + fee, azami cüzdan fee rezervi dahil `0.325958135 SOL` başlangıç bakiyesi. **Güncel tutarı `/admin` yeniden hesaplar.** Mevcut program kuruludur; bu tutar tekrar ödenmez. |
 | Creator proof isteği | 143 byte için varsayılan yerel rent `0.00188616 SOL`; uygulama gerçek RPC tutarını gösterir. İptal/onayda rent geri döner; network ücretleri harcanır. |
 | Vercel Pro | [$20/ay + kullanım aşımı](https://vercel.com/pricing). Hobby kişisel/ticari olmayan kullanım içindir. |
 | RPC | PublicNode mainnet, API anahtarı ve aylık RPC ücreti yok. Paylaşılan servis yoğun trafikte limitlenebilir; kesintisiz erişim garantisi yok. |

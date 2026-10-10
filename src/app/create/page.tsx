@@ -30,6 +30,8 @@ import {
   finishTikTokLaunchTransactions,
   tikTokLaunchState,
 } from "@/lib/solana/pump";
+import { checkedVersionedSignature } from "@/lib/solana/versioned-signing";
+import { sendCheckedVersionedTransaction } from "@/lib/solana/versioned-send";
 
 const PENDING_KEY = "tiksplit:pending-launch:v1";
 const RENT_ESTIMATE = 40_000_000n;
@@ -98,11 +100,13 @@ function updatePending(wallet: string, launch: PendingLaunch, remove = false) {
 export default function CreatePage() {
   const router = useRouter();
   const { connection } = useConnection();
-  const { publicKey, connected, signAllTransactions } = useWallet();
+  const { publicKey, connected, signTransaction, signAllTransactions } = useWallet();
   const { setVisible } = useWalletModal();
   const { guard, dialog } = useRiskGate();
   const balance = useSolBalance();
   const address = publicKey?.toBase58();
+  const currentAddress = useRef(address);
+  currentAddress.current = address;
   const configured = isTikTokLaunchReady();
   const readiness = useQuery({
     queryKey: ["runtime-launch-readiness"],
@@ -218,60 +222,51 @@ export default function CreatePage() {
     }
   }
 
-  async function confirm(signature: string) {
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const result = (
-        await connection
-          .getSignatureStatuses([signature], { searchTransactionHistory: true })
-          .catch(() => null)
-      )?.value[0];
-      if (result?.err)
-        throw new Error(
-          "The transaction failed on Solana. Check its receipt and retry the unfinished launch.",
-        );
-      if (
-        result?.confirmationStatus === "confirmed" ||
-        result?.confirmationStatus === "finalized"
-      )
-        return;
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-    throw new Error(
-      "Confirmation is taking longer than expected. Your launch is saved below; check its status before trying again.",
-    );
-  }
-
   async function signAndSend(
     transactions: VersionedTransaction[],
     launch: PendingLaunch,
+    mintSigner?: Keypair,
   ) {
-    if (!address || !signAllTransactions)
+    if (!address || (!signAllTransactions && !signTransaction))
       throw new Error(
-        "Use a wallet that supports signing Solana transactions, such as Phantom or Solflare.",
+        "Use a wallet that supports signing Solana transactions.",
       );
+    // Prepare a fresh hash before approval and capture every message before the adapter
+    // can mutate any transaction in place. Keep the temporary mint signer only in memory.
+    const { blockhash } = await connection.getLatestBlockhash("confirmed");
+    transactions.forEach((transaction) => { transaction.message.recentBlockhash = blockhash; });
+    if (mintSigner && transactions.length) transactions[0].sign([mintSigner]);
+    const messages = transactions.map(transaction => Uint8Array.from(transaction.message.serialize()));
     setStatus("Confirm the transactions in your wallet…");
-    const signed = await signAllTransactions(transactions);
+    const signed = signAllTransactions
+      ? await signAllTransactions(transactions)
+      : await (async () => {
+          const results: VersionedTransaction[] = [];
+          for (const transaction of transactions) results.push(await signTransaction!(transaction));
+          return results;
+        })();
+    if (signed.length !== messages.length) throw new Error("The wallet did not sign the complete launch group. No launch transaction was submitted.");
+    // A malicious final fee-split transaction must block the entire group, including mint creation.
+    const verified = await Promise.all(signed.map((transaction, index) => checkedVersionedSignature(messages[index], transaction, index === 0 && mintSigner ? [mintSigner] : [])));
+    if (currentAddress.current !== address) throw new Error("Reconnect the launching wallet before continuing this saved launch.");
     try {
       updatePending(address, launch);
     } catch {
-      throw new Error(
-        "This browser cannot save launch recovery. Enable local storage before launching.",
-      );
+      throw new Error("This browser cannot save launch recovery. Enable local storage before launching.");
     }
-    for (let index = 0; index < signed.length; index++) {
+    for (let index = 0; index < verified.length; index++) {
+      if (currentAddress.current !== address) throw new Error("The connected wallet changed. Resume this saved launch with its original wallet.");
       setStatus(
         index === 0
           ? "Sending the launch transaction…"
           : "Locking the creator fee split…",
       );
-      const signature = await connection.sendRawTransaction(
-        signed[index].serialize(),
-        { maxRetries: 3 },
-      );
-      setLastSignature(signature);
-      launch.signatures = [...(launch.signatures ?? []), signature];
-      updatePending(address, launch);
-      await confirm(signature);
+      await sendCheckedVersionedTransaction(connection, verified[index], (signature) => {
+        // Record the signed ID before sending: a lost RPC response must not hide a paid mint.
+        setLastSignature(signature);
+        launch.signatures = [...(launch.signatures ?? []), signature];
+        updatePending(address, launch);
+      });
     }
   }
 
@@ -341,7 +336,7 @@ export default function CreatePage() {
         metadataUri: metadata.uri,
         at: Date.now(),
       };
-      await signAndSend([create, ...finish], record);
+      await signAndSend([create, ...finish], record, mint);
       const state = await tikTokLaunchState(connection, mint.publicKey, {
         handle,
         launcher: publicKey,
