@@ -70,8 +70,10 @@ try {
       }
       if (path === '/create') {
         const launchButton = page.getByRole('button', { name: 'Mainnet launches are paused', exact: true });
+        if (await page.locator('#first-buy').count()) failures.push(`${viewport}: launch still offers an inline buy before the split`);
+        if (!details.text.includes('Lock the split before buying')) failures.push(`${viewport}: launch does not explain buying after the split`);
         if (!(await launchButton.isDisabled())) failures.push(`${viewport}: unconfigured launch is enabled`);
-        for (const label of ['TikTok username', 'Coin name', 'Ticker', 'Description', 'First buy (SOL)']) {
+        for (const label of ['TikTok username', 'Coin name', 'Ticker', 'Description']) {
           if (!(await page.getByLabel(label, { exact: false }).count())) failures.push(`${viewport}: missing label ${label}`);
         }
       }

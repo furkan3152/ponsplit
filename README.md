@@ -62,6 +62,12 @@ TikTok review; tam geliştirilen public site, menü açmadan görülebilen aktif
 
 Program/verifier adresinin değiştirilmesi yeni escrow PDA'ları üretir; final coin alıcılarını taşımaz. OAuth/signer kurulumuna geçerken mevcut manual vault'ların claim yolunu ve eski verifier bağlantısını korumak gerekir.
 
+## Açılışta ilk alım ve tamamlanma sınırı
+
+TikTok açılışında token alımı yapılmaz. Önce mint, creator kasası ve kalıcı %20/%80 paylaşımı tamamlanır; ardından coin sayfasındaki normal al/sat paneli canlı fiyatla ve ayrı cüzdan onayıyla kullanılır. Böylece uygulamanın ilk alımının creator ücreti geçici launcher hesabında kalmaz. İlk işlem fiyatı veya ilk alıcı olma garantisi yoktur.
+
+Açılış birden fazla Solana işlemidir; atomik değildir. Mint ile paylaşımın kesinleşmesi arasındaki doğrudan dış piyasa işlemleri geçici launcher'a ücret üretebilir. Tamamlanmamış mint'ler Tiksplit listelerine alınmaz; tarayıcıdaki kayıt ile aynı cüzdandan tamamlanır. Tarayıcı verilerini temizlemek kayıtlı recovery bilgisini kaybettirebilir. Gerçek mainnet kabul testi tamamlanmadan genel kullanıma hazır olduğu iddia edilmez. Ayrıntılı kontrol: [yayın kontrol listesi](docs/launch-checklist.md).
+
 ## Maliyet — 10 Ekim 2026
 
 **Canlı mainnet teklifi (10 Ekim 2026):** Resmi mainnet RPC üzerinden 63,552 byte ortak program için başlangıç bakiyesi `0.325586360 SOL`, final rent + fee `0.324931120 SOL` ölçüldü. Bunun `0.324556120 SOL` kısmı program rent'i, `0.000375000 SOL` kısmı 73 işlemin ücreti; başlangıç bakiyesinde ayrıca `0.000650240 SOL` cüzdan rent rezervi ve `0.000005 SOL` recovery payı var. Mainnet rent tarifesi aşağıdaki eski validator sürümünün yerel tarifesinden düşük. Bu bir teklif sorgusudur; mainnet'e program kurulmadı veya para gönderilmedi. Panel her kurulumda yeniden hesaplar. Bu ortak program tek sefer kurulur; coin oluşturma ve varsa ilk alım bütçesi ayrıca hesaplanır.
