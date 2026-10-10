@@ -31,6 +31,15 @@ checkSettings();
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  experimental: {
+    outputFileTracingIncludes: {
+      "/api/admin/status": ["./public/programs/tiktok-escrow.so"],
+      "/api/admin/configuration": ["./public/programs/tiktok-escrow.so"],
+      "/api/tiktok/verify": ["./public/programs/tiktok-escrow.so"],
+      "/api/runtime-status": ["./public/programs/tiktok-escrow.so"],
+      "/api/metadata": ["./public/programs/tiktok-escrow.so"],
+    },
+  },
   async headers() {
     return [
       {

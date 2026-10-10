@@ -1,6 +1,7 @@
 {
   "treasury": "D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm",
-  "platformBps": 1000,
+  "platformBps": 2000,
+  "pastPlatformBps": [1000],
   "launchFeeSol": "0.01",
   "hidden": [],
   "officialToken": ""

@@ -5,7 +5,7 @@ import { explorerUrl } from "@/lib/coin-ui";
 import { formatPrice, formatSol, formatTokens, shortAddress, timeAgo } from "@/lib/format";
 import { useNow } from "@/lib/hooks";
 import type { Trade } from "@/lib/types";
-import { EmptyArt } from "./art";
+import { StateIcon } from "./StateIcon";
 
 /** Rows keyed by transaction and kind, so rows already on screen keep their elements. */
 const keyOf = (t: Trade, i: number) => `${t.signature}-${t.kind}-${t.tokens}-${i}`;
@@ -52,7 +52,7 @@ export function TradesTable({
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-center gap-2 border-t border-line px-4 pb-8 pt-6 text-center">
-          <EmptyArt className="h-16 w-20 animate-float" />
+          <StateIcon kind="video" className="h-16 w-16" />
           <p className="text-[14px] text-ink-2">No trades yet. Be the first.</p>
         </div>
       ) : (

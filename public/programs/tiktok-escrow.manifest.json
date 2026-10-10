@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "tiktok-escrow",
+  "byteLength": 104568,
+  "sha256": "4170345717dbdbd16f1c7ec83efa5c6fe5b7cdd9f8bc28cbb59825e56d6d70d2",
+  "sourceSha256": "71a91ff8caa4ea7be7e1359ac8cf022ea3e907f0d43898267695b9db3ba731bd",
+  "sourceFiles": [
+    "programs/tiktok-escrow/Cargo.lock",
+    "programs/tiktok-escrow/Cargo.toml",
+    "programs/tiktok-escrow/src/lib.rs",
+    "programs/tiktok-escrow/src/tests.rs"
+  ],
+  "compiler": "Solana CLI 2.3.13 / platform-tools 1.48 / Rust 1.84.1",
+  "vaultLayout": "TIKVAULT:138:v1",
+  "pendingVaultLayout": "TIKAPPRV:138:v1",
+  "proofLayout": "TIKPROOF:143:v1",
+  "proofApproval": "sha256-reviewed-account:creator-activation:v1"
+}

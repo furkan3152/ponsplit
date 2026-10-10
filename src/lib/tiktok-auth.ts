@@ -23,7 +23,7 @@ export class TikTokAuthError extends Error {
 
 export type TikTokOAuthConfig = { clientKey: string; clientSecret: string; redirectUri: string; origin: string; sessionSecret: string };
 type SessionBase = { version: 1; issuedAt: number; expiresAt: number };
-export type TikTokOAuthSession = SessionBase & { kind: "oauth"; state: string; codeVerifier: string };
+export type TikTokOAuthSession = SessionBase & { kind: "oauth"; state: string };
 export type TikTokSession = SessionBase & {
   kind: "authenticated";
   nonce: string;
@@ -41,7 +41,7 @@ export function getTikTokOAuthConfig(env: NodeJS.ProcessEnv = process.env): TikT
   const clientSecret = env.TIKTOK_CLIENT_SECRET?.trim();
   const redirectUri = env.TIKTOK_REDIRECT_URI?.trim();
   const sessionSecret = env.TIKTOK_SESSION_SECRET;
-  if (!clientKey || !clientSecret || !redirectUri || !sessionSecret || Buffer.byteLength(sessionSecret) < 32) return null;
+  if (!clientKey || !clientSecret || !redirectUri || redirectUri.length >= 512 || !sessionSecret || Buffer.byteLength(sessionSecret) < 32) return null;
   try {
     const url = new URL(redirectUri);
     const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
@@ -79,7 +79,7 @@ export function assertSameOrigin(req: Request, config: Pick<TikTokOAuthConfig, "
 }
 
 export function newOAuthSession(now = Date.now()): TikTokOAuthSession {
-  return { version: 1, kind: "oauth", state: randomBytes(32).toString("base64url"), codeVerifier: randomBytes(32).toString("base64url"), issuedAt: now, expiresAt: now + OAUTH_LIFETIME_SECONDS * 1000 };
+  return { version: 1, kind: "oauth", state: randomBytes(32).toString("base64url"), issuedAt: now, expiresAt: now + OAUTH_LIFETIME_SECONDS * 1000 };
 }
 
 export function buildTikTokAuthorizationUrl(config: TikTokOAuthConfig, session: TikTokOAuthSession): string {
@@ -90,8 +90,6 @@ export function buildTikTokAuthorizationUrl(config: TikTokOAuthConfig, session: 
     response_type: "code",
     redirect_uri: config.redirectUri,
     state: session.state,
-    code_challenge: createHash("sha256").update(session.codeVerifier).digest("base64url"),
-    code_challenge_method: "S256",
   }).toString();
   return url.toString();
 }
@@ -139,7 +137,7 @@ function isSession(value: unknown, now: number): value is TikTokCookieSession {
   if (s.version !== 1 || typeof s.issuedAt !== "number" || typeof s.expiresAt !== "number" || !Number.isFinite(s.issuedAt) || !Number.isFinite(s.expiresAt)) return false;
   const maxAge = s.kind === "oauth" ? OAUTH_LIFETIME_SECONDS : SESSION_LIFETIME_SECONDS;
   if (s.issuedAt > now + 30_000 || s.expiresAt <= now || s.expiresAt <= s.issuedAt || s.expiresAt - s.issuedAt > maxAge * 1000) return false;
-  if (s.kind === "oauth") return typeof s.state === "string" && /^[A-Za-z0-9_-]{43}$/.test(s.state) && typeof s.codeVerifier === "string" && /^[A-Za-z0-9_-]{43}$/.test(s.codeVerifier);
+  if (s.kind === "oauth") return typeof s.state === "string" && /^[A-Za-z0-9_-]{43}$/.test(s.state);
   if (s.kind !== "authenticated") return false;
   return typeof s.nonce === "string" && /^[A-Za-z0-9_-]{43}$/.test(s.nonce)
     && typeof s.handle === "string" && /^[a-z0-9_.]{1,24}$/.test(s.handle) && !s.handle.endsWith(".")
@@ -267,11 +265,14 @@ export async function fetchTikTokProfile(accessToken: string): Promise<{ handle:
 }
 
 export async function exchangeTikTokCode(config: TikTokOAuthConfig, pending: TikTokOAuthSession, code: string): Promise<TikTokSession> {
+  if (!isSession(pending, Date.now()) || pending.kind !== "oauth") throw new TikTokAuthError("invalid_state", "The login request expired. Please reconnect.", 403);
   if (!code || code.length > 2048) throw new TikTokAuthError("invalid_code", "TikTok did not provide a valid authorization code.");
   const response = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_key: config.clientKey, client_secret: config.clientSecret, code, grant_type: "authorization_code", redirect_uri: config.redirectUri, code_verifier: pending.codeVerifier }),
+    // TikTok's documented web flow authenticates the confidential server with its client secret.
+    // code_verifier is documented for mobile and desktop; web does not send PKCE parameters.
+    body: new URLSearchParams({ client_key: config.clientKey, client_secret: config.clientSecret, code, grant_type: "authorization_code", redirect_uri: config.redirectUri }),
     cache: "no-store",
     redirect: "error",
     signal: AbortSignal.timeout(10_000),

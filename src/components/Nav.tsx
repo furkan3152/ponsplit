@@ -18,7 +18,7 @@ export function Nav() {
     <header className="sticky top-0 z-30 border-b border-line bg-[var(--glass)] backdrop-blur-xl">
       <div className="mx-auto flex h-[68px] max-w-[1240px] items-center gap-2 px-4 sm:gap-3 sm:px-6">
         <Link href="/" className="shrink-0 lg:hidden" aria-label="Tiksplit home">
-          <Wordmark textClassName="hidden min-[440px]:inline" />
+          <Wordmark size={25} textClassName="text-[24px]" />
         </Link>
         <SearchBox className="hidden flex-1 md:block lg:max-w-[460px]" />
         <div className="ml-auto flex min-w-0 items-center gap-2">

@@ -131,7 +131,7 @@ async function earnersOf(c: Connection, coins: CoinView[]): Promise<Earner[]> {
     if (!Number.isSafeInteger(info.lamports)) throw new Error("Creator balance exceeds safe RPC precision.");
     e.claimable = BigInt(Math.max(0, info.lamports - rent));
     e.claimed = vault.totalClaimed;
-    e.verified = Boolean(vault.beneficiary);
+    e.verified = vault.verified;
     e.wallet = vault.beneficiary?.toBase58();
   });
   return [...byHandle.values()].sort((a,b) => Number(b.claimable + b.claimed - a.claimable - a.claimed));

@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { creatorFeeSplit } from "./tiktok-fees";
 import { isValidTikTokHandle, normalizeTikTokHandle } from "./tiktok-config";
 
+test("current creator-fee model allocates exactly twenty percent to platform and eighty to creator", () => {
+  assert.deepEqual(creatorFeeSplit(2000, 0), { platformBps: 2000, launcherBps: 0, creatorBps: 8000 });
+});
+
 test("creator fee allocation conserves all basis points at every supported launcher reward", () => {
   for (let reward = 0; reward <= 1000; reward++) {
     const s = creatorFeeSplit(1000, reward);

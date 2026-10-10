@@ -42,6 +42,7 @@ type PendingLaunch = {
   symbol: string;
   handle: string;
   launcherBps: number;
+  platformBps?: number;
   metadataUri: string;
   at: number;
   signatures?: string[];
@@ -66,6 +67,10 @@ function readPending(wallet: string): PendingLaunch[] {
           Number.isInteger(p.launcherBps) &&
           p.launcherBps >= 0 &&
           p.launcherBps <= 1000 &&
+          (p.platformBps === undefined ||
+            (Number.isInteger(p.platformBps) &&
+              p.platformBps > 0 &&
+              p.platformBps < 10_000)) &&
           typeof p.metadataUri === "string" &&
           Boolean(safeUrl(p.metadataUri)) &&
           Number.isFinite(p.at)
@@ -104,12 +109,6 @@ function parseSol(value: string): bigint | undefined {
   );
 }
 
-function parseReward(value: string): number {
-  const text = value.trim().replace(",", ".");
-  if (!/^\d{1,2}(\.\d{1,2})?$/.test(text)) return NaN;
-  return Math.round(Number(text) * 100);
-}
-
 export default function CreatePage() {
   const router = useRouter();
   const { connection } = useConnection();
@@ -118,13 +117,23 @@ export default function CreatePage() {
   const { guard, dialog } = useRiskGate();
   const balance = useSolBalance();
   const address = publicKey?.toBase58();
-  const ready = isTikTokLaunchReady();
+  const configured = isTikTokLaunchReady();
+  const readiness = useQuery({
+    queryKey: ["runtime-launch-readiness"],
+    queryFn: async () => {
+      const response = await fetch("/api/runtime-status", { cache: "no-store" });
+      if (!response.ok) throw new Error("Launch readiness could not be checked.");
+      return response.json() as Promise<{ launchesReady: boolean }>;
+    },
+    refetchInterval: 30_000,
+    retry: false,
+  });
+  const ready = configured && readiness.data?.launchesReady === true;
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [handleInput, setHandleInput] = useState("");
   const [description, setDescription] = useState("");
   const [image, setImage] = useState("");
-  const [rewardInput, setRewardInput] = useState("0");
   const [buyInput, setBuyInput] = useState("");
   const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -134,9 +143,8 @@ export default function CreatePage() {
   const inFlight = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const handle = normalizeTikTokHandle(handleInput);
-  const launcherBps = parseReward(rewardInput);
-  const creatorBps =
-    10_000 - PLATFORM_BPS - (Number.isFinite(launcherBps) ? launcherBps : 0);
+  const launcherBps = 0;
+  const creatorBps = 10_000 - PLATFORM_BPS;
   const firstBuy = parseSol(buyInput);
   const imageUrl = image ? safeUrl(image) : undefined;
   const refreshPending = () => setPending(address ? readPending(address) : []);
@@ -147,7 +155,7 @@ export default function CreatePage() {
   const terms = useQuery({
     queryKey: ["pump-terms"],
     staleTime: 60_000,
-    enabled: ready,
+    enabled: configured,
     queryFn: async () => {
       const sdk = new OnlinePumpSdk(connection);
       const [global, feeConfig] = await Promise.all([
@@ -159,7 +167,7 @@ export default function CreatePage() {
   });
   const recovery = useQuery({
     queryKey: ["tiktok-launch-recovery", address, pending],
-    enabled: Boolean(ready && address && pending.length),
+    enabled: Boolean(configured && address && pending.length),
     refetchInterval: 15_000,
     queryFn: async (): Promise<Recovery[]> =>
       Promise.all(
@@ -172,6 +180,7 @@ export default function CreatePage() {
                 handle: launch.handle,
                 launcher: new PublicKey(address!),
                 launcherBps: launch.launcherBps,
+                platformBps: launch.platformBps ?? 1000,
                 metadataUri: launch.metadataUri,
               },
             );
@@ -205,25 +214,12 @@ export default function CreatePage() {
       list.push("Keep the description under 500 characters.");
     if (!isValidTikTokHandle(handle))
       list.push("Enter a valid TikTok username.");
-    if (!Number.isInteger(launcherBps) || launcherBps < 0 || launcherBps > 1000)
-      list.push(
-        "Launcher reward must be between 0% and 10%, with up to two decimals.",
-      );
     if (creatorBps <= 0)
       list.push("The creator must receive a positive share.");
     if (firstBuy === undefined)
       list.push("Enter a SOL amount with up to 9 decimals for the first buy.");
     return list;
-  }, [
-    name,
-    symbol,
-    imageUrl,
-    description,
-    handle,
-    launcherBps,
-    creatorBps,
-    firstBuy,
-  ]);
+  }, [name, symbol, imageUrl, description, handle, creatorBps, firstBuy]);
   const quote = useMemo(() => {
     if (!terms.data || firstBuy === undefined) return undefined;
     try {
@@ -350,6 +346,7 @@ export default function CreatePage() {
           image,
           tiktokHandle: handle,
           launcherBps,
+          platformBps: PLATFORM_BPS,
         }),
       });
       const metadata = (await response.json()) as {
@@ -369,6 +366,7 @@ export default function CreatePage() {
         mint.publicKey,
         handle,
         launcherBps,
+        PLATFORM_BPS,
       );
       const create = await createTransaction(connection, {
         user: publicKey,
@@ -384,6 +382,7 @@ export default function CreatePage() {
         symbol: symbol.trim().toUpperCase(),
         handle,
         launcherBps,
+        platformBps: PLATFORM_BPS,
         metadataUri: metadata.uri,
         at: Date.now(),
       };
@@ -392,6 +391,7 @@ export default function CreatePage() {
         handle,
         launcher: publicKey,
         launcherBps,
+        platformBps: PLATFORM_BPS,
         metadataUri: metadata.uri,
       });
       if (state !== "done")
@@ -410,7 +410,7 @@ export default function CreatePage() {
   }
 
   async function finishLaunch(launch: PendingLaunch) {
-    if (!publicKey || !address || !ready || inFlight.current) return;
+    if (!publicKey || !address || !configured || inFlight.current) return;
     inFlight.current = true;
     setError(null);
     try {
@@ -420,6 +420,7 @@ export default function CreatePage() {
         handle: launch.handle,
         launcher: publicKey,
         launcherBps: launch.launcherBps,
+        platformBps: launch.platformBps ?? 1000,
         metadataUri: launch.metadataUri,
       };
       const state = await tikTokLaunchState(connection, mint, expected);
@@ -434,6 +435,7 @@ export default function CreatePage() {
           mint,
           launch.handle,
           launch.launcherBps,
+          launch.platformBps ?? 1000,
         );
         await signAndSend(transactions, launch);
       }
@@ -472,8 +474,7 @@ export default function CreatePage() {
           role="status"
           className="rounded-2xl border border-line-2 bg-card p-5 text-[14px] leading-relaxed text-ink-2"
         >
-          Mainnet launches are paused until the TikTok escrow program,
-          verification authority and treasury are configured. You can prepare
+          Mainnet launches are paused until creator verification and the mainnet setup are ready. You can prepare
           the coin details below.
         </div>
       ) : null}
@@ -627,29 +628,9 @@ export default function CreatePage() {
           <section className="card p-5 sm:p-7">
             <div className="eyebrow">03 · Launch settings</div>
             <h2 className="mt-2 text-[23px] font-semibold">
-              Set your reward and first buy
+              Choose your first buy
             </h2>
-            <div className="mt-5 grid gap-5 sm:grid-cols-2">
-              <div>
-                <label className="label" htmlFor="launcher-reward">
-                  Launcher reward (%)
-                </label>
-                <input
-                  id="launcher-reward"
-                  className="input"
-                  inputMode="decimal"
-                  value={rewardInput}
-                  onChange={(event) => setRewardInput(event.target.value)}
-                  aria-describedby="reward-help"
-                />
-                <p
-                  id="reward-help"
-                  className="mt-2 text-[12px] leading-relaxed text-ink-3"
-                >
-                  0–10% of creator fees to your launching wallet, taken from the
-                  creator&apos;s share.
-                </p>
-              </div>
+            <div className="mt-5">
               <div>
                 <label className="label" htmlFor="first-buy">
                   First buy (SOL){" "}
@@ -817,12 +798,6 @@ export default function CreatePage() {
                 style={{ width: `${Math.max(0, creatorBps) / 100}%` }}
               />
               <span
-                className="bg-pink"
-                style={{
-                  width: `${Math.max(0, Number.isFinite(launcherBps) ? launcherBps : 0) / 100}%`,
-                }}
-              />
-              <span
                 className="bg-ink-3"
                 style={{ width: `${PLATFORM_BPS / 100}%` }}
               />
@@ -831,14 +806,6 @@ export default function CreatePage() {
               <div className="flex justify-between gap-4">
                 <dt className="text-ink-2">@{handle || "creator"} · escrow</dt>
                 <dd className="font-semibold text-neon">{pct(creatorBps)}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-ink-2">
-                  Launcher {address ? `· ${shortAddress(address)}` : "· you"}
-                </dt>
-                <dd className="font-semibold">
-                  {Number.isFinite(launcherBps) ? pct(launcherBps) : "—"}
-                </dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-ink-2">Platform</dt>
@@ -884,9 +851,13 @@ export default function CreatePage() {
                       </div>
                       <div className="mt-1 text-[12px] text-ink-3">
                         Creator{" "}
-                        {pct(10_000 - PLATFORM_BPS - launch.launcherBps)} ·
-                        launcher {pct(launch.launcherBps)} · platform{" "}
-                        {pct(PLATFORM_BPS)}
+                        {pct(
+                          10_000 -
+                            (launch.platformBps ?? 1000) -
+                            launch.launcherBps,
+                        )}{" "}
+                        · launcher {pct(launch.launcherBps)} · platform{" "}
+                        {pct(launch.platformBps ?? 1000)}
                       </div>
                       <a
                         href={`https://solscan.io/token/${launch.mint}`}
@@ -900,7 +871,7 @@ export default function CreatePage() {
                     {checked?.state === "needs-split" ? (
                       <button
                         className="btn-secondary px-4 py-2.5 text-[13px]"
-                        disabled={Boolean(status) || !ready}
+                        disabled={Boolean(status) || !configured}
                         onClick={() =>
                           guard(() => {
                             void finishLaunch(launch);
@@ -920,7 +891,7 @@ export default function CreatePage() {
                           ? "Mint confirmed; the creator fee split still needs to be locked."
                           : checked?.state === "done"
                             ? "Confirmed with its final fee split."
-                            : ready
+                            : configured
                               ? "Checking the launch…"
                               : "Configure the escrow to check this launch."}
                   </p>

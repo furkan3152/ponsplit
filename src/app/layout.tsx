@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Figtree, JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import { Barlow_Condensed, Figtree, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import { Footer } from "@/components/Footer";
 import { Nav } from "@/components/Nav";
 import { Sidebar } from "@/components/Sidebar";
@@ -13,6 +13,7 @@ import "./globals.css";
 const display = Space_Grotesk({ subsets: ["latin"], variable: "--font-display" });
 const sans = Figtree({ subsets: ["latin"], variable: "--font-sans" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
+const editorial = Barlow_Condensed({ subsets: ["latin"], weight: ["600", "700", "800"], variable: "--font-editorial" });
 
 /** The public URL, for absolute links in share cards: explicit, else the host's production URL. */
 function siteUrl(): string {
@@ -25,7 +26,7 @@ function siteUrl(): string {
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
   title: { default: "Tiksplit · Creator coins for TikTok", template: "%s · Tiksplit" },
-  description: "Launch creator coins on Solana with pump.fun. Allocate creator fees to TikTok creators, verify account ownership and claim in SOL.",
+  description: "Launch creator coins on Solana with pump.fun. TikTok creators prove ownership with a public code video, receive manual approval and claim escrow fees in SOL.",
 };
 
 // No themeColor here: Next re-renders its own theme-color tag on every navigation, which would
@@ -38,7 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       data-theme="dark"
       suppressHydrationWarning
-      className={`${display.variable} ${sans.variable} ${mono.variable}`}
+      className={`${display.variable} ${sans.variable} ${mono.variable} ${editorial.variable}`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />

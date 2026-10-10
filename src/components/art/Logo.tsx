@@ -9,7 +9,7 @@ export function LogoMark({ size = 32, className }: { size?: number; className?: 
 }
 
 export function WordmarkText({ className = "" }: { className?: string }) {
-  return <span className={`display whitespace-nowrap leading-none tracking-[-0.06em] ${className}`}>tik<span className="text-neon">split</span><span className="text-[var(--coral)]">.</span></span>;
+  return <span className={`logo-word whitespace-nowrap leading-none ${className}`}>tik<span className="text-neon">split</span><span className="text-[var(--coral)]">.</span></span>;
 }
 
 export function Wordmark({ className, textClassName = "", size = 28 }: { className?: string; textClassName?: string; size?: number }) {

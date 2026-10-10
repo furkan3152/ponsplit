@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { PublicKey, SystemProgram, type AccountInfo } from "@solana/web3.js";
 import {
   CREATOR_VAULT_SIZE,
+  activateCreatorInstruction,
   bindCreatorInstruction,
   claimCreatorInstruction,
   creatorVault,
@@ -60,6 +61,9 @@ test("instruction bytes and signer privileges match the on-chain escrow ABI", ()
   assert.ok(bind.keys[0].pubkey.equals(config.verifier));
   assert.ok(bind.keys[1].pubkey.equals(beneficiary));
   assert.deepEqual(bind.data, Buffer.concat([Buffer.from([1]), Buffer.from(identityHash)]));
+  const activate = activateCreatorInstruction(handle, beneficiary, identityHash, config);
+  assert.deepEqual(activate.keys.map(({ isSigner, isWritable }) => [isSigner, isWritable]), [[false, false], [true, false], [false, true]]);
+  assert.deepEqual(activate.data, bind.data);
   const claim = claimCreatorInstruction(handle, beneficiary, config);
   assert.deepEqual(claim.keys.map(({ isSigner, isWritable }) => [isSigner, isWritable]), [[true, true], [false, true]]);
   assert.ok(claim.keys[0].pubkey.equals(beneficiary));
@@ -80,6 +84,8 @@ test("decoder authenticates the owner, verifier, canonical PDA and complete layo
   assert.ok(state.beneficiary?.equals(beneficiary));
   assert.deepEqual(state.identityHash, identityHash);
   assert.equal(state.totalClaimed, BigInt(123));
+  assert.equal(state.approved, false);
+  assert.equal(state.verified, true);
   assert.equal(decodeCreatorVault(account(), address, config)?.beneficiary, null);
   assert.equal(decodeCreatorVault(account(), key(8), config), null);
   assert.equal(decodeCreatorVault(account(), address, { ...config, verifier: key(8) }), null);
@@ -108,6 +114,22 @@ test("decoder authenticates the owner, verifier, canonical PDA and complete layo
   assert.equal(decodeCreatorVault({ ...account(), data: Buffer.alloc(CREATOR_VAULT_SIZE + 1) }, address, config), null);
 });
 
+test("manual approval exposes its fixed beneficiary and identity hash while activation is pending", () => {
+  const info = account(true);
+  info.data.write("TIKAPPRV");
+  info.data.writeBigUInt64LE(BigInt(0), 130);
+  const state = decodeCreatorVault(info, address, config);
+  assert.ok(state?.approved);
+  assert.equal(state.verified, false);
+  assert.ok(state.beneficiary?.equals(beneficiary));
+  assert.deepEqual(state.identityHash, identityHash);
+  info.data.writeBigUInt64LE(BigInt(1), 130);
+  assert.equal(decodeCreatorVault(info, address, config), null);
+  const unbound = account();
+  unbound.data.write("TIKAPPRV");
+  assert.equal(decodeCreatorVault(unbound, address, config), null);
+});
+
 test("balances reserve rent and expose only the permanently bound beneficiary", async () => {
   const info = account(true);
   const connection = {
@@ -115,7 +137,7 @@ test("balances reserve rent and expose only the permanently bound beneficiary", 
     getMinimumBalanceForRentExemption: async (size: number) => { assert.equal(size, CREATOR_VAULT_SIZE); return 2_000; },
   };
   const balance = await creatorVaultClaimable(connection, handle, config);
-  assert.deepEqual(balance, { account: address.toBase58(), claimable: BigInt(8_000), exists: true, beneficiary: beneficiary.toBase58(), totalClaimed: BigInt(123) });
+  assert.deepEqual(balance, { account: address.toBase58(), claimable: BigInt(8_000), exists: true, beneficiary: beneficiary.toBase58(), totalClaimed: BigInt(123), identityHash, approved: false, verified: true });
   info.lamports = 1_000;
   assert.equal((await creatorVaultClaimable(connection, handle, config)).claimable, BigInt(0));
   info.lamports = Number.MAX_SAFE_INTEGER + 1;
@@ -128,9 +150,9 @@ test("missing and prefunded vaults are uninitialized; foreign or corrupt account
     getAccountInfo: async () => info,
     getMinimumBalanceForRentExemption: async () => 2_000,
   };
-  assert.deepEqual(await creatorVaultClaimable(connection, handle, config), { account: address.toBase58(), claimable: BigInt(0), exists: false, beneficiary: null, totalClaimed: BigInt(0) });
+  assert.deepEqual(await creatorVaultClaimable(connection, handle, config), { account: address.toBase58(), claimable: BigInt(0), exists: false, beneficiary: null, totalClaimed: BigInt(0), identityHash: new Uint8Array(32), approved: false, verified: false });
   info = { ...account(), owner: SystemProgram.programId, data: Buffer.alloc(0) };
-  assert.deepEqual(await creatorVaultClaimable(connection, handle, config), { account: address.toBase58(), claimable: BigInt(8_000), exists: false, beneficiary: null, totalClaimed: BigInt(0) });
+  assert.deepEqual(await creatorVaultClaimable(connection, handle, config), { account: address.toBase58(), claimable: BigInt(8_000), exists: false, beneficiary: null, totalClaimed: BigInt(0), identityHash: new Uint8Array(32), approved: false, verified: false });
   info = { ...account(), owner: key(9) };
   await assert.rejects(creatorVaultClaimable(connection, handle, config), /invalid/);
   info = account();
