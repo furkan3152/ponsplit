@@ -1,0 +1,1 @@
+Tiksplit requires a deployed and reviewed escrow program, a verifier signer and approved TikTok Login Kit credentials. Keep the existing production deployment until these are configured and the mainnet release is ready.

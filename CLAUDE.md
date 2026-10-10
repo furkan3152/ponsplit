@@ -1,4 +1,21 @@
-# Splitdev (repo: ponsplit): working notes for Claude
+# Tiksplit (repo: ponsplit): current working notes
+
+The owner's 2026-10-10 request changes this app to a TikTok creator launchpad inspired by
+UseReels' fee-allocation logic, with an original interface on Solana mainnet / pump.fun.
+Current implementation and setup are in README.md. One TikTok handle per launch; platform
+fee + optional launcher reward + creator escrow, immutable on chain. pump.fun's TikTok
+platform enum is inactive, so a separate `programs/tiktok-escrow` program is required.
+TikTok Login Kit verifies ownership; a remote Ed25519 verifier co-signs first wallet binding.
+No private keys belong in the web app. `.deploy-hold` preserves the existing production app
+until the escrow, verifier signer and TikTok credentials are ready. Do not remove it merely
+because the web build passes. Use `.github/workflows/splidev.yml`'s current TikTok checks.
+Keep the existing default branch; push only there, and do not open PRs unless requested.
+Do not invent a Claude identity/session trailer when another agent makes the commit.
+
+The remaining notes below describe the previous GitHub version, for migration context.
+Its developer branding, GitHub recipients, claim flow and old E2E scenarios are superseded.
+
+# Previous Splitdev working notes
 
 The brand is **Splitdev** (domain splitdev.app; renamed from "Splidev" on 2026-10-07 at the owner's request).
 Internal identifiers keep the old spelling on purpose, so settings and saved state survive: `src/splidev.json`,
