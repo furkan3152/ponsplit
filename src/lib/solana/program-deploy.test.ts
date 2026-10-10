@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { PublicKey, SystemProgram, Transaction, SYSVAR_CLOCK_PUBKEY, SYSVAR_RENT_PUBKEY } from "@solana/web3.js";
+import { PublicKey, SystemProgram, SYSVAR_CLOCK_PUBKEY, SYSVAR_RENT_PUBKEY } from "@solana/web3.js";
 import {
   ESCROW_ARTIFACT_MANIFEST, UPGRADEABLE_LOADER, WRITE_CHUNK_SIZE, MAX_ARTIFACT_BYTES,
-  initializeBufferInstruction, writeBufferInstruction, deployProgramInstruction, closeBufferInstruction, closeProgramInstruction, closeUnusedProgram,
+  initializeBufferInstruction, writeBufferInstruction, createBufferWriteTransaction, deployProgramInstruction, closeBufferInstruction, closeProgramInstruction, closeUnusedProgram,
   programDataAddress, validateEscrowArtifact, deployEscrowProgram, closeDeploymentBuffer, assertDeploymentNetwork,
   type ProgramArtifact,
 } from "./program-deploy";
@@ -59,7 +59,9 @@ test("upgradeable-loader instruction ABI preserves admin buffer/deploy/close aut
 });
 
 test("write/deploy builders enforce packet and artifact bounds", () => {
-  const tx = new Transaction({ feePayer: authority, recentBlockhash: SystemProgram.programId.toBase58() }).add(writeBufferInstruction(buffer, authority, 0, new Uint8Array(WRITE_CHUNK_SIZE)));
+  const tx = createBufferWriteTransaction(buffer, authority, 0, new Uint8Array(WRITE_CHUNK_SIZE));
+  tx.feePayer = authority;
+  tx.recentBlockhash = SystemProgram.programId.toBase58();
   assert.ok(tx.serialize({ requireAllSignatures: false, verifySignatures: false }).length <= 1232);
   for (const [offset, size] of [[-1, 1], [0, 0], [0, WRITE_CHUNK_SIZE + 1], [MAX_ARTIFACT_BYTES, 1], [0.5, 1]]) {
     assert.throws(() => writeBufferInstruction(buffer, authority, offset, new Uint8Array(size)));

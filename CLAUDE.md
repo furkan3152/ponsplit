@@ -20,9 +20,13 @@ D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm wallet only, via a locally verified
 signed wallet challenge and native wallet-signed transactions. Optional server hosting mutations
 require signed server sessions with durable Redis replay prevention in production. Program deployment
 uses hash-pinned public SBF, browser-memory temporary keys, and admin upgrade authority.
-Batch-capable wallets (including OKX) default to one upload approval request (up to 80 writes),
-then a separate final deployment approval. The admin can select eight-write batches or single
-signing for compatibility. Validate the entire signed batch before sending anything, send at most
+Batch-capable wallets (including OKX) default to small groups of eight writes, advanced automatically,
+then a separate final deployment approval. Full-batch signing (up to 80 writes) is opt-in; single
+signing remains available for compatibility. Uploads carry explicit 25,000 CU / 1,000 micro-lamport
+fee settings (25 lamports priority fee), shared by fee quoting and sending. Simulate a real pending
+write before each approval group. Uploads never allocate accounts, refund rent or transfer SOL.
+Show already-funded buffer rent separately from the remaining wallet requirement.
+Validate the entire signed batch before sending anything, send at most
 three writes concurrently, and drain in-flight writes before returning any upload failure.
 Recover existing buffers by verified public address, including /admin?buffer=... links.
 Save each transaction ID before submission and reconcile confirmation transport failures on chain.
