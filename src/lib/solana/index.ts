@@ -3,3 +3,4 @@ export * from "./config";
 export * from "./pump";
 export * from "./reads";
 export * from "./trades";
+export * from "./tiktok-escrow";

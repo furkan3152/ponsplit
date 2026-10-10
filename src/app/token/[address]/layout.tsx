@@ -4,14 +4,14 @@ import { coinView } from "@/lib/solana/server";
 export async function generateMetadata({ params }: { params: { address: string } }): Promise<Metadata> {
   const t = await coinView(params.address).catch(() => null);
   if (!t) return { title: "Coin" };
-  const who = t.recipients.map((r) => r.login ?? `#${r.githubId}`).join(", ");
-  const description = (t.description ?? "").trim().slice(0, 300) || `Every trade of $${t.symbol} pays ${who} on GitHub.`;
+  const who = t.recipients.map((r) => `@${r.handle}`).join(", ");
+  const description = (t.description ?? "").trim().slice(0, 300) || `Creator fees from $${t.symbol} support ${who} on TikTok.`;
   const title = `${t.name} ($${t.symbol})`;
   return {
     title,
     description,
-    openGraph: { title: `${title} on Splitdev`, description },
-    twitter: { card: "summary_large_image", title: `${title} on Splitdev`, description },
+    openGraph: { title: `${title} on Tiksplit`, description },
+    twitter: { card: "summary_large_image", title: `${title} on Tiksplit`, description },
   };
 }
 

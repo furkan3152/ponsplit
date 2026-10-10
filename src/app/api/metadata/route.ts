@@ -5,6 +5,9 @@ import { readJson } from "@/lib/body";
 import { safeUrl } from "@/lib/metadata";
 import { clientIp, limitClient, rateLimit } from "@/lib/ratelimit";
 import { memoryMetadata } from "./store";
+import { isValidTikTokHandle, normalizeTikTokHandle } from "@/lib/tiktok-config";
+import { creatorFeeSplit } from "@/lib/tiktok-fees";
+import { PLATFORM_BPS } from "@/lib/solana/config";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +29,10 @@ export async function POST(req: Request) {
   const name = str("name", 32);
   const symbol = str("symbol", 13);
   if (!name || !symbol) return NextResponse.json({ error: "A name and a ticker are required." }, { status: 400 });
+  const tiktokHandle = normalizeTikTokHandle(str("tiktokHandle", 200));
+  if (!isValidTikTokHandle(tiktokHandle)) return NextResponse.json({ error: "A valid TikTok handle is required." }, { status: 400 });
+  const launcherBps = body?.launcherBps ?? 0;
+  try { creatorFeeSplit(PLATFORM_BPS, launcherBps as number); } catch { return NextResponse.json({ error: "Launcher reward must be between 0% and 10%." }, { status: 400 }); }
   const link = (k: string) => (str(k, 200) && safeUrl(str(k, 200))) || undefined;
   const meta = {
     name,
@@ -33,7 +40,10 @@ export async function POST(req: Request) {
     description: str("description", 500),
     image: link("image") ?? "",
     showName: true,
-    createdOn: "https://splitdev.app",
+    createdOn: process.env.SITE_URL || new URL(req.url).origin,
+    tiktok: `https://www.tiktok.com/@${tiktokHandle}`,
+    tiktokHandle,
+    launcherBps,
     ...(link("website") ? { website: link("website") } : {}),
     ...(link("twitter") ? { twitter: link("twitter") } : {}),
     ...(link("telegram") ? { telegram: link("telegram") } : {}),

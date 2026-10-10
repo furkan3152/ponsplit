@@ -1,73 +1,81 @@
-# Splitdev
+# Tiksplit
 
-Splitdev, **pump.fun** (Solana) üzerinde coin basan ve coin'in yaratıcı ücretlerini **GitHub
-hesapları** arasında bölen bir launchpad. Bir coin basarken en fazla 9 GitHub kullanıcı adı ve
-payları seçilir; coin'in her alım satımından gelen yaratıcı ücreti bu geliştiricilere akar.
+TikTok kullanıcıları adına **Solana mainnet / pump.fun** token başlatan ve creator ücretlerini hesap sahibi için biriktiren uygulama. Next.js 14, pump.fun'ın resmi SDK'ları ve ayrı bir Solana escrow programı kullanır. UseReels'in ücret tahsis mantığından yararlanır; arayüzü özgündür. TikTok ve pump.fun ile resmi ortaklığı yoktur.
 
-Splitdev pump.fun ile bağlantılı değildir; pump.fun'ın herkese açık programlarını kullanır.
+## Akış
 
-## Nasıl çalışır
+1. `/create`: TikTok kullanıcı adı, token bilgileri, isteğe bağlı ilk alım ve %0–10 launcher payı seçilir. pump.fun `create_v2` token oluşturur; ardından kalıcı fee sharing kilitlenir. Yarım kalan basım cüzdan/mint bazında kaydedilir ve aynı paylaşım ile tamamlanır.
+2. Creator ücretinin %10'u mevcut hazineye, %90 eksi launcher payı kullanıcı adına ayrılan escrow PDA'sına gider. Launcher payı varsa token'ı başlatan cüzdana gider. Bu oranlar işlem tutarının tamamına uygulanmaz. Platform token veya burn kesintisi yoktur.
+3. `/token/[mint]`: gerçek bonding curve / PumpSwap fiyatı, alım satım ve permissionless ücret dağıtımı. Dağıtılan SOL, kullanıcı henüz doğrulanmamışken de escrow'da birikir.
+4. `/claim` ve `/creator/[handle]`: escrow bakiyesi, dağıtılmamış ücretler ve gerçek toplam çekim görülür. TikTok Login Kit hesabın güncel kullanıcı adını ve `open_id` bilgisini doğrular. Kullanıcı hem cüzdan mesajını hem bağlama işlemini imzalar. Harici doğrulama hizmeti aynı işlemi doğrulayıcı olarak imzalar.
+5. Escrow ilk başarılı doğrulamada cüzdana kalıcı bağlanır. Yalnız o cüzdan SOL çeker; hesap rent bakiyesi korunur. Doğrulayıcının ayrı bir para çekme yetkisi yoktur.
 
-1. **Basım.** /create sayfasında isim, sembol, resim, GitHub kullanıcı adları ve paylar girilir.
-   Cüzdan tek seferde imzalar:
-   - pump.fun `create_v2` (+ isteğe bağlı ilk alım), yaratıcı = basan cüzdan;
-   - eksik GitHub ücret hesapları (pump.fun'ın kendi GitHub hesapları, kullanıcı id'sine bağlı);
-   - kalıcı ücret paylaşımı: önce Splitdev hazinesi (`platformBps`, şimdi %10), kalanı GitHub
-     hesaplarına; yönetici yetkisi kaldırılır, paylar bir daha değişmez;
-   - basım ücreti (`launchFeeSol`, şimdi 0.01 SOL) hazineye.
-2. **Alım satım.** Coin sayfasında bonding curve üzerinde, mezuniyetten sonra pump.fun'ın
-   havuzunda (PumpSwap) alım satım yapılır.
-3. **Ücretler.** pump.fun'ın yaratıcı ücreti coin'in kasasında birikir. Coin sayfasındaki
-   **"Distribute now"** düğmesi (herkes basabilir) bunu paylara göre dağıtır.
-4. **Para alma.** Geliştiriciler paralarını **pump.fun'da GitHub ile giriş yaparak** alır. Splitdev'in
-   ayrı bir sözleşmesi ya da imza anahtarı yoktur. /claim sayfası bir GitHub kullanıcısının ne kadar
-   alabileceğini ve hangi coin'lerden geldiğini gösterir.
+**Teknik fark:** pump.fun SDK'sında `Platform.TikTok` aktif değildir. TikTok için uydurulmuş platform numarası veya pump.fun'da TikTok ile para çekme vaadi kullanılmaz. Ücret paylaşımı pump.fun programında; kullanıcı adına birikim ve çekim `programs/tiktok-escrow` içindedir.
 
-## Ayarlar
-
-`src/splidev.json`:
-
-| Alan | Anlamı |
-| --- | --- |
-| `treasury` | Splitdev'in Solana cüzdan adresi (boşken basım kapalı) |
-| `platformBps` | Splitdev payı, baz puan (1000 = %10) |
-| `launchFeeSol` | Basım ücreti, SOL |
-| `hidden` | Sitede gösterilmeyecek coin adresleri |
-| `officialToken` | Resmi coin adresi (boş = "Coming soon") |
-
-Vercel ortam değişkenleri:
-
-- `NEXT_PUBLIC_SOLANA_RPC_URL`: tarayıcıların RPC'si (domain kısıtlı ücretli anahtar önerilir)
-- `SOLANA_RPC_URL`: sunucu RPC'si
-- `GITHUB_TOKEN`: GitHub kullanıcı aramaları için (yetkisiz/scope'suz bir token yeterli)
-- `BLOB_READ_WRITE_TOKEN`: coin resimleri ve metadata için Vercel Blob
-
-## Yayın durumu (5 Ekim 2026)
-
-- Site **splitearn.app** üzerinde Splitdev olarak yayında.
-- Hazine: `D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm`.
-- RPC: QuickNode. Tarayıcı uç noktası sadece splitearn.app'ten çalışır; sunucu uç noktası gizli.
-- Önerilen adım: GitHub → Settings → Developer settings → Personal access tokens → "Generate new token"
-  (hiçbir izin seçme), çıkan değeri Vercel → ponsplit → Settings → Environment Variables'a `GITHUB_TOKEN`
-  adıyla ekle. Böylece GitHub aramaları saatte 60 yerine 5.000 olur.
-
-## Geliştirme
+## Çalıştırma
 
 ```bash
 npm ci
-npx tsc --noEmit && npx next lint && npm test   # tip kontrolü, lint, birim testleri
-npm run build
+cp .env.example .env.local
+npm run dev
 ```
 
-Testler pump.fun'ın **gerçek** programlarıyla, yerel bir `solana-test-validator` üzerinde çalışır
-(programlar ve hesaplar `e2e/solana/fixtures` içinde, `solana-fixtures.yml` ile mainnet'ten alınır):
+Hazine ve ücretler mevcut `src/splidev.json` dosyasından okunur; eski `NEXT_PUBLIC_SPLIDEV_*` override'ları korunur. Hazine mevcut sahibin açık adresidir, yeni bir cüzdan oluşturulmaz. Anahtar/seed istemeyin veya uygulamaya koymayın.
+
+`.env.example` gerekli değişkenleri gösterir. Boş program veya doğrulayıcı adresi ile basım kapalıdır. Basım öncesi programın seçili RPC üzerinde executable olduğu kontrol edilir. OAuth veya imzalayıcı eksikse doğrulama kapalıdır; sahte başarılı durum gösterilmez.
+
+## Canlıya alma için gerekli gerçek altyapı
+
+- Solana escrow programını inceleyip mainnet'e deploy edin; gerçek program adresini `NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID` olarak ayarlayın. Program değiştirilebilir olduğu sürece upgrade authority de güvenilen bir taraftır. Bu kaynak bağımsız güvenlik denetiminden geçmiş olarak sunulmaz.
+- Harici, yönetilen bir Ed25519 imzalayıcının açık anahtarını `NEXT_PUBLIC_TIKSPLIT_VERIFIER` olarak ayarlayın. İmzalayıcı API sözleşmesi aşağıdadır; bu uygulama özel anahtar barındırmaz.
+- TikTok Developer Portal'da Login Kit uygulaması ve `user.info.profile` iznini onaylatın. HTTPS callback tam olarak `/api/tiktok/callback` olmalıdır. Client secret ve oturum şifreleme anahtarı hosting secret manager'da saklanır.
+- RPC ve metadata depolamasını yapılandırın. Eski alan adı değişiyorsa tarayıcı RPC'sinin origin kısıtını yeni alan adı için güncelleyin.
+
+Repo'daki `.deploy-hold`, eksik bu kurulumun mevcut Vercel yayınının yerini almasını önler. Hazır mainnet yapılandırması ve kontroller sonrasında dosyanın kaldırılması otomatik yayını açar.
+
+## Doğrulama imzalayıcısı sözleşmesi
+
+`POST TIKTOK_ATTESTATION_URL`, `Authorization: Bearer TIKTOK_ATTESTATION_TOKEN`, JSON:
+
+```json
+{
+  "transaction": "base64 unsigned versioned transaction",
+  "evidence": {
+    "handle": "creator",
+    "openId": "TikTok authenticated identifier",
+    "wallet": "beneficiary public key",
+    "verifiedAt": "ISO timestamp",
+    "expiresAt": "ISO timestamp"
+  },
+  "walletProof": {
+    "message": "exact wallet verification message",
+    "signature": "base58 Ed25519 signature"
+  }
+}
+```
+
+Servis yalnız izin verilen program + doğrulayıcı ile oluşturulmuş init/bind talimatlarını, aynı cüzdan fee payer'ı ve doğrulanmış kimlik hash'ini kabul etmelidir. Kanıt yalnız uygulamanın doğrulanmış sunucusundan gelir; servis uç noktası halka açık istekleri kabul etmemelidir. Mesajı değiştirmeden yalnız doğrulayıcı imzasını ekler ve `{ "transaction": "base64 co-signed transaction" }` döner. Uygulama dönen işlem mesajının byte byte aynı olduğunu ve doğrulayıcı imzasını kriptografik olarak kontrol eder. Kullanıcı kalan cüzdan imzasını ekler. İşlem güncel blockhash ile sınırlıdır.
+
+Bu repo imzalayıcı adaptörünü içerir; bağımsız imzalayıcı altyapısı ve gerçek hesap bilgileri yapılandırılmadan ana ağ doğrulaması çalışmaz.
+
+Kullanıcı adları değişebilir. Escrow bir kullanıcı adı için ilk başarılı doğrulamada bağlanır ve ardından yeniden yönlendirilemez. OAuth, TikTok'un işlem anındaki sahipliğini kanıtlar; geçmiş sahipliği veya token'a destek verdiğini kanıtlamaz. Yeni ad yeni escrow demektir; önceki adı için bağlanmış cüzdan önceki ücretlerini almaya devam eder.
+
+## Kontroller
 
 ```bash
-e2e/solana/validator.sh /tmp/ledger     # pump.fun programlarıyla yerel validator
-node e2e/solana/build-lib.mjs
-node e2e/solana/launch-local.mjs        # basım, alım satım, dağıtım
-node e2e/solana/graduate-local.mjs      # mezuniyet, havuz alım satımı
+npm run typecheck
+npm test
+npm run build
+cargo test --manifest-path programs/tiktok-escrow/Cargo.toml
+cargo build-sbf --manifest-path programs/tiktok-escrow/Cargo.toml
 ```
 
-CI (`splidev.yml`): `pump-local` (yukarıdaki testler), `web` (tip, lint, birim, build) ve
-`browser` (Chromium'da /create üzerinden gerçek bir basım, alım satım, dağıtım ve /claim).
+Yerel gerçek pump.fun programlarıyla uçtan uca test (yalnız yerel validator; throwaway test cüzdanları):
+
+```bash
+e2e/solana/validator.sh /tmp/tiksplit-ledger --bpf-program "$TEST_ESCROW_PROGRAM_ID" programs/tiktok-escrow/target/deploy/tiktok_escrow.so
+node e2e/solana/build-lib.mjs
+NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID="$TEST_ESCROW_PROGRAM_ID" node e2e/solana/tiktok-local.mjs
+```
+
+Bu test gerçek token oluşturma, sabit paylaşım, ilk alım, ek alım, dağıtım, doğrulama öncesi kilit, imzalı bağlama, takeover reddi ve rent korunan çekimi kontrol eder. Gerçek TikTok OAuth canlı testi uygulama hesabı/izinleri gerektirir. Eski GitHub senaryoları tarihsel referanstır; yeni sürümün kontrolleri TikTok senaryolarını kullanır.
