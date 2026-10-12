@@ -2,13 +2,13 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Tiksplit",
-    short_name: "Tiksplit",
-    description: "Creator coins for TikTok on Solana with pump.fun.",
+    name: "Splitdev",
+    short_name: "Splitdev",
+    description: "pump.fun coins whose trading fees pay GitHub developers, on Solana.",
     start_url: "/",
     display: "standalone",
-    background_color: "#0b0c0f",
-    theme_color: "#0b0c0f",
+    background_color: "#0d0a1a",
+    theme_color: "#0d0a1a",
     icons: [
       { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
       { src: "/apple-icon", sizes: "180x180", type: "image/png" },

@@ -1,25 +1,21 @@
-// pump.fun launches, trading and fee distribution. Current TikTok coins use
-// a permanent 20/80 split between the admin treasury and the Tiksplit escrow.
-// GitHub builders remain below only for historical compatibility.
+// pump.fun as Splitdev uses it: the launch transactions, trades and fee distribution, built with
+// pump.fun's own SDK. Splitdev has no program of its own: a coin is a normal pump.fun coin whose
+// creator fees are shared, permanently, through pump.fun's fee sharing between Splitdev's treasury
+// (first) and pump.fun's GitHub fee accounts of the chosen GitHub users.
 import {
   ComputeBudgetProgram,
   PublicKey,
   SystemProgram,
-  TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
   type Connection,
+  TransactionInstruction,
 } from "@solana/web3.js";
 import { ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import BN from "bn.js";
 import { OnlinePumpSdk, PUMP_SDK, Platform, bondingCurvePda, creatorVaultPda, feeSharingConfigPda, getBuyTokenAmountFromSolAmount, getPumpAmmProgram, getSellSolAmountFromTokenAmount, socialFeePda } from "@pump-fun/pump-sdk";
 import { OnlinePumpAmmSdk, PUMP_AMM_SDK, buyQuoteInput, canonicalPumpPoolPda, coinCreatorVaultAuthorityPda, sellBaseInput } from "@pump-fun/pump-swap-sdk";
-import { ALLOWED_PLATFORM_BPS, LAUNCH_FEE_LAMPORTS, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
-import { ADMIN_WALLET, MAINNET_GENESIS_HASH } from "../admin-config";
-import { ESCROW_PROGRAM_ID, VERIFIER, isTikTokLaunchReady, isValidTikTokHandle, normalizeTikTokHandle } from "../tiktok-config";
-import { creatorFeeSplit } from "../tiktok-fees";
-import { creatorVault, decodeCreatorVault, initCreatorVaultInstruction } from "./tiktok-escrow";
-import { inspectDeployedProgram, loadEscrowArtifact } from "./program-deploy";
+import { LAUNCH_FEE_LAMPORTS, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
 
 export { Platform, socialFeePda };
 export const PUMP_PROGRAM_ID = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
@@ -82,6 +78,17 @@ const compile = (payer: PublicKey, blockhash: string, ixs: TransactionInstructio
 /** Solana's limit for a serialized transaction, signatures included. */
 export const TX_BYTES_LIMIT = 1232;
 
+/** Fee-sharing operations may have all nine GitHub recipients. Keep mandatory
+ * instructions together, dropping only optional compute/priority budget overhead.
+ */
+function fitFeeTransaction(payer: PublicKey, blockhash: string, instructions: TransactionInstruction[]): VersionedTransaction | null {
+  for (const extra of [budget(400_000), [ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })], []]) {
+    const tx = compile(payer, blockhash, [...extra, ...instructions]);
+    try { if (tx.serialize().length <= TX_BYTES_LIMIT) return tx; } catch { /* over the serialization limit */ }
+  }
+  return null;
+}
+
 /**
  * A launch as transactions to sign together and send in order:
  * 1. pump.fun's create_v2 (the creator is the launching wallet for now) and the first buy;
@@ -95,7 +102,7 @@ export async function launchTransactions(c: Connection, input: LaunchInput): Pro
 }
 
 /** pump.fun's create_v2 for the coin, with the creator's first buy in the same transaction. */
-export async function createTransaction(c: Connection, input: Omit<LaunchInput, "githubIds" | "bps">): Promise<VersionedTransaction> {
+export async function createTransaction(c: Connection, input: LaunchInput): Promise<VersionedTransaction> {
   const { user, mint } = input;
   const create: TransactionInstruction[] = [];
   if (input.firstBuyLamports > 0n) {
@@ -132,95 +139,6 @@ export async function createTransaction(c: Connection, input: Omit<LaunchInput, 
     if (tx.serialize().length <= TX_BYTES_LIMIT) return tx;
   }
   throw new Error("The coin's name, ticker and details don't fit in one Solana transaction. Shorten the name or ticker.");
-}
-
-/** TikTok launches buy only after their permanent fee split has been confirmed.
- * An inline buy would pay its creator fee to the temporary launching wallet.
- * Keep the legacy create-and-buy builder separate from this production path.
- */
-export async function createTikTokTransaction(c: Connection, input: Omit<LaunchInput, "githubIds" | "bps" | "firstBuyLamports">): Promise<VersionedTransaction> {
-  return createTransaction(c, { ...input, firstBuyLamports: 0n });
-}
-
-/**
- * The rest of a launch, once the coin exists: pump.fun GitHub fee accounts for the recipients that
- * don't have one yet, then pump.fun fee sharing set once to Splitdev + the GitHub accounts (after
- * which nobody can change it: pump.fun revokes the admin), with Splitdev's launch fee. Also finishes
- * a launch whose first transaction landed but whose split didn't.
- */
-export async function finishLaunchTransactions(c: Connection, user: PublicKey, mint: PublicKey, githubIds: string[], bps: number[]): Promise<VersionedTransaction[]> {
-  if (!TREASURY) throw new Error("Splitdev isn't set up yet.");
-  const shares = shareholders(githubIds, bps);
-  // A split already on chain: final means there is nothing left to do; a config that exists but
-  // isn't final yet is updated instead of created again (creating it twice fails).
-  const cfgInfo = await c.getAccountInfo(feeSharingConfigPda(mint), "confirmed");
-  const cfg = cfgInfo ? PUMP_SDK.decodeSharingConfig(cfgInfo) : null;
-  if (cfg?.adminRevoked) return [];
-  const txs: VersionedTransaction[] = [];
-  // GitHub fee accounts that don't exist yet (pump.fun's distribution pays into existing ones).
-  const missing: string[] = [];
-  const infos = await c.getMultipleAccountsInfo(githubIds.map(githubFeeAccount));
-  infos.forEach((info, i) => !info && missing.push(githubIds[i]));
-  for (let i = 0; i < missing.length; i += 4) {
-    const ixs = await Promise.all(missing.slice(i, i + 4).map((id) => PUMP_SDK.createSocialFeePda({ payer: user, userId: id, platform: Platform.GitHub })));
-    txs.push(await v0(c, user, [...budget(200_000), ...ixs]));
-  }
-  const sharing = cfg ? null : await PUMP_SDK.createFeeSharingConfig({ creator: user, mint, pool: null });
-  const update = await PUMP_SDK.updateFeeSharesV2({
-    authority: user,
-    mint,
-    currentShareholders: cfg ? cfg.shareholders.map((h: { address: PublicKey }) => h.address) : [user],
-    newShareholders: shares,
-    quoteMint: NATIVE_MINT,
-    quoteTokenProgram: TOKEN_PROGRAM_ID,
-  });
-  const fee = LAUNCH_FEE_LAMPORTS > 0n ? [SystemProgram.transfer({ fromPubkey: user, toPubkey: TREASURY, lamports: LAUNCH_FEE_LAMPORTS })] : [];
-  txs.push(await v0(c, user, [...budget(400_000), ...(sharing ? [sharing] : []), update, ...fee]));
-  return txs;
-}
-
-/**
- * Where a launch stands on chain: "missing" (the coin doesn't exist, yet or ever), "needs-split"
- * (the coin exists, its fee split isn't final), or "done".
- */
-export async function launchState(c: Connection, mint: PublicKey): Promise<"missing" | "needs-split" | "done"> {
-  const [mintInfo, cfgInfo] = await c.getMultipleAccountsInfo([mint, feeSharingConfigPda(mint)], "confirmed");
-  if (!mintInfo) return "missing";
-  if (cfgInfo && PUMP_SDK.decodeSharingConfig(cfgInfo).adminRevoked) return "done";
-  return "needs-split";
-}
-
-
-/** New launches use exactly 20/80; the optional reward is only for historical recovery. */
-export function tikTokShareholders(handle: string, launcher: PublicKey, launcherBps: number, platformBps = PLATFORM_BPS): Share[] {
-  if (!isTikTokLaunchReady() || !TREASURY) throw new Error("TikTok escrow is not configured. Launches are disabled.");
-  if (!TREASURY.equals(ADMIN_WALLET)) throw new Error("The platform recipient must be the configured admin wallet.");
-  if (!ALLOWED_PLATFORM_BPS.has(platformBps) || (platformBps === PLATFORM_BPS && launcherBps !== 0)) throw new Error("New launches allocate 20% to the platform and 80% to the creator.");
-  const clean = normalizeTikTokHandle(handle);
-  if (!isValidTikTokHandle(clean)) throw new Error("Enter a valid TikTok handle.");
-  const split = creatorFeeSplit(platformBps, launcherBps);
-  const vault = creatorVault(clean);
-  if (launcherBps && (launcher.equals(TREASURY) || launcher.equals(vault))) throw new Error("Launcher reward needs a wallet distinct from the treasury and creator vault.");
-  return [
-    { address: TREASURY, shareBps: split.platformBps },
-    { address: vault, shareBps: split.creatorBps },
-    ...(launcherBps ? [{ address: launcher, shareBps: launcherBps }] : []),
-  ];
-}
-
-function exactTikTokSplit(actual: Share[], expected: Share[]): boolean {
-  return actual.length === expected.length && actual.every((s, i) => s.address.equals(expected[i].address) && s.shareBps === expected[i].shareBps);
-}
-
-/** Preflight is mandatory before creating a coin: a configured address must be an executable program. */
-export async function assertTikTokEscrowDeployed(c: Connection) {
-  if (!isTikTokLaunchReady()) throw new Error("TikTok escrow and verification authority are not configured.");
-  const [program, genesis] = await Promise.all([c.getAccountInfo(ESCROW_PROGRAM_ID!, "confirmed"), c.getGenesisHash()]);
-  const rpc = new URL(c.rpcEndpoint);
-  const local = ["localhost", "127.0.0.1", "[::1]"].includes(rpc.hostname);
-  if (genesis !== MAINNET_GENESIS_HASH && !local) throw new Error("Tiksplit launches require Solana mainnet.");
-  if (!program?.executable) throw new Error("The configured TikTok escrow program is not deployed on this network.");
-  if (!local && !await inspectDeployedProgram(c, ESCROW_PROGRAM_ID!, await loadEscrowArtifact())) throw new Error("The escrow code or upgrade authority does not match this deployment.");
 }
 
 /** Current pump ABI: curve trades can retain creator fees on the curve itself.
@@ -262,7 +180,7 @@ export function sweepCurveCreatorFeeInstruction(payer: PublicKey, mint: PublicKe
  * Source: the same official IDL commit, idl/pump_amm.json, sweep_creator_fee.
  */
 export function sweepPoolCreatorFeeInstruction(payer: PublicKey, poolKey: PublicKey, pool: { quoteMint: PublicKey; poolQuoteTokenAccount: PublicKey; coinCreator: PublicKey }): TransactionInstruction {
-  if (!pool.quoteMint.equals(NATIVE_MINT)) throw new Error("Tiksplit fee distribution requires a SOL-quoted pool.");
+  if (!pool.quoteMint.equals(NATIVE_MINT)) throw new Error("Splitdev fee distribution requires a SOL-quoted pool.");
   const recipient = coinCreatorVaultAuthorityPda(pool.coinCreator);
   return new TransactionInstruction({
     programId: PUMP_AMM_PROGRAM_ID,
@@ -284,77 +202,65 @@ export function sweepPoolCreatorFeeInstruction(payer: PublicKey, poolKey: Public
   });
 }
 
-export async function finishTikTokLaunchTransactions(c: Connection, user: PublicKey, mint: PublicKey, handle: string, launcherBps: number, platformBps = PLATFORM_BPS): Promise<VersionedTransaction[]> {
-  const expected = tikTokShareholders(handle, user, launcherBps, platformBps);
-  await assertTikTokEscrowDeployed(c);
-  const vault = creatorVault(normalizeTikTokHandle(handle));
-  const [vaultInfo, cfgInfo] = await c.getMultipleAccountsInfo([vault, feeSharingConfigPda(mint)], "confirmed");
-  const initializedVault = vaultInfo ? decodeCreatorVault(vaultInfo, vault) : null;
-  const prefundedVault = vaultInfo?.owner.equals(SystemProgram.programId) && vaultInfo.data.length === 0 && !vaultInfo.executable;
-  if (vaultInfo && !initializedVault && !prefundedVault) throw new Error("The creator vault is invalid.");
-  if (cfgInfo && !cfgInfo.owner.equals(PUMP_FEES_PROGRAM_ID)) throw new Error("The fee-sharing account is invalid.");
+/**
+ * The rest of a launch, once the coin exists: pump.fun GitHub fee accounts for the recipients that
+ * don't have one yet, then pump.fun fee sharing set once to Splitdev + the GitHub accounts (after
+ * which nobody can change it: pump.fun revokes the admin), with Splitdev's launch fee. Also finishes
+ * a launch whose first transaction landed but whose split didn't.
+ */
+export async function finishLaunchTransactions(c: Connection, user: PublicKey, mint: PublicKey, githubIds: string[], bps: number[]): Promise<VersionedTransaction[]> {
+  if (!TREASURY) throw new Error("Splitdev isn't set up yet.");
+  const shares = shareholders(githubIds, bps);
+  // A split already on chain: final means there is nothing left to do; a config that exists but
+  // isn't final yet is updated instead of created again (creating it twice fails).
+  const cfgInfo = await c.getAccountInfo(feeSharingConfigPda(mint), "confirmed");
   const cfg = cfgInfo ? PUMP_SDK.decodeSharingConfig(cfgInfo) : null;
-  if (platformBps !== PLATFORM_BPS && !cfg?.adminRevoked) throw new Error("Historical fee policies may only recover an already finalized on-chain split. New finalizations use 20% platform / 80% creator.");
-  if (cfg && !cfg.mint.equals(mint)) throw new Error("Fee-sharing mint does not match.");
-  if (cfg && !cfg.admin.equals(user)) throw new Error("This wallet cannot finish this coin's launch.");
-  if (cfg?.adminRevoked) {
-    if (!exactTikTokSplit(cfg.shareholders, expected) || cfgInfo!.data[10] !== 1) throw new Error("This coin has a different permanent fee split.");
-    return initializedVault ? [] : [await v0(c, user, [initCreatorVaultInstruction(user, normalizeTikTokHandle(handle))])];
-  }
+  if (cfg?.adminRevoked) return [];
   const txs: VersionedTransaction[] = [];
-  if (!initializedVault) txs.push(await v0(c, user, [initCreatorVaultInstruction(user, normalizeTikTokHandle(handle))]));
+  // GitHub fee accounts that don't exist yet (pump.fun's distribution pays into existing ones).
+  const missing: string[] = [];
+  const infos = await c.getMultipleAccountsInfo(githubIds.map(githubFeeAccount));
+  infos.forEach((info, i) => !info && missing.push(githubIds[i]));
+  for (let i = 0; i < missing.length; i += 4) {
+    const ixs = await Promise.all(missing.slice(i, i + 4).map((id) => PUMP_SDK.createSocialFeePda({ payer: user, userId: id, platform: Platform.GitHub })));
+    txs.push(await v0(c, user, [...budget(200_000), ...ixs]));
+  }
   const sharing = cfg ? null : await PUMP_SDK.createFeeSharingConfig({ creator: user, mint, pool: null });
   const update = await PUMP_SDK.updateFeeSharesV2({
-    authority: user, mint,
+    authority: user,
+    mint,
     currentShareholders: cfg ? cfg.shareholders.map((h: { address: PublicKey }) => h.address) : [user],
-    newShareholders: expected, quoteMint: NATIVE_MINT, quoteTokenProgram: TOKEN_PROGRAM_ID,
+    newShareholders: shares,
+    quoteMint: NATIVE_MINT,
+    quoteTokenProgram: TOKEN_PROGRAM_ID,
   });
-  const fee = LAUNCH_FEE_LAMPORTS > 0n ? [SystemProgram.transfer({ fromPubkey: user, toPubkey: TREASURY!, lamports: LAUNCH_FEE_LAMPORTS })] : [];
-  // A new config migrates creator from the launcher to its config PDA. Existing
-  // configs already own their fees. Always sweep before changing either state,
-  // even if today's balance is zero: another trade may land during signing.
+  const fee = LAUNCH_FEE_LAMPORTS > 0n ? [SystemProgram.transfer({ fromPubkey: user, toPubkey: TREASURY, lamports: LAUNCH_FEE_LAMPORTS })] : [];
+  // Keep each sweep and creator/share update atomic: external buys can refill
+  // the curve while a wallet is signing. Large recipient lists need a separate
+  // config-creation transaction to remain within Solana's 1,232-byte limit.
+  const { blockhash } = await c.getLatestBlockhash("confirmed");
   const sweep = sweepCurveCreatorFeeInstruction(user, mint, cfg ? feeSharingConfigPda(mint) : user);
-  txs.push(await v0(c, user, [...budget(400_000), sweep, ...(sharing ? [sharing] : []), update, ...fee]));
-  if (txs.some(tx => tx.serialize().length > TX_BYTES_LIMIT)) throw new Error("The fee-sharing transaction exceeds Solana's size limit.");
+  const fit = (instructions: TransactionInstruction[]) => fitFeeTransaction(user, blockhash, instructions);
+  const combined = fit([sweep, ...(sharing ? [sharing] : []), update, ...fee]);
+  if (combined) txs.push(combined);
+  else if (sharing) {
+    const initialize = fit([sweep, sharing]);
+    const finalize = fit([sweepCurveCreatorFeeInstruction(user, mint, feeSharingConfigPda(mint)), update, ...fee]);
+    if (!initialize || !finalize) throw new Error("The fee-sharing transaction exceeds Solana's size limit.");
+    txs.push(initialize, finalize);
+  } else throw new Error("The fee-sharing transaction exceeds Solana's size limit.");
   return txs;
 }
 
-export type TikTokLaunchExpectation = { handle: string; launcher: PublicKey; launcherBps: number; metadataUri: string; platformBps?: number };
-/** Recovery validates the original launch's mint metadata, wallet and permanent fee split. */
-export async function tikTokLaunchState(c: Connection, mint: PublicKey, expected?: TikTokLaunchExpectation): Promise<"missing" | "needs-split" | "done"> {
+/**
+ * Where a launch stands on chain: "missing" (the coin doesn't exist, yet or ever), "needs-split"
+ * (the coin exists, its fee split isn't final), or "done".
+ */
+export async function launchState(c: Connection, mint: PublicKey): Promise<"missing" | "needs-split" | "done"> {
   const [mintInfo, cfgInfo] = await c.getMultipleAccountsInfo([mint, feeSharingConfigPda(mint)], "confirmed");
   if (!mintInfo) return "missing";
-  if (expected) {
-    const { ExtensionType, getExtensionData, unpackMint } = await import("@solana/spl-token");
-    const { unpack } = await import("@solana/spl-token-metadata");
-    const parsed = unpackMint(mint, mintInfo, TOKEN_2022_PROGRAM_ID);
-    const raw = getExtensionData(ExtensionType.TokenMetadata, parsed.tlvData);
-    if (!raw || unpack(raw).uri !== expected.metadataUri) throw new Error("Stored launch details do not match this mint.");
-  }
-  if (cfgInfo && !cfgInfo.owner.equals(PUMP_FEES_PROGRAM_ID)) throw new Error("The fee-sharing account is invalid.");
-  const cfg = cfgInfo ? PUMP_SDK.decodeSharingConfig(cfgInfo) : null;
-  if (cfg && !cfg.mint.equals(mint)) throw new Error("Fee-sharing mint does not match.");
-  if (expected) {
-    const curveInfo = await c.getAccountInfo(bondingCurvePda(mint), "confirmed");
-    if (!curveInfo?.owner.equals(PUMP_PROGRAM_ID)) throw new Error("The stored mint is not a pump.fun coin.");
-    const curve = PUMP_SDK.decodeBondingCurve(curveInfo);
-    const creator = cfg ? feeSharingConfigPda(mint) : expected.launcher;
-    // A config can exist between the create-config and update-shares transactions.
-    if (!curve.creator.equals(creator) && !(cfg && !cfg.adminRevoked && curve.creator.equals(expected.launcher))) throw new Error("The stored coin's creator does not match its launch.");
-  }
-  if (!cfg) return "needs-split";
-  if (expected && !cfg.admin.equals(expected.launcher)) throw new Error("This wallet does not own the stored launch.");
-  if (!cfg.adminRevoked) return "needs-split";
-  if (expected && (!exactTikTokSplit(cfg.shareholders, tikTokShareholders(expected.handle, expected.launcher, expected.launcherBps, expected.platformBps)) || cfgInfo!.data[10] !== 1)) throw new Error("The final fee split does not match the stored launch.");
-  if (expected) {
-    const vault = creatorVault(normalizeTikTokHandle(expected.handle));
-    const info = await c.getAccountInfo(vault, "confirmed");
-    if (!decodeCreatorVault(info, vault)) {
-      if (!info || (info.owner.equals(SystemProgram.programId) && !info.executable && info.data.length === 0)) return "needs-split";
-      throw new Error("The creator vault is invalid.");
-    }
-  }
-  return "done";
+  if (cfgInfo && PUMP_SDK.decodeSharingConfig(cfgInfo).adminRevoked) return "done";
+  return "needs-split";
 }
 
 /** pump.fun's starting curve (from its global config), for previews before a coin exists. */
@@ -530,7 +436,8 @@ export async function distributeTransaction(c: Connection, payer: PublicKey, min
     }).instruction());
   }
   instructions.push(await PUMP_SDK.distributeCreatorFees({ mint, sharingConfig, sharingConfigAddress }));
-  const transaction = await v0(c, payer, [...budget(400_000), ...instructions]);
-  if (transaction.serialize().length > TX_BYTES_LIMIT) throw new Error("The fee distribution exceeds Solana's transaction size limit.");
+  const { blockhash } = await c.getLatestBlockhash("confirmed");
+  const transaction = fitFeeTransaction(payer, blockhash, instructions);
+  if (!transaction) throw new Error("The fee distribution exceeds Solana's transaction size limit.");
   return transaction;
 }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { StateIcon } from "@/components/StateIcon";
+import { NotFoundArt } from "@/components/art";
 import { Reveal } from "@/components/motion";
 
 export default function NotFound() {
@@ -15,7 +15,7 @@ export default function NotFound() {
         </span>
         <div className="absolute left-1/2 top-1/2 -z-10 h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full bg-lime opacity-[0.14] blur-3xl" />
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          <StateIcon kind="search" className="h-40 w-[13.5rem] animate-float sm:h-52 sm:w-[17.5rem]" />
+          <NotFoundArt className="h-40 w-[13.5rem] animate-float sm:h-52 sm:w-[17.5rem]" />
         </div>
       </div>
       <Reveal className="mt-6">
@@ -25,10 +25,10 @@ export default function NotFound() {
         </span>
       </Reveal>
       <Reveal as="h1" delay={60} className="display mt-5 text-[48px] leading-[0.92] sm:text-[72px]">
-        Lost in the <span className="accent text-neon pr-1.5">feed</span>
+        Nothing to <span className="accent text-neon pr-1.5">debug</span>
       </Reveal>
       <Reveal delay={120}>
-        <p className="mt-4 text-[16px] leading-relaxed text-ink-2 sm:text-[17px]">This page is unavailable. Explore creator coins or head back home.</p>
+        <p className="mt-4 text-[16px] leading-relaxed text-ink-2 sm:text-[17px]">Bitbug looked under every leaf: this page doesn&apos;t exist.</p>
       </Reveal>
       <Reveal delay={180} className="mt-8 flex flex-wrap justify-center gap-3">
         <Link href="/" className="btn-neon group/cta px-6 py-3 text-[15px]">

@@ -4,7 +4,7 @@ import { encode } from "@/lib/wire";
 export const dynamic = "force-dynamic";
 export const maxDuration = 20;
 
-/** GET ?mint= → { coin } (null when the mint isn't a Tiksplit coin). */
+/** GET ?mint= → { coin } (null when the mint isn't a Splitdev coin). */
 export async function GET(req: Request) {
   const mint = new URL(req.url).searchParams.get("mint") ?? "";
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) return Response.json({ error: "Not a Solana address." }, { status: 400 });

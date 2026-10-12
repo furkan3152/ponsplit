@@ -2,7 +2,7 @@ import Link from "next/link";
 import { coinImage, progressTag, recipientNames } from "@/lib/coin-ui";
 import { compact, formatSol, progressText, shortAddress, timeAgo } from "@/lib/format";
 import type { Coin } from "@/lib/types";
-import { CreatorAvatarStack } from "./CreatorAvatar";
+import { GithubAvatarStack } from "./GithubAvatar";
 import { Progress } from "./Progress";
 import { TokenAvatar } from "./TokenAvatar";
 
@@ -27,12 +27,12 @@ export function TokenCard({ t }: { t: Coin }) {
             ) : null}
           </div>
           <p className="mt-1.5 line-clamp-2 text-[13px] leading-snug text-ink-2">
-            {t.description || `Shares creator fees with ${recipientNames(t).map((h) => `@${h}`).join(", ")} on TikTok`}
+            {t.description || `Pays ${recipientNames(t).map((h) => `@${h}`).join(", ")} on GitHub`}
           </p>
         </div>
       </div>
       <div className="mt-auto flex items-center gap-2">
-        <CreatorAvatarStack people={t.recipients} size={20} max={3} />
+        <GithubAvatarStack people={t.recipients} size={20} max={3} />
         <span className="ml-auto font-mono text-[11px] text-ink-3">
           mcap <span className="text-[13px] font-semibold text-ink">{compact(t.marketCap)} SOL</span>
         </span>

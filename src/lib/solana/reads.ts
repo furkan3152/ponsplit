@@ -5,17 +5,14 @@ import { PublicKey, type AccountInfo, type Connection } from "@solana/web3.js";
 import { NATIVE_MINT, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { ExtensionType, TOKEN_2022_PROGRAM_ID, getExtensionData, unpackAccount, unpackMint } from "@solana/spl-token";
 import { unpack as unpackMetadata } from "@solana/spl-token-metadata";
-import { PUMP_SDK, feeSharingConfigPda, bondingCurvePda, creatorVaultPda, socialFeePda, Platform } from "@pump-fun/pump-sdk";
+import { PUMP_SDK, bondingCurvePda, creatorVaultPda, socialFeePda, Platform } from "@pump-fun/pump-sdk";
 import { canonicalPumpPoolPda, coinCreatorVaultAtaPda, coinCreatorVaultAuthorityPda, PUMP_AMM_SDK } from "@pump-fun/pump-swap-sdk";
-import { ALLOWED_PLATFORM_BPS, HIDDEN, PLATFORM_BPS, SHARES_TOTAL, TREASURY } from "./config";
-import { PUMP_AMM_PROGRAM_ID, PUMP_FEES_PROGRAM_ID, PUMP_PROGRAM_ID } from "./pump";
-import { decodeCreatorVault } from "./tiktok-escrow";
-import { isTikTokLaunchReady } from "../tiktok-config";
-import { creatorFeeSplit } from "../tiktok-fees";
+import { ALLOWED_PLATFORM_BPS, HIDDEN, SHARES_TOTAL, TREASURY } from "./config";
+import { PUMP_AMM_PROGRAM_ID, PUMP_FEES_PROGRAM_ID } from "./pump";
 import { pendingCurveCreatorFees, pendingPoolCreatorFees } from "./pump-curve-fees";
 
 /** One GitHub account's part of a coin's creator fees. */
-export type Recipient = { handle: string; feeAccount: string; /** of all creator fees, in bps */ shareBps: number; verified: boolean; wallet?: string };
+export type Recipient = { githubId: string; feeAccount: string; /** of all creator fees, in bps */ shareBps: number };
 
 export type Coin = {
   /** The mint. */
@@ -27,7 +24,6 @@ export type Coin = {
   creator: string;
   /** Splitdev's part of the creator fees, in bps. */
   platformBps: number;
-  launcherBps: number;
   recipients: Recipient[];
   /** Off the curve: pump.fun moved it to its pool. */
   graduated: boolean;
@@ -39,7 +35,7 @@ export type Coin = {
   progress: number;
   /** SOL in the curve (or the pool's SOL side once graduated). */
   liquiditySol: number;
-  /** Creator fees waiting in the curve bucket and creator vaults, in lamports. */
+  /** Creator fees waiting to be distributed (curve vault), in lamports. */
   pendingFees: bigint;
 };
 
@@ -57,7 +53,7 @@ type Sharing = { mint: PublicKey; config: PublicKey; /** the wallet that launche
 
 /** Every Splitdev coin's fee sharing: pump.fun SharingConfig accounts that list `treasury` first and are final. */
 export async function findSharings(c: Connection, treasury: PublicKey | null = TREASURY): Promise<Sharing[]> {
-  if (!treasury || !isTikTokLaunchReady()) return [];
+  if (!treasury) return [];
   const accounts = await c.getProgramAccounts(PUMP_FEES_PROGRAM_ID, {
     filters: [
       { memcmp: { offset: 0, bytes: encode58(SHARING_CONFIG_DISC) } },
@@ -67,7 +63,6 @@ export async function findSharings(c: Connection, treasury: PublicKey | null = T
   const out: Sharing[] = [];
   for (const a of accounts) {
     const cfg = PUMP_SDK.decodeSharingConfig(a.account);
-    if (!a.pubkey.equals(feeSharingConfigPda(cfg.mint))) continue;
     // status byte (after the discriminator, bump and version): 1 = Active, 0 = Paused.
     if (!cfg.adminRevoked || a.account.data[10] !== 1) continue;
     if (HIDDEN.has(cfg.mint.toBase58())) continue;
@@ -118,10 +113,10 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
   // GitHub ids: each GitHub shareholder is a pump.fun fee account that records its user id.
   const shareholderKeys = Array.from(new Set(sharings.flatMap((s) => s.shareholders.map((h) => h.address.toBase58())))).map((k) => new PublicKey(k));
   const holderInfos = await many(c, shareholderKeys);
-  const vaultOf = new Map<string, NonNullable<ReturnType<typeof decodeCreatorVault>>>();
+  const githubOf = new Map<string, string>();
   holderInfos.forEach((info, i) => {
-    const vault = decodeCreatorVault(info, shareholderKeys[i]);
-    if (vault) vaultOf.set(shareholderKeys[i].toBase58(), vault);
+    const id = githubIdOf(info);
+    if (id) githubOf.set(shareholderKeys[i].toBase58(), id);
   });
 
   const curves = sharings.map((s) => bondingCurvePda(s.mint));
@@ -134,26 +129,14 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
   sharings.forEach((s, i) => {
     const md = metadataOf(mintInfos[i], s.mint);
     const curveInfo = curveInfos[i];
-    if (!md || !curveInfo || !curveInfo.owner.equals(PUMP_PROGRAM_ID) || !s.config.equals(feeSharingConfigPda(s.mint))) return;
+    if (!md || !curveInfo) return;
     const curve = PUMP_SDK.decodeBondingCurve(curveInfo);
-    if (!curve.creator.equals(s.config)) return;
     // Only what Splitdev's own launch makes is a Splitdev coin, so nobody can dress a coin up as one
     // (fee sharing can be set by anyone): Splitdev's share first, every other shareholder a pump.fun
     // GitHub fee account (no hidden wallet taking a cut), a plain SOL curve, no mayhem or cashback mode.
     const treasuryShare0 = s.shareholders[0]?.shareBps ?? 0;
     if (!ALLOWED_PLATFORM_BPS.has(treasuryShare0)) return;
-    // Exactly one validated TikTok vault, with an optional reward to the recorded launcher.
-    if (s.shareholders.length < 2 || s.shareholders.length > 3) return;
-    const vaultShare = s.shareholders[1];
-    const creatorVault = vaultOf.get(vaultShare.address.toBase58());
-    if (!creatorVault) return;
-    const reward = s.shareholders[2];
-    if (reward && (!reward.address.equals(s.admin) || reward.address.equals(s.shareholders[0].address) || reward.address.equals(vaultShare.address))) return;
-    const launcherBps = reward?.shareBps ?? 0;
-    if (treasuryShare0 === PLATFORM_BPS && launcherBps !== 0) return;
-    let split: ReturnType<typeof creatorFeeSplit>;
-    try { split = creatorFeeSplit(treasuryShare0, launcherBps); } catch { return; }
-    if (vaultShare.shareBps !== split.creatorBps) return;
+    if (s.shareholders.length < 2 || !s.shareholders.slice(1).every((h) => githubOf.has(h.address.toBase58()))) return;
     if (curve.isMayhemMode || curve.isCashbackCoin) return;
     if (curve.quoteMint && !curve.quoteMint.equals(NATIVE_MINT) && !curve.quoteMint.equals(PublicKey.default)) return;
     const vt = Number(curve.virtualTokenReserves.toString());
@@ -162,10 +145,10 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
     const supply = Number(curve.tokenTotalSupply.toString()) || 1e15;
     const price = vt > 0 ? vs / LAMPORTS / (vt / TOKEN_UNITS) : 0;
     const treasuryShare = s.shareholders[0]?.shareBps ?? 0;
-    const recipients: Recipient[] = [{
-      handle: creatorVault.handle, feeAccount: vaultShare.address.toBase58(), shareBps: vaultShare.shareBps,
-      verified: creatorVault.verified, wallet: creatorVault.beneficiary?.toBase58(),
-    }];
+    const recipients: Recipient[] = s.shareholders.slice(1).flatMap((h) => {
+      const id = githubOf.get(h.address.toBase58());
+      return id ? [{ githubId: id, feeAccount: h.address.toBase58(), shareBps: h.shareBps }] : [];
+    });
     const vault = vaultInfos[i]?.lamports ?? 0;
     if (!Number.isSafeInteger(vault) || vault < 0) throw new Error("Creator fee balance exceeds safe RPC precision.");
     coins.push({
@@ -176,7 +159,6 @@ export async function readCoins(c: Connection, sharings: Sharing[]): Promise<Coi
       // The launching wallet: the curve's creator becomes the fee sharing config once the split is set.
       creator: s.admin.toBase58(),
       platformBps: treasuryShare,
-      launcherBps,
       recipients,
       graduated: curve.complete,
       price,
@@ -241,12 +223,11 @@ export async function listCoins(c: Connection): Promise<Coin[]> {
 
 /** One coin, or null when the mint isn't a Splitdev coin. */
 export async function readCoin(c: Connection, mint: PublicKey): Promise<Coin | null> {
-  if (!TREASURY || !isTikTokLaunchReady()) return null;
+  if (!TREASURY) return null;
   const [cfgKey] = [feeSharingConfig(mint)];
   const info = await c.getAccountInfo(cfgKey, "confirmed");
-  if (!info || !info.owner.equals(PUMP_FEES_PROGRAM_ID)) return null;
+  if (!info) return null;
   const cfg = PUMP_SDK.decodeSharingConfig(info);
-  if (!cfg.mint.equals(mint)) return null;
   // Final (admin revoked), Active (status byte 1, as findSharings checks), treasury first.
   if (!cfg.adminRevoked || info.data[10] !== 1 || !cfg.shareholders[0]?.address.equals(TREASURY) || HIDDEN.has(mint.toBase58())) return null;
   const [coin] = await readCoins(c, [{ mint, config: cfgKey, admin: cfg.admin, shareholders: cfg.shareholders }]);

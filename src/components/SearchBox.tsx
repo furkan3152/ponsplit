@@ -6,13 +6,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { coinImage } from "@/lib/coin-ui";
 import { compact } from "@/lib/format";
 import { useCoins } from "@/lib/hooks";
-import { isValidTikTokHandle, normalizeTikTokHandle } from "@/lib/tiktok-config";
-import { CreatorAvatar } from "./CreatorAvatar";
 import { SearchIcon } from "./icons";
 import { TokenAvatar } from "./TokenAvatar";
 
 /**
- * Search across every coin on the network: name, $ticker, TikTok handle or mint address. Shows the best
+ * Search across every coin on the network: name, $ticker, GitHub username or mint address. Shows the best
  * matches as you type; Enter opens the full results on Explore. "/" focuses it from anywhere.
  * `compact` is the phone version: an icon that opens the field over the top bar.
  */
@@ -24,8 +22,6 @@ export function SearchBox({ className = "", compact: small = false }: { classNam
   const [expanded, setExpanded] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
-  const handle = normalizeTikTokHandle(q);
-  const creatorQuery = isValidTikTokHandle(handle) && !q.trim().startsWith("$") && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(q.trim());
 
   useEffect(() => {
     if (small) return;
@@ -52,10 +48,10 @@ export function SearchBox({ className = "", compact: small = false }: { classNam
   }, []);
 
   const matches = useMemo(() => {
-    const s = /tiktok\.com\//i.test(q) ? normalizeTikTokHandle(q) : q.trim().toLowerCase().replace(/^[@$]/, "");
+    const s = q.trim().toLowerCase().replace(/^[@$]/, "");
     if (!s) return [];
     return (coins ?? [])
-      .filter((t) => t.name.toLowerCase().includes(s) || t.symbol.toLowerCase().includes(s) || t.token.toLowerCase() === s || t.recipients.some((r) => r.handle.toLowerCase().includes(s)))
+      .filter((t) => t.name.toLowerCase().includes(s) || t.symbol.toLowerCase().includes(s) || t.token.toLowerCase() === s || t.recipients.some((r) => r.login?.toLowerCase().includes(s) || r.githubId === s.replace(/^#/, "")))
       .sort((a, b) => b.marketCap - a.marketCap)
       .slice(0, 6);
   }, [coins, q]);
@@ -104,7 +100,7 @@ export function SearchBox({ className = "", compact: small = false }: { classNam
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={(e) => e.key === "Escape" && (setOpen(false), setExpanded(false))}
-          placeholder="Search coins, $tickers, TikTok creators"
+          placeholder="Search coins, $tickers, GitHub users"
           aria-label="Search coins"
           className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-ink-3"
         />
@@ -112,12 +108,6 @@ export function SearchBox({ className = "", compact: small = false }: { classNam
       </form>
       {open && q.trim() ? (
         <div className="absolute inset-x-0 top-12 z-50 overflow-hidden rounded-2xl border border-line-2 bg-card shadow-lift">
-          {creatorQuery ? (
-            <Link href={`/creator/${encodeURIComponent(handle)}`} onClick={() => { setOpen(false); setExpanded(false); }} className="flex items-center gap-3 border-b border-line px-4 py-3 hover:bg-card-2">
-              <CreatorAvatar handle={handle} size={32} />
-              <span className="min-w-0"><span className="block truncate text-[14px] font-semibold">Look up @{handle}</span><span className="text-[11px] text-ink-3">Creator coins and on-chain escrow</span></span>
-            </Link>
-          ) : null}
           {matches.length ? (
             matches.map((t) => (
               <Link
@@ -133,7 +123,7 @@ export function SearchBox({ className = "", compact: small = false }: { classNam
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] font-semibold">{t.name}</span>
                   <span className="block truncate font-mono text-[11px] text-ink-3">
-                    ${t.symbol} · {t.recipients.map((r) => `@${r.handle}`).join(" ")}
+                    ${t.symbol} · {t.recipients.map((r) => `@${r.login ?? r.githubId}`).join(" ")}
                   </span>
                 </span>
                 <span className="num text-[12px] text-ink-2">{compact(t.marketCap)} SOL</span>

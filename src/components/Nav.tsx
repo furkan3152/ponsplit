@@ -6,7 +6,8 @@ import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useEffect, useRef, useState } from "react";
 import { formatSol, shortAddress } from "@/lib/format";
 import { useSolBalance } from "@/lib/hooks";
-import { Wordmark } from "./art/Logo";
+import { ThemeToggle } from "./ThemeToggle";
+import { Wordmark } from "./art";
 import { SearchBox } from "./SearchBox";
 
 /**
@@ -15,18 +16,18 @@ import { SearchBox } from "./SearchBox";
  */
 export function Nav() {
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-[var(--glass)] backdrop-blur-xl">
-      <div className="mx-auto flex h-[68px] max-w-[1240px] items-center gap-2 px-4 sm:gap-3 sm:px-6">
-        <Link href="/" className="shrink-0 lg:hidden" aria-label="Tiksplit home">
-          <Wordmark size={25} textClassName="text-[24px]" />
+    <header className="sticky top-0 z-30 border-b border-line bg-[var(--glass)] backdrop-blur-xl backdrop-saturate-150">
+      <div className="mx-auto flex h-16 max-w-[1240px] items-center gap-2 px-4 sm:gap-3 sm:px-6">
+        <Link href="/" className="group shrink-0 lg:hidden" aria-label="Splitdev home">
+          <Wordmark textClassName="hidden min-[440px]:inline" />
         </Link>
-        <SearchBox className="hidden flex-1 md:block lg:max-w-[460px]" />
-        <div className="ml-auto flex min-w-0 items-center gap-2">
+        <SearchBox className="hidden flex-1 md:block lg:mx-auto lg:max-w-[560px]" />
+        <div className="ml-auto flex min-w-0 items-center gap-2 lg:ml-0">
           <SearchBox className="md:hidden" compact />
-          <span className="network-pill mr-1 hidden xl:inline-flex"><span className="h-1.5 w-1.5 rounded-full bg-lime" aria-hidden />Mainnet</span>
+          <ThemeToggle compact className="hidden xl:inline-flex" />
           <WalletButton />
           <Link href="/create" className="btn-primary hidden shrink-0 px-5 py-2 text-[14px] md:inline-flex">
-            Launch coin
+            Launch
           </Link>
         </div>
       </div>
@@ -53,15 +54,15 @@ export function WalletButton() {
   if (!mounted) return <div className="h-9 w-20 sm:w-28" aria-hidden />;
   if (!connected || !publicKey) {
     return (
-      <button className="btn-secondary shrink-0 px-3 py-2 text-[12px] sm:px-4" onClick={() => setVisible(true)} disabled={connecting}>
-        {connecting ? "Connecting…" : "Connect wallet"}
+      <button className="btn-neon shrink-0 px-4 py-2 text-[13px]" onClick={() => setVisible(true)} disabled={connecting}>
+        {connecting ? "Connecting…" : "Connect"}
       </button>
     );
   }
   const address = publicKey.toBase58();
   return (
     <div ref={box} className="relative">
-      <button className="btn-secondary min-w-0 gap-2 px-3 py-2 text-[12px]" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="true">
+      <button className="btn-secondary min-w-0 gap-2 px-3 py-1.5 text-[13px]" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         {wallet?.adapter.icon ? <img src={wallet.adapter.icon} alt="" width={16} height={16} className="h-4 w-4 shrink-0 rounded" /> : <span className="h-2 w-2 shrink-0 animate-pulse-dot rounded-full bg-lime" aria-hidden />}
         <span className="num truncate">{shortAddress(address)}</span>

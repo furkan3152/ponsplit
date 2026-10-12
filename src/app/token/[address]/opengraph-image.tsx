@@ -6,11 +6,11 @@ import { fetchImageDataUrl } from "@/lib/safe-image";
 import { coinView } from "@/lib/solana/server";
 
 export const runtime = "nodejs";
-export const alt = "Coin on Tiksplit";
+export const alt = "Coin on Splitdev";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const COLORS = ["#41e7dd", "#66c7ff", "#ff8ccf", "#ffd45c", "#a98dff", "#b9ef4f"];
+const COLORS = ["#ff7a3d", "#66c7ff", "#ff8ccf", "#ffd45c", "#a98dff", "#b9ef4f"];
 
 /**
  * The card shows live numbers, so it must not be cached as immutable (Next's default for OG
@@ -28,10 +28,10 @@ export default async function TokenOgImage({ params }: { params: { address: stri
   if (!t) {
     return new ImageResponse(
       (
-        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#0b0e11", fontSize: 64, fontWeight: 800, color: "#f4f7f8", gap: 24 }}>
+        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#0d0a1a", fontSize: 64, fontWeight: 800, color: "#f6f1ff", gap: 24 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={logo} width={96} height={96} alt="" />
-          Tiksplit
+          Splitdev
         </div>
       ),
       { ...size, headers: MISS }
@@ -41,42 +41,43 @@ export default async function TokenOgImage({ params }: { params: { address: stri
   const logoUrl = safeUrl(t.image);
   const coinImage = logoUrl ? await fetchImageDataUrl(logoUrl) : null;
   const initials = t.symbol.slice(0, 3).toUpperCase();
+  const accountsBps = 10_000 - t.platformBps;
 
   const card = (image: string | null) => (
-    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: "#0b0e11", padding: 60, color: "#f4f7f8" }}>
+    <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: "#0d0a1a", padding: 60, color: "#f6f1ff" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 30, fontWeight: 700 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logo} width={48} height={48} alt="" />
-        Tiksplit
+        Splitdev
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 36, marginTop: 44 }}>
         {image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={image} width={180} height={180} alt="" style={{ borderRadius: 48, border: "5px solid #242e37", objectFit: "cover" }} />
+          <img src={image} width={180} height={180} alt="" style={{ borderRadius: 48, border: "5px solid #2a2348", objectFit: "cover" }} />
         ) : (
-          <div style={{ width: 180, height: 180, borderRadius: 48, border: "5px solid #242e37", background: "#41e7dd", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 64, fontWeight: 800, boxShadow: "0 8px 0 #1cb7af", color: "#082523" }}>
+          <div style={{ width: 180, height: 180, borderRadius: 48, border: "5px solid #2a2348", background: "#ff7a3d", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 64, fontWeight: 800, boxShadow: "0 8px 0 #c94a14", color: "#1c0c04" }}>
             {initials}
           </div>
         )}
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div style={{ fontSize: 76, fontWeight: 800, letterSpacing: -2, lineHeight: 1 }}>{t.name.slice(0, 22)}</div>
-          <div style={{ fontSize: 40, fontWeight: 600, color: "#abb6c0", marginTop: 12 }}>{`$${t.symbol}`}</div>
+          <div style={{ fontSize: 40, fontWeight: 600, color: "#b6acd2", marginTop: 12 }}>{`$${t.symbol}`}</div>
         </div>
       </div>
       <div style={{ display: "flex", gap: 14, marginTop: 40, flexWrap: "wrap" }}>
         {t.recipients.slice(0, 5).map((r, i) => (
-          <div key={r.handle} style={{ display: "flex", alignItems: "center", gap: 10, background: "#12171c", border: "3px solid #242e37", borderRadius: 999, padding: "10px 22px", fontSize: 28, fontWeight: 700 }}>
+          <div key={r.githubId} style={{ display: "flex", alignItems: "center", gap: 10, background: "#1d1836", border: "3px solid #2a2348", borderRadius: 999, padding: "10px 22px", fontSize: 28, fontWeight: 700 }}>
             <div style={{ width: 18, height: 18, borderRadius: 999, background: COLORS[i % COLORS.length], border: "2px solid #130d26" }} />
-            {`@${r.handle} · ${pct(r.shareBps)}`}
+            {`${r.login ?? `#${r.githubId}`} · ${pct(Math.round((r.shareBps / accountsBps) * 10_000))}`}
           </div>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 48, marginTop: "auto", fontSize: 30, color: "#abb6c0" }}>
+      <div style={{ display: "flex", gap: 48, marginTop: "auto", fontSize: 30, color: "#b6acd2" }}>
         <div style={{ display: "flex" }}>
-          mcap<b style={{ color: "#f4f7f8", marginLeft: 10 }}>{compact(t.marketCap)} SOL</b>
+          mcap<b style={{ color: "#f6f1ff", marginLeft: 10 }}>{compact(t.marketCap)} SOL</b>
         </div>
         <div style={{ display: "flex" }}>
-          to split<b style={{ color: "#f4f7f8", marginLeft: 10 }}>{formatSol(t.pendingFees, 4)} SOL</b>
+          to split<b style={{ color: "#f6f1ff", marginLeft: 10 }}>{formatSol(t.pendingFees, 4)} SOL</b>
         </div>
         <div style={{ display: "flex" }}>
           {t.graduated ? <b style={{ color: "#3ddc97" }}>Graduated</b> : <span>{progressText(t.progress)}% bonded</span>}

@@ -7,8 +7,3 @@ next-env.d.ts
 *.tsbuildinfo
 .vercel
 promo/*.mp4
-
-programs/**/target/
-programs/**/.keys/
-e2e/solana/.build/
-e2e/shots/

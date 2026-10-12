@@ -1,66 +1,180 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { HowItWorks } from "@/components/HowItWorks";
 import { TokenCard } from "@/components/TokenCard";
-import { ArrowIcon, ExploreIcon } from "@/components/icons";
-import { CreatorReel } from "@/components/art/CreatorReel";
-import { LogoMark } from "@/components/art/Logo";
+import { CornerConfetti, HeadingDoodle, HeroDoodles } from "@/components/art/Doodles";
+import { SplitMachine, type MachineAccount } from "@/components/art/SplitMachine";
+import { CoinStrip, EarnedTotal, FeePath, Leaderboard, Panel, TopEarners } from "@/components/home/Bento";
+import { OfficialToken } from "@/components/home/Official";
+import { ArrowIcon } from "@/components/icons";
+import { Reveal } from "@/components/motion";
 import { useNow, useSnapshot } from "@/lib/hooks";
+import { PLATFORM_BPS, isLive } from "@/lib/solana/config";
 import { sortCoins } from "@/lib/sort-coins";
-import { isTikTokLaunchReady } from "@/lib/tiktok-config";
+
+/**
+ * The hero's split always shows the same example set of well-known GitHub developers (their real
+ * names and photos), clearly marked as an example: no coin is promoted on the home page.
+ */
+const EXAMPLE: { handle: string; pct: number }[] = [
+  { handle: "torvalds", pct: 40 },
+  { handle: "gaearon", pct: 25 },
+  { handle: "sindresorhus", pct: 15 },
+  { handle: "yyx990803", pct: 10 },
+  { handle: "tj", pct: 10 },
+];
 
 export default function Home() {
-  const ready = isTikTokLaunchReady();
-  const snapshot = useSnapshot();
-  const [sort, setSort] = useState<"trending" | "new">("trending");
+  const live = isLive();
+  const snap = useSnapshot();
+  const coins = snap.data?.coins;
   useNow(15_000);
-  const coins = snapshot.data?.coins;
-  const sorted = useMemo(() => sortCoins(coins ?? [], sort), [coins, sort]);
-  const hasData = ready && Boolean(snapshot.data) && !snapshot.isError;
-  const creators = useMemo(() => new Set((coins ?? []).flatMap((coin) => coin.recipients.map((r) => r.handle))).size, [coins]);
-  const stats = [
-    { label: "Creator coins", value: coins?.length },
-    { label: "Creators named", value: creators },
-    { label: "Graduated coins", value: coins?.filter((coin) => coin.graduated).length },
-  ];
+
+  const trending = useMemo(() => sortCoins(coins ?? [], "trending"), [coins]);
+  const graduating = useMemo(() => [...(coins ?? [])].sort((a, b) => Number(b.graduated) - Number(a.graduated) || b.progress - a.progress), [coins]);
+  const machine: MachineAccount[] = EXAMPLE.map((e) => ({ ...e, image: `https://github.com/${e.handle}.png?size=100` }));
+  const platformPct = PLATFORM_BPS / 100;
+  const loading = snap.isLoading && live;
 
   return (
-    <div className="editorial-home">
-      <div className="issue-line"><span className="edition-label">The creator edition</span><span className="flex items-center gap-2 text-[10px] text-ink-3"><span className="h-1.5 w-1.5 bg-lime" aria-hidden />Solana mainnet <span className="px-1 text-ink-3" aria-hidden>/</span> pump.fun</span></div>
-      <section className="editorial-hero">
-        <div className="hero-copy">
-          <p className="hero-kicker"><span aria-hidden className="mr-2 inline-block h-2 w-2 bg-[var(--coral)]" />For the people behind the feed</p>
-          <h1 className="editorial hero-headline"><span>Make culture.</span><span>Make a coin.</span><span className="headline-share">Share the fees<span className="text-[var(--coral)]">.</span></span></h1>
-          <p className="hero-description">Your favourite TikTok creator brings the ideas. You bring the coin. Their share of pump.fun creator fees collects in escrow while they prove ownership with a video and activate their approved wallet.</p>
-          <div className="hero-actions"><Link href="/create" className="btn-primary py-3.5">Launch a creator coin <ArrowIcon size={19} /></Link><Link href="/claim" className="text-link">Claim your earnings <ArrowIcon size={15} className="arrow-diagonal" /></Link></div>
-          <p className="hero-footnote"><span className="num mr-2 text-[var(--coral)]" aria-hidden>↳</span>Video proof. Manual review. Approved wallet claims in SOL.</p>
+    <div className="space-y-16">
+      {/* Hero */}
+      <section className="relative pt-6 text-center md:pt-12">
+        <div aria-hidden className="bg-grid pointer-events-none absolute -inset-x-4 -top-10 -z-10 h-[520px] sm:-inset-x-6" />
+        <HeroDoodles />
+        <Reveal>
+          <span className="inline-flex items-center gap-2 rounded-xl border border-line bg-card px-3 py-1.5 font-mono text-[12px] text-ink-2 shadow-[0_3px_0_0_var(--key-edge)]">
+            <span className="text-lime" aria-hidden>
+              $
+            </span>
+            splitdev <span className="text-ink-3">--status</span>
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--lime-soft)] px-1.5 py-0.5 text-lime">
+              <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" aria-hidden />
+              {live ? "live" : "soon"}
+            </span>
+            <span className="hidden text-ink-3 min-[400px]:inline">solana · pump.fun</span>
+          </span>
+        </Reveal>
+        <h1 className="display mx-auto mt-6 max-w-[900px] text-[40px] leading-[1] min-[400px]:text-[44px] sm:text-[72px]">
+          <Reveal as="span" className="block" delay={60}>
+            Coins that pay
+          </Reveal>
+          <Reveal as="span" className="block" delay={140}>
+            <span className="accent text-neon">GitHub</span> devs
+          </Reveal>
+        </h1>
+        <Reveal delay={240}>
+          <p className="mx-auto mt-6 max-w-xl text-[17px] leading-relaxed text-ink-2">
+            Launch a coin on{" "}
+            <span className="inline-flex translate-y-[-1px] items-center gap-1.5 rounded-full border border-line bg-card px-2.5 py-0.5 align-middle text-[14px] font-semibold text-ink">
+              <span className="h-2 w-2 rounded-full bg-up" aria-hidden />
+              pump.fun
+            </span>{" "}
+            and every trade&apos;s creator fee is split, for good, between up to nine GitHub developers. They sign in with GitHub and claim in SOL.
+          </p>
+        </Reveal>
+        <Reveal delay={320} className="mt-8 flex flex-wrap justify-center gap-3">
+          <Link href="/create" className="btn-primary px-6 py-3.5 text-[16px]">
+            Launch a coin
+          </Link>
+          <Link href="/how" className="btn-secondary px-6 py-3.5 text-[16px]">
+            How it works
+          </Link>
+        </Reveal>
+        <Reveal delay={400} className="mt-10 px-0 sm:px-4">
+          <OfficialToken />
+        </Reveal>
+      </section>
+
+      {/* Bento */}
+      {/* min-w-0: a loading coin strip must not widen the page on phones */}
+      <section className="grid gap-4 lg:grid-cols-12 [&>*]:min-w-0">
+        <Reveal className="lg:col-span-7">
+          <Panel label="Explore" href="/explore" className="h-full">
+            <CoinStrip coins={trending.slice(0, 8)} loading={loading} />
+          </Panel>
+        </Reveal>
+        <Reveal className="lg:col-span-5" delay={80}>
+          <Panel label="Closest to graduating" href="/explore" className="h-full">
+            <Leaderboard coins={graduating} loading={loading} />
+          </Panel>
+        </Reveal>
+        <Reveal className="lg:col-span-4" delay={60}>
+          <Panel label="Fees" className="h-full">
+            <EarnedTotal earners={snap.data?.earners} coins={coins?.length} />
+          </Panel>
+        </Reveal>
+        <Reveal className="lg:col-span-4" delay={120}>
+          <Panel label="Top developers" href="/claim" className="h-full">
+            <TopEarners earners={snap.data?.earners ?? []} />
+          </Panel>
+        </Reveal>
+        <Reveal className="lg:col-span-4" delay={180}>
+          <Panel label="Under the hood" href="/how" className="h-full">
+            <FeePath platformPct={platformPct} />
+          </Panel>
+        </Reveal>
+      </section>
+
+      {/* The split, live */}
+      <section className="card relative grid items-center gap-6 overflow-hidden p-6 md:grid-cols-[1fr_1.2fr] md:p-10">
+        <CornerConfetti className="hidden sm:block" />
+        <div>
+          <div className="eyebrow">Example split</div>
+          <h2 className="display mt-2 text-[34px] leading-[1.04] sm:text-[44px]">One coin, many devs</h2>
+          <p className="mt-3 max-w-md text-[15px] leading-relaxed text-ink-2">
+            Meet <span className="font-semibold text-ink">Bitbug</span>, the beetle with the split shell: every time it opens, the fees fly out.{" "}
+            This is how a split looks: pick any GitHub developers, set their shares, and each trade&apos;s creator fee flows to them. These
+            developers are only an example; no coin pays them unless someone launches one for them.
+          </p>
+          <Link href="/create" className="btn-secondary group/l mt-6 px-5 py-3 text-[15px]">
+            Launch yours
+            <ArrowIcon size={16} className="transition-transform group-hover/l:translate-x-0.5" />
+          </Link>
         </div>
-        <figure className="hero-art"><CreatorReel className="creator-reel" /><figcaption><span className="edition-label">Create / trade / claim</span><span>Illustration. No live balances.</span></figcaption></figure>
+        <SplitMachine className="mx-auto w-full max-w-[560px]" accounts={machine} caption="example split" />
       </section>
 
-      <div className="editorial-tape" aria-hidden><span>Behind every feed</span><LogoMark size={26} /><span>There&apos;s a creator</span><svg viewBox="0 0 52 28" width="42" height="24" fill="none"><path d="M1 14h48M36 2l13 12-13 12" stroke="currentColor" strokeWidth="3" /></svg></div>
+      {/* Trending */}
+      {trending.length ? (
+        <section className="space-y-6">
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="eyebrow">Right now</div>
+              <h2 className="display mt-1 flex items-center gap-2 text-[36px] leading-none">
+                Trending <HeadingDoodle kind="star" />
+              </h2>
+            </div>
+            <Link href="/explore" className="text-[14px] font-medium text-ink-2 transition hover:text-ink">
+              See all →
+            </Link>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {trending.slice(0, 6).map((t, i) => (
+              <Reveal key={t.token} delay={Math.min(i, 6) * 50}>
+                <TokenCard t={t} />
+              </Reveal>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
-      {!ready ? <div className="setup-note"><span className="setup-stamp">In preparation</span><div><span className="font-semibold text-ink">Mainnet launch is in preparation.</span><p className="mt-1 text-ink-2">Creator escrow and on-chain video verification must be configured before launch or claim transactions are enabled.</p></div><Link href="/docs" className="text-link shrink-0">View setup <ArrowIcon size={15} /></Link></div> : null}
-
-      <section className="creator-index">
-        <div className="section-topline"><span className="edition-label">01 / The creator index</span><span className="text-[10px] text-ink-3">Real coins. Read from Solana.</span></div>
-        <div className="index-heading"><h2 className="editorial">The next<br /><span className="outline-type">big thing.</span></h2><section aria-label="On-chain activity" className="index-stats">{stats.map((stat) => <div key={stat.label}><div className="num text-[25px] leading-none sm:text-[30px]">{hasData ? stat.value ?? 0 : "—"}</div><div className="mt-2 text-[10px] text-ink-3">{stat.label}</div></div>)}</section></div>
-        <div className="index-toolbar"><div className="segmented" aria-label="Sort coins"><button type="button" data-active={sort === "trending"} onClick={() => setSort("trending")}>Trending</button><button type="button" data-active={sort === "new"} onClick={() => setSort("new")}>Newest</button></div><Link href="/explore" className="text-link">Explore all <ArrowIcon size={16} /></Link></div>
-        {!ready ? <DiscoveryEmpty title="The first frame is still open." description="Creator coins will appear here after the mainnet escrow is configured and the first coin is launched." /> : snapshot.isError ? <div role="alert" className="cut-frame px-6 py-12"><ExploreIcon size={28} className="mb-4 text-[var(--coral)]" /><h3 className="editorial text-[36px]">The connection needs a retake.</h3><p className="mt-3 max-w-md text-[14px] leading-relaxed text-ink-2">Solana data could not be loaded. Coin listings and activity totals are unavailable until the connection recovers.</p><button type="button" className="btn-secondary mt-5 text-[13px]" disabled={snapshot.isFetching} onClick={() => void snapshot.refetch()}>{snapshot.isFetching ? "Reconnecting…" : "Try again"}</button></div> : snapshot.isLoading ? <div aria-label="Loading creator coins" role="status" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="card h-[244px] animate-pulse bg-card-2" />)}</div> : sorted.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{sorted.slice(0, 6).map((coin) => <TokenCard key={coin.token} t={coin} />)}</div> : <DiscoveryEmpty title="A creator. A community. The first coin." description="No Tiksplit creator coins have been found on Solana mainnet. Choose a TikTok handle to launch the first one." />}
-        <p aria-live="polite" className="mt-4 font-mono text-[10px] text-ink-3">{!ready ? "Discovery is awaiting mainnet setup." : snapshot.isError ? "Connection interrupted. Activity totals unavailable." : "On-chain discovery / refreshed every 10 seconds"}</p>
+      <section className="space-y-6">
+        <div className="flex items-end justify-between">
+          <div>
+            <div className="eyebrow">Three steps</div>
+            <h2 className="display mt-1 flex items-center gap-2 text-[36px] leading-none">
+              How it works <HeadingDoodle kind="sparkle" />
+            </h2>
+          </div>
+          <Link href="/how" className="text-[14px] font-medium text-ink-2 transition hover:text-ink">
+            Details →
+          </Link>
+        </div>
+        <HowItWorks />
       </section>
-
-      <section className="fee-story">
-        <div className="fee-story-intro"><span className="edition-label">02 / Follow the fees</span><h2 className="editorial">From the<br />feed to<br /><span className="text-neon">the wallet.</span></h2><p className="text-[14px] leading-relaxed text-ink-2">A clear path for the creator&apos;s share. Nothing is paid out just for having a username.</p><Link href="/how" className="text-link mt-6">The full story <ArrowIcon size={17} /></Link><span className="fee-story-mark" aria-hidden><LogoMark size={92} /></span></div>
-        <div className="fee-story-steps">{[{ step: "01", title: "Name your creator", tag: "The launch", text: "Choose a TikTok username and launch a coin on pump.fun. The fee split is set on chain and the creator does not need to verify first." }, { step: "02", title: "Give the fees a home", tag: "The escrow", text: "Actual trading activity can generate creator fees. The creator’s share accrues in escrow while ownership is being verified." }, { step: "03", title: "Post it. Prove it.", tag: "The payout", text: "The creator posts the full verification code in a public TikTok video caption and submits its original URL. After manual admin review, they activate their permanent wallet binding and claim available fees in SOL." }].map(({ step, title, tag, text }) => <div className="fee-story-step" key={step}><span className="editorial step-number">{step}</span><div><span className="edition-label">{tag}</span><h3 className="display mt-2 text-[22px] sm:text-[25px]">{title}</h3><p className="mt-3 text-[14px] leading-[1.8] text-ink-2">{text}</p></div><span className="step-cross" aria-hidden>+</span></div>)}<p className="fee-story-risk">Earnings depend on trading activity and are not guaranteed. A coin does not give its holders ownership of a TikTok account or its content.</p></div>
-      </section>
-
-      <section className="creator-invitation"><div><span className="edition-label">03 / For the creator</span><h2 className="editorial">Is that<br /><span className="text-neon">your handle?</span></h2></div><div className="invitation-copy"><p>Find the coins that name your TikTok account. Request your code, post a proof video and submit it for manual review before binding your wallet.</p><Link href="/claim" className="btn-primary mt-6 py-3.5">Find my earnings <ArrowIcon size={19} /></Link></div><svg className="invitation-arrow" viewBox="0 0 100 100" fill="none" aria-hidden><path d="M12 88 85 15M12 15h73v73" stroke="currentColor" strokeWidth="7" /></svg></section>
     </div>
   );
-}
-
-function DiscoveryEmpty({ title, description }: { title: string; description: string }) {
-  return <div className="discovery-editorial"><div className="empty-reel" aria-hidden><div className="empty-reel-top"><span>9:16</span><ArrowIcon size={12} className="arrow-diagonal" /></div><div className="empty-reel-type editorial">Next<br />up<span>.</span></div><div className="empty-reel-bottom"><span className="empty-reel-bars" /><LogoMark size={30} /></div></div><div className="empty-reel-copy"><span className="edition-label">A space for your community</span><h3 className="display mt-4 text-[25px] leading-tight sm:text-[32px]">{title}</h3><p className="mt-4 max-w-md text-[14px] leading-relaxed text-ink-2">{description}</p><Link href="/create" className="text-link mt-6">Build your launch <ArrowIcon size={17} /></Link></div><span className="empty-registration" aria-hidden>+</span></div>;
 }

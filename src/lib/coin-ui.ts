@@ -11,7 +11,7 @@ export const venueLabel = (c: Pick<Coin, "graduated">) => (c.graduated ? "pump.f
 export const progressTag = (c: Pick<Coin, "graduated">, pctText: string) => (c.graduated ? "graduated" : `${pctText}%`);
 
 /** GitHub usernames of a coin's recipients (the id when GitHub didn't answer). */
-export const recipientNames = (c: Pick<Coin, "recipients">) => c.recipients.map((r) => r.handle);
+export const recipientNames = (c: Pick<Coin, "recipients">) => c.recipients.map((r) => r.login ?? `#${r.githubId}`);
 
 /** The coin on pump.fun's own site. */
 export const pumpUrl = (mint: string) => `https://pump.fun/coin/${mint}`;
