@@ -1,118 +1,81 @@
-# Tiksplit
+# Splitdev
 
-TikTok kullanıcıları adına **Solana mainnet / pump.fun** token başlatan uygulama. Yeni token'ların pump.fun creator ücretleri **%20 platform / %80 TikTok kullanıcısının escrow hesabı** olarak kalıcı paylaşılır. Bugünkü doğrulama yolu **kullanıcının yayınladığı TikTok videosunun admin tarafından elle incelenmesidir**; TikTok developer uygulaması veya API anahtarı gerektirmez. Next.js 14, pump.fun'ın resmi SDK'ları ve ayrı Solana escrow programı kullanılır. UseReels'in ücret tahsis mantığından yararlanılmıştır; arayüz özgündür. TikTok ve pump.fun ile resmi ortaklık yoktur.
+Splitdev, **pump.fun** (Solana) üzerinde coin basan ve coin'in yaratıcı ücretlerini **GitHub
+hesapları** arasında bölen bir launchpad. Bir coin basarken en fazla 9 GitHub kullanıcı adı ve
+payları seçilir; coin'in her alım satımından gelen yaratıcı ücreti bu geliştiricilere akar.
 
-## Akış
+Splitdev pump.fun ile bağlantılı değildir; pump.fun'ın herkese açık programlarını kullanır.
 
-1. `/create`: tek TikTok kullanıcı adı ve token bilgileri seçilir; ilk alım paylaşım tamamlandıktan sonra coin sayfasında ayrı yapılır. Cüzdan pump.fun token'ını oluşturup native fee sharing'i tamamlar. Yeni launch'ta creator ücretinin %20'si platform hazinesine, %80'i creator escrow'una gider; launcher payı yoktur. Oranlar toplam işlem tutarına veya token arzına uygulanmaz. Ayrı launch ücreti `0.01 SOL`'dur.
-2. `/token/[mint]`: gerçek bonding curve / pump.fun pool verileri, alım satım ve herkesin çalıştırabildiği ücret dağıtımı. Dağıtım, biriken creator ücretlerini native pump.fun vault'undan hissedarlara gönderir. Kullanıcı henüz doğrulanmamışken de escrow'unda SOL birikebilir.
-3. `/claim`: creator cüzdanıyla zincirde bir doğrulama isteği açılır. İstek kullanıcı adı, cüzdan ve rastgele **128 bit nonce** içerir; uygulama **kullanıcı adı + tam beneficiary cüzdan adresi + nonce'a bağlı tam kanıt kodunu** gösterir. Kullanıcı uygulamanın ürettiği kodun tamamını kısaltmadan **kendi TikTok hesabından yayınladığı herkese açık videonun açıklamasına veya videoda görünür biçimde** ekler. Yalnız nonce yayınlamak yeterli değildir.
-4. Kullanıcı `https://www.tiktok.com/@aynı.kullanıcı/video/<id>` biçimindeki **orijinal video URL'sini** kendi cüzdanıyla imzalayarak isteğe bağlar. Başka kullanıcı adı, ekran görüntüsü veya başka profilden video sahiplik kanıtı sayılmaz.
-5. Admin `/admin` üzerinden orijinal videoyu ve profili açıp **gerçek kullanıcı adı + tam cüzdan adresi içeren bütün kod + istek cüzdanı** eşleşmesini elle kontrol eder. Kanıt yeterliyse kendi cüzdanıyla zincirde onay verir. Bu otomatik TikTok/API doğrulaması veya scraper sonucu değildir.
-6. Onay tek başına creator cüzdanını etkinleştirmez. İstek sahibi cüzdan son bağlama/aktivasyon işlemini imzalar; ardından yalnız o cüzdan creator escrow'undan çekim yapar. **İlk başarılı bağlama kalıcıdır.** Admin yalnız platform payını alır; creator payını admin olarak çekemez.
+12 Ekim 2026: GitHub sürümü (`8806e4c`) ve Splitdev tasarımı geri getirildi. Güncel pump.fun
+programları için ücretlerin curve/pool hesaplarından aktarılması ve güncel işlem geçmişi
+okuma düzeltmeleri korundu. Canlı adres **https://splitdev.app**; `www` bu adrese yönlenir.
+Ücretsiz RPC kullanılır: tarayıcıda PublicNode, sunucudaki hesap taramasında Solana public mainnet.
+`SITE_URL` ve sitemap için `NEXTAUTH_URL` aynı canlı adrese ayarlanır.
 
-Doğrulama isteği **48 saat** geçerlidir. İstek sahibi iptal edip rent rezervini geri alabilir. Admin onayında proof hesabı kapanır ve rent istek sahibine döner; network işlem ücretleri geri verilmez. 143 byte proof hesabı için varsayılan yerel rent hesabı **0.00188616 SOL**'dur; ekranda mainnet RPC'den hesaplanan gerçek tutar gösterilir. Kapanan hesabın işlem geçmişi Solana'da kalır.
+## Nasıl çalışır
 
-pump.fun'da native TikTok claim hesabı yoktur; uydurulmuş `Platform.TikTok` numarası kullanılmaz. Fee sharing pump.fun programında, kullanıcı adına birikim ve çekim `programs/tiktok-escrow` içindedir. Admin yanlış sahiplik kanıtını kabul ederse yanlış cüzdana onay verebilir; bu yüzden ilk bağlama öncesinde admin'e güvenilir. Program upgrade edilebiliyorsa upgrade authority de güvenilen taraftır. Kaynak bağımsız güvenlik denetiminden geçmiş veya kusursuz olarak sunulmaz.
+1. **Basım.** /create sayfasında isim, sembol, resim, GitHub kullanıcı adları ve paylar girilir.
+   Cüzdan tek seferde imzalar:
+   - pump.fun `create_v2` (+ isteğe bağlı ilk alım), yaratıcı = basan cüzdan;
+   - eksik GitHub ücret hesapları (pump.fun'ın kendi GitHub hesapları, kullanıcı id'sine bağlı);
+   - kalıcı ücret paylaşımı: önce Splitdev hazinesi (`platformBps`, şimdi %10), kalanı GitHub
+     hesaplarına; yönetici yetkisi kaldırılır, paylar bir daha değişmez;
+   - basım ücreti (`launchFeeSol`, şimdi 0.01 SOL) hazineye.
+2. **Alım satım.** Coin sayfasında bonding curve üzerinde, mezuniyetten sonra pump.fun'ın
+   havuzunda (PumpSwap) alım satım yapılır.
+3. **Ücretler.** pump.fun'ın yaratıcı ücreti coin'in kasasında birikir. Coin sayfasındaki
+   **"Distribute now"** düğmesi (herkes basabilir) bunu paylara göre dağıtır.
+4. **Para alma.** Geliştiriciler paralarını **pump.fun'da GitHub ile giriş yaparak** alır. Splitdev'in
+   ayrı bir sözleşmesi ya da imza anahtarı yoktur. /claim sayfası bir GitHub kullanıcısının ne kadar
+   alabileceğini ve hangi coin'lerden geldiğini gösterir.
 
-## Çalıştırma ve bugünkü kurulum
+## Ayarlar
+
+`src/splidev.json`:
+
+| Alan | Anlamı |
+| --- | --- |
+| `treasury` | Splitdev'in Solana cüzdan adresi (boşken basım kapalı) |
+| `platformBps` | Splitdev payı, baz puan (1000 = %10) |
+| `launchFeeSol` | Basım ücreti, SOL |
+| `hidden` | Sitede gösterilmeyecek coin adresleri |
+| `officialToken` | Resmi coin adresi (boş = "Coming soon") |
+
+Vercel ortam değişkenleri:
+
+- `NEXT_PUBLIC_SOLANA_RPC_URL`: tarayıcı RPC'si (`https://solana-rpc.publicnode.com`)
+- `SOLANA_RPC_URL`: hesap taraması destekleyen sunucu RPC'si (`https://api.mainnet-beta.solana.com`)
+- `SITE_URL` ve `NEXTAUTH_URL`: `https://splitdev.app`
+- `GITHUB_TOKEN`: GitHub kullanıcı aramaları için (yetkisiz/scope'suz bir token yeterli)
+- `BLOB_READ_WRITE_TOKEN`: coin resimleri ve metadata için Vercel Blob
+
+## Yayın ayarları (12 Ekim 2026)
+
+- Üretim alan adı **splitdev.app**; `www.splitdev.app` bu adrese yönlenir.
+- Hazine: `D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm`.
+- RPC: ücretsiz PublicNode ve Solana mainnet; eski QuickNode bağlantıları kullanılmaz.
+- Önerilen adım: GitHub → Settings → Developer settings → Personal access tokens → "Generate new token"
+  (hiçbir izin seçme), çıkan değeri Vercel → ponsplit → Settings → Environment Variables'a `GITHUB_TOKEN`
+  adıyla ekle. Böylece GitHub aramaları saatte 60 yerine 5.000 olur.
+
+## Geliştirme
 
 ```bash
 npm ci
-cp .env.example .env.local
-npm run dev
+npx tsc --noEmit && npx next lint && npm test   # tip kontrolü, lint, birim testleri
+npm run build
 ```
 
-Hazine ve paylaşım `src/splidev.json` içindedir: `platformBps: 2000`, `pastPlatformBps: [1000]`. Eski `NEXT_PUBLIC_SPLIDEV_*` isimleri uyumluluk için korunur. Admin ve platform hazinesi:
-
-`D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm`
-
-Varsayılan manual verifier aynı admin public adresidir. **Owner'ın özel anahtarı veya seed'i uygulamaya/environment'a konmaz.** Program deployment, onay ve para işlemleri admin'in kendi cüzdanında; istek/aktivasyon/claim creator'ın cüzdanında imzalanır.
-
-Bugün gerekenler:
-
-| Ayar | Amaç |
-| --- | --- |
-| `SITE_URL` | Gerçek HTTPS public origin; path/query/hash eklenmez. |
-| `NEXT_PUBLIC_TIKSPLIT_ADMIN_WALLET` | Yayınlanmış admin public adresi; cüzdan imzaları bu kimlikle karşılaştırılır. |
-| `NEXT_PUBLIC_TIKSPLIT_VERIFIER` | Manual review için aynı admin public adresi. |
-| `NEXT_PUBLIC_TIKSPLIT_ESCROW_PROGRAM_ID` | İsteğe bağlı override. Varsayılan doğrulanmış mainnet programı `src/tiktok-deployment.json` içindedir; boş değer testlerde kurulumu kapatır. |
-| `NEXT_PUBLIC_SOLANA_LOCAL_RPC_URL` | Yalnız yerel validator testleri için loopback URL. Production’da boş bırakın. Browser `https://solana-rpc.publicnode.com`, server ve kısıtlı hesap taramaları resmi `https://api.mainnet-beta.solana.com` kullanır; eski `SOLANA_RPC_URL` / `NEXT_PUBLIC_SOLANA_RPC_URL` artık okunmaz. |
-| `BLOB_READ_WRITE_TOKEN` veya `PINATA_JWT` | Kalıcı görsel/metadata depolama; mevcut üretim sağlayıcısı kullanılabilir. |
-
-`/admin` içindeki varsayılan cüzdan imzalı unlock, deployment, manual review/onay ve financial işlemler için TikTok API, harici signer veya Redis gerekmez. Sadece cüzdan bağlanması uygulamanın sahiplik kanıtını onaylamaz; her zincir işlemi yetkili cüzdandan imza ister.
-
-`NEXT_PUBLIC_*` değerleri build sırasında browser bundle'ına girer; değiştiklerinde production rebuild gerekir. RPC server token'ı, depolama credential'ı veya session/Vercel secret'ı bu prefix ile tanımlanmaz.
-
-**Doğrulanmış mainnet deployment:** [`2ns8wbrKD54m5ExMtyKhZiqHkjTe7aNb1Y2jRmapp7ri`](https://solscan.io/account/2ns8wbrKD54m5ExMtyKhZiqHkjTe7aNb1Y2jRmapp7ri). [Kurulum işlemi](https://solscan.io/tx/4pUAo16ARurUCBG6aY1cduj6Ns7dA3dvgtnMAt6EUbHNZ8QoWAsDgvPXeyhtG1GPvmgCboPbeYw8eS4qZ9ivZE26) finalized; 63,552 byte artifact ve admin upgrade authority resmi RPC'den birebir doğrulandı. `src/tiktok-deployment.json` yalnız public kurulum bilgilerini içerir; private key saklamaz. Production bu programı varsayılan kullanır ve çalışırken zincirde artifact/authority kontrolünü sürdürür.
-
-Sıralı deployment ve gerçek video testi [docs/launch-checklist.md](docs/launch-checklist.md) dosyasındadır. Web yayını, mainnet programın deploy edildiği veya creator claim'inin canlıda denendiği anlamına gelmez. **Gerçek creator hesabından yayınlanan kodlu video → admin review → owner aktivasyonu → küçük tutarlı mainnet claim** tamamlanmadan bu akışın canlı doğrulandığı söylenmez.
-
-## İsteğe bağlı server admin ve Vercel otomasyonu
-
-Program public ayarlarını Vercel'e elle girip rebuild yapmak mümkündür. Admin panelinin korumalı **server environment mutation / otomatik Vercel rebuild** yolunu kullanmak için ayrıca:
-
-- Güvenilen `SITE_URL` origin'i ve en az 32 byte rastgele `ADMIN_SESSION_SECRET` gerekir. Kod `TIKTOK_SESSION_SECRET` fallback'ini de destekler; ayrı secret önerilir.
-- Production'da `ADMIN_REPLAY_REDIS_REST_URL` + `ADMIN_REPLAY_REDIS_REST_TOKEN` gerekir; server oturum/challenge replay kontrolü ortak store'dadır. Bunlar varsayılan on-chain manual review için zorunlu değildir.
-- İsteğe bağlı `VERCEL_DEPLOY_TOKEN`, `VERCEL_PROJECT_ID` ve gerekiyorsa `VERCEL_TEAM_ID` yalnız server'da tutulur. Token browser'a veya API yanıtına gönderilmez.
-
-## TikTok OAuth — sonraki isteğe bağlı entegrasyon
-
-Mevcut Login Kit adaptörü bugünkü manual proof akışının ön koşulu değildir. Otomatik OAuth yolunu daha sonra kullanmak için TikTok uygulaması ve `user.info.basic` + `user.info.profile` scope'ları onaylanmalı, production client key/secret, aynı public origin'deki `/api/tiktok/callback`, en az 32 byte `TIKTOK_SESSION_SECRET` ve gerçek harici attestation signer hizmeti yapılandırılmalıdır. Owner cüzdan özel anahtarı bir signer servisine yüklenmez.
-
-TikTok review; tam geliştirilen public site, menü açmadan görülebilen aktif Privacy/Terms bağlantıları, URL ownership doğrulaması ve ilk review'da sandbox uçtan uca demo ister. Başvurunun kabulü garanti edilmez. Resmi kaynaklar: [Login Kit Web](https://developers.tiktok.com/doc/login-kit-web), [scope listesi](https://developers.tiktok.com/doc/tiktok-api-scopes/), [app review](https://developers.tiktok.com/doc/app-review-guidelines/), [app kaydı](https://developers.tiktok.com/doc/getting-started-create-an-app).
-
-Program/verifier adresinin değiştirilmesi yeni escrow PDA'ları üretir; final coin alıcılarını taşımaz. OAuth/signer kurulumuna geçerken mevcut manual vault'ların claim yolunu ve eski verifier bağlantısını korumak gerekir.
-
-## Açılışta ilk alım ve tamamlanma sınırı
-
-TikTok açılışında token alımı yapılmaz. Önce mint, creator kasası ve kalıcı %20/%80 paylaşımı tamamlanır; ardından coin sayfasındaki normal al/sat paneli canlı fiyatla ve ayrı cüzdan onayıyla kullanılır. Böylece uygulamanın ilk alımının creator ücreti geçici launcher hesabında kalmaz. İlk işlem fiyatı veya ilk alıcı olma garantisi yoktur.
-
-Açılış birden fazla Solana işlemidir; atomik değildir. Mint ile paylaşımın kesinleşmesi arasındaki doğrudan dış piyasa işlemleri geçici launcher'a ücret üretebilir. Tamamlanmamış mint'ler Tiksplit listelerine alınmaz; tarayıcıdaki kayıt ile aynı cüzdandan tamamlanır. Tarayıcı verilerini temizlemek kayıtlı recovery bilgisini kaybettirebilir. Gerçek mainnet kabul testi tamamlanmadan genel kullanıma hazır olduğu iddia edilmez. Ayrıntılı kontrol: [yayın kontrol listesi](docs/launch-checklist.md).
-
-## Maliyet — 10 Ekim 2026
-
-**Canlı mainnet teklifi (10 Ekim 2026):** 63,552 byte ortak programın rent'i `0.324556120 SOL`, 73 işlemin uygulama tarafından istenen ağ ücreti `0.000376775 SOL`; toplam `0.324932895 SOL`. Cüzdan rent rezervi, kurtarma ücreti ve izin verilen azami cüzdan öncelik ücretleri için pay dahil yeni kurulumun gerekli bakiyesi yaklaşık `0.325958135 SOL`. Bu payın kullanılmayan kısmı cüzdanda kalır. Mainnet rent tarifesi aşağıdaki eski validator sürümünün yerel tarifesinden düşük. Program 10 Ekim 2026’da aşağıdaki işlemle mainnet'e kuruldu; bu rakamlar yeni kurulum tahminidir, yeniden ödeme gerekmez. Panel her kurulumda yeniden hesaplar. Ortak program bir kez kurulur; coin oluşturma bütçesi ayrıca hesaplanır.
-
-
-| Kalem | Tahmin / kaynak |
-| --- | --- |
-| Mainnet program deployment | 10 Ekim 2026 canlı mainnet RPC teklifi: `0.324932895 SOL` rent + fee, azami cüzdan fee rezervi dahil `0.325958135 SOL` başlangıç bakiyesi. **Güncel tutarı `/admin` yeniden hesaplar.** Mevcut program kuruludur; bu tutar tekrar ödenmez. |
-| Creator proof isteği | 143 byte için varsayılan yerel rent `0.00188616 SOL`; uygulama gerçek RPC tutarını gösterir. İptal/onayda rent geri döner; network ücretleri harcanır. |
-| Vercel Pro | [$20/ay + kullanım aşımı](https://vercel.com/pricing). Hobby kişisel/ticari olmayan kullanım içindir. |
-| RPC | PublicNode mainnet, API anahtarı ve aylık RPC ücreti yok. Paylaşılan servis yoğun trafikte limitlenebilir; kesintisiz erişim garantisi yok. |
-| Redis | Bugünkü manual verification için gerekmez. İsteğe bağlı server admin otomasyonunda [Upstash Free kota veya $0.20/100 bin komut](https://upstash.com/pricing/redis); storage/bandwidth/replica kullanımını ayrıca değerlendirin. |
-| Verifier imzalayıcı | Bugünkü manual approval admin cüzdanında imzalanır; ayrı signer aboneliği gerekmez. Gelecekte OAuth attestation seçilirse sağlayıcı maliyeti ayrıdır. |
-| Storage, domain, audit | Kullanıma ve sağlayıcı/denetim kapsamına göre ayrı teklif. Mevcut storage/RPC kullanılabilir. |
-
-Yerel deployment hesabı **73 işlem** içerir: 71 write, 1 buffer create ve 1 deploy. Final tutarın `0.444667440 SOL` kısmı program hesaplarında tutulan rent, `0.000376775 SOL` kısmı işlem ücreti tahminidir. Başlangıç bakiyesi final tutara cüzdanın rent-exempt kalması için `0.000890880 SOL`, recovery için `0.000005 SOL` ve azami cüzdan öncelik ücretleri için `0.000370000 SOL` pay ekler. `0.443470320 SOL` yükleme buffer'ı loader tarafından ProgramData oluşturulmadan önce ödeyiciye aktarılır ve program rent'i için yeniden kullanılır; ikinci kez bütçeye eklenmez. Mainnet paneli güncel rent/fee değerleriyle yeniden fiyatlar.
-
-Yalnız Vercel/RPC tabanı $20/ay; isteğe bağlı Helius Developer eklenirse $69/aydır. Storage, domain, audit ve mevcut sağlayıcıların kullanım aşımı bu toplama dahil değildir. SOL/USD kuru sabitlenmemiştir. Program rent'i aylık ücret değildir; hesaplarda tutulan rezervdir. Geçici deployment buffer bakiyesi loader tarafından deployment sırasında geri dönüştürülür/iade edilir; kesintide admin recovery/close akışı vardır. Mevcut creator kasalarını destekleyen programı kapatmak rutin bir tasarruf işlemi değildir. [Solana deployment rehberi](https://solana.com/docs/programs/deploying).
-
-## Eski coin ve proof migration
-
-Önceden final olmuş %10 platform veya launcher paylı token'ların zincirdeki oranı değiştirilemez. `pastPlatformBps: [1000]`, geçerli eski TikTok escrow biçimini okumak ve yarım launch'ı orijinal paylaşımıyla kurtarmak içindir. Yeni launch yalnız %20/%80 kullanır; eski token sayfası kendi gerçek split'ini gösterir.
-
-GitHub sürümündeki native pump.fun sosyal fee hesapları TikTok escrow'una dönüşmez. Yeni program/verifier public adresi yeni PDA üretir; eski coin'in ücret alıcısı değişmez. Eski program, verifier ve bağlı cüzdan erişimi korunmadan altyapı kapatılmaz.
-
-Manual proof işlemleri; wallet, handle, nonce, video ID ve onay/iptal/aktivasyon makbuzlarını public blockchain'e yazar. Proof hesabının kapanması rent'i iade eder fakat işlem geçmişini silmez. Video silinirse TikTok'ta erişim değişebilir; zincir kayıtları kalır. [Privacy policy](src/app/privacy/page.tsx) bu kapsamı açıklar.
-
-## Kontroller
+Testler pump.fun'ın **gerçek** programlarıyla, yerel bir `solana-test-validator` üzerinde çalışır
+(programlar ve hesaplar `e2e/solana/fixtures` içinde, `solana-fixtures.yml` ile mainnet'ten alınır):
 
 ```bash
-npm run typecheck
-npm test
-npm run build
-cargo test --manifest-path programs/tiktok-escrow/Cargo.toml
-cargo build-sbf --manifest-path programs/tiktok-escrow/Cargo.toml
+e2e/solana/validator.sh /tmp/ledger     # pump.fun programlarıyla yerel validator
+node e2e/solana/build-lib.mjs
+node e2e/solana/launch-local.mjs        # basım, alım satım, dağıtım
+node e2e/solana/graduate-local.mjs      # mezuniyet, havuz alım satımı
+node e2e/solana/github-fee-compat-local.mjs # güncel creator-fee kasaları, 9 alıcı ve devam etme
 ```
 
-Yerel testler yalnız validator ve throwaway test cüzdanları kullanır; gerçek pump.fun programlarıyla native paylaşım, dağıtım, creator claim, rent koruması ve proof yetkilerini kontrol eder. Local testlerin geçmesi gerçek TikTok videosunun elle incelendiği, mainnet programın deploy edildiği veya bağımsız audit yapıldığı anlamına gelmez.
-
-### Mobil cüzdanda yarım kalan program kurulumu
-
-Buffer oluşturma başarılı olup upload durursa, rent buffer hesabında kalır. Aynı buffer'dan **Resume with batch signing** ile devam edin; yeniden rent yatırılmaz. Tarayıcı kaydı kaybolduysa `/admin?buffer=<public-buffer-address>` bağlantısı veya **Recover an existing upload** alanı üzerinden **Check and restore buffer** seçin. Panel önce loader sahibini, admin yetkisini, boyutu ve mevcut byte'ları doğrular; bu kontrol işlem göndermez. Toplu imzayı destekleyen cüzdanlarda **Small batches** varsayılandır: her isteğe en fazla 8 yazma konur; onaylanan grup en fazla üçerli otomatik gönderilip onaylandıktan sonra sonraki grubun cüzdan ekranı açılır. Her grup öncesinde gerçek buffer'a yapılacak yazma RPC'de simüle edilir. İlerleme alanı grup sayısını gösterir. **Full batch** (en fazla 80) isteğe bağlıdır; **Compatibility** (1) seçeneği de bulunur. Son program kurulumu ayrı onay ister; yeni buffer gerekiyorsa onun oluşturulması da ayrıdır. Cüzdanın toplu isteğin içinde kaç ekran göstereceğine cüzdan karar verir. Bütün grubun işlem içeriği ve imzaları ilk gönderimden önce doğrulanır. Hata olduğunda yeni gönderimler durur ve uçuşta olanların sonucu beklendikten sonra kontrol kullanıcıya döner. Son imzalı transaction ID gönderimden önce saklanır; bağlantı kesilirse zincirde confirmed/finalized olup olmadığı kontrol edilir. Belirsiz sonuçta yeniden ödeme yapmak yerine mevcut buffer ve işlem durumunu kontrol edin.
-
-Yazma işlemleri açıkça **25,000 CU** limit ve **1,000 micro-lamport/CU** fiyat içerir: 25 lamport öncelik ücreti, mevcut taban ücretle toplam `0.000005025 SOL`/yazma, sekizli grup için `0.000040200 SOL`. Teklif ve gönderim aynı işlem oluşturucusunu kullanır. Upload yalnız buffer byte'larını yazar; hesap oluşturmaz veya SOL aktarmaz. Panel mevcut buffer'da zaten yatırılmış rent'i, gereken ek cüzdan bakiyesini ve grup ücretini ayrı gösterir. 10 Ekim'de mevcut buffer üzerinde yapılan salt-okunur mainnet simülasyonu 2,670 CU tüketti; işlem 1,172 byte ve Solana paket sınırı içindeydi. OKX'in kendi kapalı kaynak bakiye/rezerv hesabı bu simülasyonla test edilmiş sayılmaz.
-
-Cüzdan `SetComputeUnitLimit` / `SetComputeUnitPrice` talimatlarını, toplam öncelik ücreti işlem başına en fazla **0.000005 SOL** olacak şekilde değiştirebilir. OKX'in imzalarken **blockhash yenilemesi de desteklenir**; bunun için ücret ayarı değiştirmeniz gerekmez. Admin'in dönen işlem üzerindeki imzası doğrulanır; ödeyen, hesap yetkileri, refund alıcısı, loader talimatları ve program byte'ları değişemez. Ek transfer/tip kabul edilmez. Buffer/program oluşturmadaki geçici imzalar, ancak admin imzası ve işlem içeriği doğrulandıktan sonra tarayıcı belleğindeki geçici anahtarla yenilenir. Yeni blockhash'e eski geçerlilik yüksekliği veya cüzdanın gönderdiği yükseklik bağlanmaz; aynı imzalı işlem ID'si üzerinden sınırlı süreli onay ve belirsizlikte zincir kontrolü yapılır. RPC preflight gerçek imzalı blockhash'i ve imzaları kontrol eder. Panelin gerekli bakiye hesabı maksimum fee rezervini içerir; kullanılmayan rezerv cüzdanda kalır. Yalnız ücret üst sınırı aşılırsa cüzdanın öncelik ücretini azaltın. Owner özel anahtarı alınmaz.
+CI (`splidev.yml`): `pump-local` (yukarıdaki testler), `web` (tip, lint, birim, build) ve
+`browser` (Chromium'da /create üzerinden gerçek bir basım, alım satım, dağıtım ve /claim).

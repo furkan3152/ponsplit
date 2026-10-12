@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { StateIcon } from "@/components/StateIcon";
+import { LogoMark } from "@/components/art";
 import { ArrowIcon, XLogo } from "@/components/icons";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { OFFICIAL_TOKEN, X_HANDLE, X_URL, isOfficial } from "@/lib/brand";
 import { coinImage, pumpUrl } from "@/lib/coin-ui";
 import { useCoins } from "@/lib/hooks";
 
-/** Follow Tiksplit on X: a small sticker button (hidden until the account exists). */
+/** Follow Splitdev on X: a small sticker button (hidden until the account exists). */
 export function FollowX({ className = "" }: { className?: string }) {
   if (!X_URL) return null;
   return (
@@ -28,8 +28,8 @@ export function FollowX({ className = "" }: { className?: string }) {
 }
 
 /**
- * The official Tiksplit token on the home page: its mint address (CA) with a copy button once it's
- * launched, "coming soon" until then. A Tiksplit coin trades here; any other pump.fun coin on pump.fun.
+ * The official Splitdev token on the home page: its mint address (CA) with a copy button once it's
+ * launched, "coming soon" until then. A Splitdev coin trades here; any other pump.fun coin on pump.fun.
  */
 export function OfficialToken() {
   const { data: coins } = useCoins();
@@ -57,12 +57,12 @@ export function OfficialToken() {
           <TokenAvatar src={logo} seed={OFFICIAL_TOKEN} size={44} className="rounded-2xl" />
         ) : (
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-card-2">
-            <StateIcon className="h-9 w-9" />
+            <LogoMark size={34} />
           </span>
         )}
         <div className="min-w-0 flex-1">
           <div className="eyebrow">Official token</div>
-          <div className="display truncate text-[22px] leading-tight">{symbol ? `$${symbol}` : "Tiksplit"}</div>
+          <div className="display truncate text-[22px] leading-tight">{symbol ? `$${symbol}` : "Splitdev"}</div>
         </div>
         <FollowX />
       </div>
@@ -85,7 +85,7 @@ export function OfficialToken() {
         ) : (
           <span className="flex min-w-0 flex-1 items-center gap-2 font-mono text-[13px] text-ink-2">
             <span className="h-1.5 w-1.5 shrink-0 animate-pulse-dot rounded-full bg-sun" aria-hidden />
-            No official token configured
+            Coming soon
           </span>
         )}
       </div>

@@ -8,27 +8,28 @@ import { useEffect, useState } from "react";
 import { formatSol, shortAddress } from "@/lib/format";
 import { useSolBalance } from "@/lib/hooks";
 import { SIDEBAR_KEY } from "@/lib/theme";
-import { isTikTokLaunchReady } from "@/lib/tiktok-config";
-import { ADMIN_WALLET } from "@/lib/admin-config";
-import { LogoMark, WordmarkText } from "./art/Logo";
-import { BookIcon, ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, ShieldIcon, WalletIcon } from "./icons";
+import { LogoMark, TokenSticker, WordmarkText } from "./art";
+import { BookIcon, ClaimIcon, CollapseIcon, DocsIcon, ExploreIcon, HomeIcon, LaunchIcon, WalletIcon, XLogo } from "./icons";
+import { X_HANDLE, X_URL } from "@/lib/brand";
 
 export const NAV = [
-  { href: "/", label: "Overview", Icon: HomeIcon },
-  { href: "/explore", label: "Explore coins", Icon: ExploreIcon },
-  { href: "/create", label: "Launch a coin", Icon: LaunchIcon },
-  { href: "/claim", label: "Creator earnings", Icon: ClaimIcon },
-  { href: "/me", label: "My portfolio", Icon: WalletIcon },
+  { href: "/", label: "Home", Icon: HomeIcon },
+  { href: "/explore", label: "Explore", Icon: ExploreIcon },
+  { href: "/create", label: "Launch", Icon: LaunchIcon },
+  { href: "/claim", label: "Claim", Icon: ClaimIcon },
+  { href: "/me", label: "Portfolio", Icon: WalletIcon },
   { href: "/how", label: "How it works", Icon: DocsIcon },
-  { href: "/docs", label: "Documentation", Icon: BookIcon },
+  { href: "/docs", label: "Docs", Icon: BookIcon },
 ] as const;
 
 export const isActive = (pathname: string, href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
 
+/**
+ * The desktop sidebar (lg and up): the brand, the pages, and the connected wallet at the bottom.
+ * It folds to icons; the choice is remembered and restored before paint (THEME_SCRIPT).
+ */
 export function Sidebar() {
   const pathname = usePathname();
-  const { publicKey } = useWallet();
-  const links = [...NAV, ...(publicKey?.equals(ADMIN_WALLET) ? [{ href: "/admin", label: "Admin studio", Icon: ShieldIcon }] : [])];
   const [folded, setFolded] = useState(false);
   useEffect(() => setFolded(document.documentElement.getAttribute("data-sidebar") === "folded"), []);
   const toggle = () => {
@@ -36,40 +37,76 @@ export function Sidebar() {
     setFolded(next);
     if (next) document.documentElement.setAttribute("data-sidebar", "folded");
     else document.documentElement.removeAttribute("data-sidebar");
-    try { localStorage.setItem(SIDEBAR_KEY, next ? "folded" : "open"); } catch { /* Keep this session's preference. */ }
+    try {
+      localStorage.setItem(SIDEBAR_KEY, next ? "folded" : "open");
+    } catch {
+      // storage unavailable: the choice lasts for this page only
+    }
   };
 
   return (
-    <aside aria-label="Sidebar" className="sidebar fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-line bg-paper lg:flex">
-      <div className="flex h-[76px] items-center px-5">
-        <Link href="/" className="flex min-w-0 items-center gap-2.5" aria-label="Tiksplit home">
-          <LogoMark size={32} className="shrink-0" /><WordmarkText className="sidebar-label text-[24px]" />
+    <aside
+      aria-label="Sidebar"
+      className="sidebar fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-line bg-[var(--glass)] backdrop-blur-xl lg:flex"
+    >
+      <div className="flex h-16 items-center gap-2 px-4">
+        <Link href="/" className="group flex min-w-0 items-center gap-2.5" aria-label="Splitdev home">
+          <LogoMark size={34} className="shrink-0 transition-transform duration-500 group-hover:-rotate-12" />
+          <WordmarkText className="sidebar-label truncate text-[21px]" />
         </Link>
-        <button type="button" onClick={toggle} aria-label={folded ? "Expand sidebar" : "Collapse sidebar"} className="absolute -right-3 top-6 grid h-6 w-6 place-items-center rounded-md border border-line-2 bg-card text-ink-3 hover:text-ink"><CollapseIcon size={12} className={folded ? "rotate-180" : ""} /></button>
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={folded ? "Open the sidebar" : "Fold the sidebar"}
+          className="absolute -right-4 top-4 grid h-8 w-8 place-items-center rounded-full border border-line-2 bg-paper text-ink-3 transition hover:text-ink"
+        >
+          <CollapseIcon size={15} className={folded ? "rotate-180" : ""} />
+        </button>
       </div>
-      <div className="sidebar-label px-6 pb-3 pt-5 text-[9px] font-semibold uppercase tracking-[0.18em] text-ink-3">The creator space</div>
-      <nav className="flex flex-col gap-1 px-3">
-        {links.map(({ href, label, Icon }, index) => {
+
+      <nav className="mt-4 flex flex-col gap-1 px-3">
+        {NAV.map(({ href, label, Icon }) => {
           const active = isActive(pathname, href);
           return (
-            <Link key={href} href={href} title={label} aria-current={active ? "page" : undefined} className={`relative flex items-center gap-3 rounded-lg px-3 py-3 text-[13px] font-medium transition ${index === 5 ? "mt-5" : ""} ${active ? "bg-lime-soft text-lime" : "text-ink-2 hover:bg-card hover:text-ink"}`}>
-              <Icon size={19} className="shrink-0" /><span className="sidebar-label truncate">{label}</span>
-              {active ? <span aria-hidden className="sidebar-label ml-auto h-1 w-1 rounded-full bg-lime" /> : null}
+            <Link
+              key={href}
+              href={href}
+              title={label}
+              aria-current={active ? "page" : undefined}
+              className={`group/nav relative flex items-center gap-3.5 rounded-2xl px-3 py-2.5 text-[16px] font-medium transition ${
+                active ? "bg-card-2 text-ink" : "text-ink-2 hover:bg-card hover:text-ink"
+              }`}
+            >
+              {active ? <span className="absolute -left-3 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-lime shadow-[0_0_14px_var(--glow)]" aria-hidden /> : null}
+              <Icon className="shrink-0 transition-transform duration-300 group-hover/nav:scale-110" />
+              <span className="sidebar-label truncate">{label}</span>
             </Link>
           );
         })}
       </nav>
-      <div className="mt-auto p-3">
-        <div className="sidebar-label mb-4 border-t border-line px-2 pt-4">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-2"><span className="h-1.5 w-1.5 rounded-full bg-lime" aria-hidden />Solana mainnet</div>
-          <div className="mt-1.5 text-[11px] text-ink-3">{isTikTokLaunchReady() ? "pump.fun creator coins" : "Launch setup in progress"}</div>
-        </div>
+
+      <div className="mt-auto space-y-2 p-3">
+        {X_URL ? (
+          <a
+            href={X_URL}
+            target="_blank"
+            rel="noreferrer"
+            title={`@${X_HANDLE} on X`}
+            className="group/x flex items-center gap-3.5 rounded-2xl px-3 py-2 text-[14px] font-medium text-ink-2 transition hover:bg-card hover:text-ink"
+          >
+            <span className="grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full bg-ink text-paper transition-transform duration-300 group-hover/x:-rotate-12">
+              <XLogo size={11} />
+            </span>
+            <span className="sidebar-label truncate">@{X_HANDLE}</span>
+          </a>
+        ) : null}
         <SidebarAccount />
       </div>
     </aside>
   );
 }
 
+/** The wallet card at the foot of the sidebar, like a signed-in profile. */
 function SidebarAccount() {
   const { publicKey, connected, disconnect } = useWallet();
   const { setVisible } = useWalletModal();
@@ -79,9 +116,25 @@ function SidebarAccount() {
   if (!mounted) return <div className="h-14" aria-hidden />;
   const address = connected && publicKey ? publicKey.toBase58() : null;
   return (
-    <button type="button" onClick={() => (address ? void disconnect() : setVisible(true))} title={address ? "Disconnect wallet" : "Connect wallet"} className="sidebar-account flex w-full items-center gap-2.5 rounded-lg border border-line bg-card p-3 text-left transition hover:border-line-2">
-      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-card-2 text-lime"><WalletIcon size={17} /></span>
-      <span className="sidebar-label min-w-0"><span className="block truncate text-[12px] font-semibold">{address ? shortAddress(address) : "Connect wallet"}</span><span className="mt-0.5 block truncate text-[10px] text-ink-3">{address ? balance.data !== undefined ? `${formatSol(balance.data, 3)} SOL` : "Solana wallet" : "Your place in the creator economy"}</span></span>
+    <button
+      type="button"
+      onClick={() => (address ? void disconnect() : setVisible(true))}
+      title={address ? "Disconnect" : undefined}
+      className="flex w-full items-center gap-3 rounded-2xl border border-line bg-card p-2.5 text-left transition hover:border-line-2"
+    >
+      {address ? (
+        <TokenSticker seed={`wallet:${address}`} size={36} className="shrink-0 rounded-full" />
+      ) : (
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-lime text-[var(--lime-ink)]">
+          <WalletIcon size={18} />
+        </span>
+      )}
+      <span className="sidebar-label min-w-0">
+        <span className="block truncate text-[14px] font-semibold">{address ? shortAddress(address) : "Connect wallet"}</span>
+        <span className="block truncate font-mono text-[11px] text-ink-3">
+          {address ? (balance.data !== undefined ? `${formatSol(balance.data, 3)} SOL · Solana` : "Solana") : "to launch, trade and claim"}
+        </span>
+      </span>
     </button>
   );
 }

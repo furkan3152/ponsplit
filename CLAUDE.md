@@ -1,64 +1,12 @@
-# Tiksplit (repo: ponsplit): current working notes
-
-The owner's 2026-10-10 request changes this app to a TikTok creator launchpad inspired by
-UseReels' fee-allocation logic, with an original interface on Solana mainnet / pump.fun.
-Current implementation and setup are in README.md. One TikTok handle per launch; platform
-fee 20% + creator escrow 80%, immutable on chain; no launcher reward on new launches. pump.fun's TikTok
-platform enum is inactive, so a separate `programs/tiktok-escrow` program is required.
-As of 2026-10-10 the owner chose public RPC: browser wallet traffic uses PublicNode mainnet; server/indexed reads use the official public Solana RPC.
-Legacy paid SOLANA_RPC_URL / NEXT_PUBLIC_SOLANA_RPC_URL settings are ignored; only
-NEXT_PUBLIC_SOLANA_LOCAL_RPC_URL permits an exact loopback validator for tests.
-Primary site: https://www.tiksplit.com (apex redirects to www).
-Verified mainnet escrow: 2ns8wbrKD54m5ExMtyKhZiqHkjTe7aNb1Y2jRmapp7ri,
-ProgramData CMxWR9hAgmQJV911Hoyfzy9gvjgbmdTEuCDEBbKbne81. Deployment finalized on
-2026-10-10; byte-for-byte artifact and D2Ts...Wtvm upgrade authority verified on chain.
-src/tiktok-deployment.json pins public deployment metadata; tiktok-config uses it unless an
-explicit environment value overrides it. Empty string explicitly disables setup in CI.
-Do not deploy another program or ask the owner to fund program rent again.
-
-Default verification is a public TikTok video with the platform's full handle+beneficiary+nonce
-code, signed on-chain creator request, manual admin review pinned to the exact proof hash,
-then creator-only activation. Pending approval cannot claim. TikTok Login Kit and an external
-managed verifier remain optional for a later approved integration, not today's prerequisite.
-No owner private keys belong in the web app. The owner explicitly authorized publishing this
-new web version on 2026-10-10; `.deploy-hold` is removed for that release. Money and verification
-features must still fail closed without real configuration. `/admin` is the existing
-D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm wallet only, via a locally verified ephemeral
-signed wallet challenge and native wallet-signed transactions. Optional server hosting mutations
-require signed server sessions with durable Redis replay prevention in production. Program deployment
-uses hash-pinned public SBF, browser-memory temporary keys, and admin upgrade authority.
-Batch-capable wallets (including OKX) default to small groups of eight writes, advanced automatically,
-then a separate final deployment approval. Full-batch signing (up to 80 writes) is opt-in; single
-signing remains available for compatibility. Uploads carry explicit 25,000 CU / 1,000 micro-lamport
-fee settings (25 lamports priority fee), shared by fee quoting and sending. Simulate a real pending
-write before each approval group. Uploads never allocate accounts, refund rent or transfer SOL.
-Show already-funded buffer rent separately from the remaining wallet requirement.
-Validate the entire signed batch before sending anything, send at most
-three writes concurrently, and drain in-flight writes before returning any upload failure.
-Recover existing buffers by verified public address, including /admin?buffer=... links.
-Save each transaction ID before submission and reconcile confirmation transport failures on chain.
-Deployment signature checks permit only bounded compute-budget fee changes (max 5,000 lamports/tx),
-with their reserve included in quotes, plus wallet-refreshed blockhashes. Instruction/account/authority
-changes are rejected. Verify the admin signature over the returned wire message before refreshing
-in-memory temporary buffer/program co-signatures. A refreshed hash must not reuse the original hash's
-expiry or wallet-supplied lastValidBlockHeight: confirm its exact signature with a bounded timeout,
-and reconcile uncertain responses on chain. RPC preflight validates the actual signed hash.
-The owner explicitly retains upgrade authority (no renounce). Admin rent recovery covers upload
-buffers and cancellation of an unused, never-configured deployment. ProgramData closure permanently
-disables the program; its small Program account rent remains locked. The panel blocks configured
-programs and any owned accounts, rechecks after wallet signing, and requires typed public program-ID
-confirmation. These RPC checks are not an atomic shutdown lock; never close a used creator program.
-The owner has no TikTok developer app yet and explicitly chose video proof to finish today.
-Use `.github/workflows/splidev.yml`'s current TikTok checks.
-Keep the existing default branch; push only there, and do not open PRs unless requested.
-Do not invent a Claude identity/session trailer when another agent makes the commit.
-
-The remaining notes below describe the previous GitHub version, for migration context.
-Its developer branding, GitHub recipients, claim flow and old E2E scenarios are superseded.
-
-# Previous Splitdev working notes
+# Splitdev (repo: ponsplit): working notes for Claude
 
 The brand is **Splitdev** (domain splitdev.app; renamed from "Splidev" on 2026-10-07 at the owner's request).
+Restored on 2026-10-12 from GitHub release `8806e4c`. The GitHub UI and 10% platform / 0.01 SOL launch
+settings are restored. Current pump.fun curve/pool fee sweeps, modern public transaction reads, and
+2026-10-10 local validator fixtures are retained for current program compatibility. Production and preview
+RPC variables now use PublicNode (browser) and the official Solana public index RPC (server), replacing
+the historical QuickNode settings below. Production SITE_URL and NEXTAUTH_URL both use https://splitdev.app.
+Vercel project-ID-only calls work; do not add the akdogan1 team slug to MCP calls.
 Internal identifiers keep the old spelling on purpose, so settings and saved state survive: `src/splidev.json`,
 `NEXT_PUBLIC_SPLIDEV_*` / `SPLIDEV_METADATA_STORE` env vars, localStorage keys `splidev:*`, `splidev.yml`, `e2e/splidev.mjs`.
 

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-const KEY = "tiksplit:risk-ack:v1";
+const KEY = "splidev:risk-ack:v1";
 
 function acknowledged(): boolean {
   try {
@@ -70,13 +70,14 @@ export function useRiskGate() {
         <div aria-hidden className="bg-grid absolute inset-0 -z-10 opacity-70" />
         <div aria-hidden className="absolute -right-12 -top-16 -z-10 h-44 w-44 rounded-full bg-sun opacity-[0.16] blur-3xl" />
         <div className="flex items-center gap-4">
-          <svg viewBox="0 0 56 56" className="h-14 w-14 shrink-0 text-neon" aria-hidden="true" focusable="false">
-            <path d="M28 8L50 46H6Z" fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" />
-            <path d="M28 21V32" stroke="currentColor" strokeWidth={3} strokeLinecap="round" />
-            <circle cx={28} cy={39.5} r={1.8} fill="currentColor" />
+          <svg viewBox="0 0 56 56" className="h-14 w-14 shrink-0 animate-wiggle" aria-hidden="true" focusable="false">
+            <path d="M28 8L50 46H6Z" fill="var(--outline)" stroke="var(--outline)" strokeWidth={4} strokeLinejoin="round" transform="translate(3 3)" />
+            <path d="M28 8L50 46H6Z" fill="var(--sun)" stroke="var(--outline)" strokeWidth={4} strokeLinejoin="round" />
+            <path d="M28 21V32" stroke="var(--outline)" strokeWidth={4.5} strokeLinecap="round" />
+            <circle cx={28} cy={39.5} r={2.8} fill="var(--outline)" />
           </svg>
           <div className="min-w-0">
-            <div className="eyebrow">Solana mainnet</div>
+            <div className="eyebrow">Solana · read once</div>
             <h2 id="risk-title" className="display mt-1.5 text-[28px] leading-none sm:text-[32px]">
               Before you continue
             </h2>
@@ -84,10 +85,9 @@ export function useRiskGate() {
         </div>
         <ul className="mt-6 divide-y divide-[var(--line)] border-y border-line text-[14px] leading-relaxed text-ink-2">
           <RiskItem n={1}>Coins here are speculative and can go to zero. Only use money you can afford to lose.</RiskItem>
-          <RiskItem n={2}>Anyone can list a TikTok handle. Being listed does not mean the creator endorses or has verified the coin.</RiskItem>
-          <RiskItem n={3}>Trades are final and finalized fee splits cannot be edited. The first successful handle-to-wallet binding is permanent.</RiskItem>
-          <RiskItem n={4}>Claims depend on Tiksplit&apos;s escrow program and configured verifier. Handle renames or reassignment matter before the first binding.</RiskItem>
-          <RiskItem n={5}>Tiksplit is experimental and independent of TikTok and pump.fun. You are responsible for following the laws where you live.</RiskItem>
+          <RiskItem n={2}>Anyone can launch a coin and list any GitHub account. A listed developer has not endorsed the coin.</RiskItem>
+          <RiskItem n={3}>Trades are final. Splitdev is experimental software on top of pump.fun and is not affiliated with pump.fun or GitHub.</RiskItem>
+          <RiskItem n={4}>You are responsible for following the laws where you live.</RiskItem>
         </ul>
         <div className="mt-6 flex gap-2.5">
           {/* Focus lands on the safe choice. */}
