@@ -1,11 +1,12 @@
 import "server-only";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { CREATOR_VAULT_SIZE, decodeCreatorVault } from "./tiktok-escrow";
+import { PUMP_SDK } from "@pump-fun/pump-sdk";
+import { resolveIds } from "../github";
 import { parseMetadata, safeUrl, type TokenMetadata } from "../metadata";
 import { rateLimit } from "../ratelimit";
 import { fetchPublicBytes } from "../safe-image";
 import { rpcUrls } from "./config";
-import { PUBLIC_MAINNET_RPC, PUBLIC_INDEX_RPC } from "./rpc";
+import { PUMP_FEES_PROGRAM_ID } from "./pump";
 import { listCoins, many, readCoin, type Coin } from "./reads";
 import { recentTrades, type Trade } from "./trades";
 
@@ -18,41 +19,20 @@ const FRESH_MS = 5_000;
 export const CDN_CACHE = "public, max-age=0, s-maxage=10, stale-while-revalidate=20";
 
 let conn: Connection | null = null;
-/** Official public mainnet RPC supports indexed scans; no legacy paid credentials. */
+/** SOLANA_RPC_URL (server only, e.g. a paid key) first, else the public endpoints. */
 export function serverConnection(): Connection {
-  if (!conn) {
-    const endpoint = rpcUrls()[0];
-    conn = new Connection(endpoint === PUBLIC_MAINNET_RPC ? PUBLIC_INDEX_RPC : endpoint, "confirmed");
-  }
+  if (!conn) conn = new Connection(process.env.SOLANA_RPC_URL?.split(",")[0]?.trim() || rpcUrls()[0], "confirmed");
   return conn;
 }
 
-let publicConn: Connection | null = null;
-/** Ordinary account/status reads do not consume the indexed provider's scan quota. */
-export function serverPublicConnection(): Connection {
-  if (!publicConn) {
-    publicConn = new Connection(rpcUrls()[0], {
-      commitment: "confirmed",
-      disableRetryOnRateLimit: true,
-      fetch: async (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(5_000) }),
-    });
-  }
-  return publicConn;
-}
-
 let tradeConnections: Connection[] | undefined;
-/** Indexed account scans and transaction history have different public RPC limits. */
+/** Public account indexing and transaction history have different provider limits. */
 function historyConnections(): Connection[] {
   if (!tradeConnections) {
-    const endpoint = rpcUrls()[0];
-    const endpoints = endpoint === PUBLIC_MAINNET_RPC ? [PUBLIC_MAINNET_RPC, PUBLIC_INDEX_RPC] : [endpoint];
-    tradeConnections = endpoints.map((url) => new Connection(url, {
-      commitment: "confirmed",
-      disableRetryOnRateLimit: true,
-      fetch: async (input, init) => {
-        // Fail over promptly instead of keeping the chart in a rate-limit retry loop.
-        return fetch(input, { ...init, signal: AbortSignal.timeout(8_000) });
-      },
+    const endpoints = Array.from(new Set([rpcUrls()[0], serverConnection().rpcEndpoint]));
+    tradeConnections = endpoints.map((endpoint) => new Connection(endpoint, {
+      commitment: "confirmed", disableRetryOnRateLimit: true,
+      fetch: async (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(8_000) }),
     }));
   }
   return tradeConnections;
@@ -140,36 +120,46 @@ async function createdAt(c: Connection, mint: string): Promise<number | null> {
 }
 
 async function enrich(c: Connection, coins: Coin[]): Promise<CoinView[]> {
-  const [metas, ages] = await Promise.all([
+  const ids = Array.from(new Set(coins.flatMap((x) => x.recipients.map((r) => r.githubId))));
+  const [profiles, metas, ages] = await Promise.all([
+    resolveIds(ids).catch(() => ({}) as Awaited<ReturnType<typeof resolveIds>>),
     Promise.all(coins.map((x) => metadataFor(x.uri).catch(() => ({}) as TokenMetadata))),
     Promise.all(coins.map((x) => createdAt(c, x.token))),
   ]);
-  return coins.map((x, i) => ({ ...metas[i], ...x, createdAt: ages[i] }));
+  return coins.map((x, i) => ({
+    ...x,
+    ...metas[i],
+    createdAt: ages[i],
+    recipients: x.recipients.map((r) => {
+      const p = profiles[r.githubId];
+      return p ? { ...r, login: p.login, name: p.name, avatar: p.avatar } : r;
+    }),
+  }));
 }
 
 async function earnersOf(c: Connection, coins: CoinView[]): Promise<Earner[]> {
-  const byHandle = new Map<string, Earner>();
-  for (const coin of coins) for (const r of coin.recipients) {
-    const e = byHandle.get(r.handle) ?? { handle: r.handle, claimable: 0n, claimed: 0n, coins: 0, verified: r.verified, wallet: r.wallet };
-    e.coins++;
-    byHandle.set(r.handle, e);
-  }
-  const accounts = [...new Map(coins.flatMap(x => x.recipients).map(r => [r.handle, r])).values()];
-  if (!accounts.length) return [];
-  const keys = accounts.map(r => new PublicKey(r.feeAccount));
-  const infos = await many(c, keys);
-  const rent = await c.getMinimumBalanceForRentExemption(CREATOR_VAULT_SIZE);
+  const byId = new Map<string, Earner>();
+  for (const coin of coins)
+    for (const r of coin.recipients) {
+      const e = byId.get(r.githubId) ?? { githubId: r.githubId, login: r.login, avatar: r.avatar, claimable: 0n, claimed: 0n, coins: 0 };
+      e.coins++;
+      byId.set(r.githubId, e);
+    }
+  const list = [...byId.values()];
+  const accounts = coins.flatMap((x) => x.recipients).filter((r, i, all) => all.findIndex((o) => o.githubId === r.githubId) === i);
+  const infos = await many(c, accounts.map((r) => new PublicKey(r.feeAccount)));
+  const rent = await c.getMinimumBalanceForRentExemption(infos.find(Boolean)?.data.length ?? 0);
   infos.forEach((info, i) => {
-    const vault = decodeCreatorVault(info, keys[i]);
-    if (!vault || !info) throw new Error("A creator vault could not be read.");
-    const e = byHandle.get(accounts[i].handle)!;
-    if (!Number.isSafeInteger(info.lamports)) throw new Error("Creator balance exceeds safe RPC precision.");
+    if (!info || !info.owner.equals(PUMP_FEES_PROGRAM_ID)) return;
+    const e = byId.get(accounts[i].githubId)!;
     e.claimable = BigInt(Math.max(0, info.lamports - rent));
-    e.claimed = vault.totalClaimed;
-    e.verified = vault.verified;
-    e.wallet = vault.beneficiary?.toBase58();
+    try {
+      e.claimed = BigInt(PUMP_SDK.decodeSocialFeePda(info).totalClaimed.toString());
+    } catch {
+      // not readable: leave at 0
+    }
   });
-  return [...byHandle.values()].sort((a,b) => Number(b.claimable + b.claimed - a.claimable - a.claimed));
+  return list.sort((a, b) => Number(b.claimable + b.claimed - (a.claimable + a.claimed)));
 }
 
 const snap: Memo<Snapshot> = { at: 0 };
@@ -178,7 +168,7 @@ export function snapshot(): Promise<Snapshot> {
   return memo(snap, async () => {
     const c = serverConnection();
     const coins = await enrich(c, await listCoins(c));
-    const earners = await earnersOf(c, coins);
+    const earners = await earnersOf(c, coins).catch(() => []);
     return { at: Date.now(), coins, earners };
   });
 }
@@ -220,14 +210,9 @@ export function coinTrades(mint: string, graduated: boolean): Promise<Trade[]> {
   return memo(m, async () => {
     let failure: unknown;
     for (const connection of historyConnections()) {
-      try {
-        return await recentTrades(connection, new PublicKey(mint), graduated, 150);
-      } catch (error) {
-        failure = error;
-      }
+      try { return await recentTrades(connection, new PublicKey(mint), graduated, 150); }
+      catch (error) { failure = error; }
     }
-    // Do not turn an RPC failure into an empty trade history. The client retains
-    // any previously displayed trades and exposes retry when both providers fail.
     throw failure ?? new Error("Trade history is temporarily unavailable.");
   });
 }

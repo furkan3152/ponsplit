@@ -9,8 +9,7 @@ import { TokenCard } from "@/components/TokenCard";
 import { Reveal } from "@/components/motion";
 import { useCoins, useNow } from "@/lib/hooks";
 import { sortCoins, SORTS, type Sort } from "@/lib/sort-coins";
-import { isTikTokLaunchReady, isValidTikTokHandle, normalizeTikTokHandle } from "@/lib/tiktok-config";
-
+import { HeadingDoodle } from "@/components/art/Doodles";
 
 export default function ExplorePage() {
   return (
@@ -43,16 +42,15 @@ function Explore() {
   }, [tokens]);
 
   const list = useMemo(() => {
-    const q = /tiktok\.com\//i.test(query) ? normalizeTikTokHandle(query) : query.trim().toLowerCase().replace(/^[@$]/, "");
+    const q = query.trim().toLowerCase().replace(/^[@$]/, "");
     const filtered = (tokens ?? []).filter(
-      (t) => !q || t.name.toLowerCase().includes(q) || t.symbol.toLowerCase().includes(q) || t.token.toLowerCase() === q || t.recipients.some((r) => r.handle.toLowerCase().includes(q))
+      (t) => !q || t.name.toLowerCase().includes(q) || t.symbol.toLowerCase().includes(q) || t.token.toLowerCase() === q || t.recipients.some((r) => r.login?.toLowerCase().includes(q) || r.githubId === q.replace(/^#/, ""))
     );
     return sortCoins(filtered, sort);
   }, [tokens, query, sort]);
   const shown = list.slice(0, limit);
   const hasMore = list.length > limit;
   const addressQuery = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(query.trim()) ? query.trim() : null;
-  const handleQuery = normalizeTikTokHandle(query);
 
   return (
     <div className="space-y-8">
@@ -60,7 +58,7 @@ function Explore() {
         <div>
           <div className="eyebrow">The board</div>
           <h1 className="display mt-1 flex items-center gap-2 text-[44px] leading-none">
-            Explore creators & coins
+            Explore <HeadingDoodle kind="coin" />
           </h1>
         </div>
         <div className="segmented no-scrollbar max-w-full overflow-x-auto sm:ml-6">
@@ -72,7 +70,7 @@ function Explore() {
         </div>
         <input
           className="input !rounded-full !py-2.5 sm:ml-auto sm:max-w-[280px]"
-          placeholder="Filter: coin, $ticker, @creator"
+          placeholder="Filter: coin, $ticker, @account"
           aria-label="Filter coins"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -85,12 +83,7 @@ function Explore() {
         </Reveal>
       ) : null}
 
-      {!isTikTokLaunchReady() ? (
-        <EmptyState title="TikTok creator launches are not available yet.">
-          <p className="mx-auto max-w-md leading-relaxed">The mainnet creator escrow and verification service need to be configured before coins can be launched or discovered.</p>
-          <Link href="/docs" className="mt-3 inline-block font-medium text-ink underline">Read how creator fees work →</Link>
-        </EmptyState>
-      ) : error && !tokens ? (
+      {error && !tokens ? (
         <div className="card p-6 text-[14px] text-down-ink">Could not load coins: {error.message.split("\n")[0]}</div>
       ) : isLoading ? (
         <Grid>
@@ -104,8 +97,6 @@ function Explore() {
             <Link href={`/token/${addressQuery}`} className="font-medium text-ink underline">
               Open {addressQuery.slice(0, 6)}…{addressQuery.slice(-4)}
             </Link>
-          ) : isValidTikTokHandle(handleQuery) && query.trim() && !query.trim().startsWith("$") ? (
-            <Link href={`/creator/${encodeURIComponent(handleQuery)}`} className="font-medium text-ink underline">Look up @{handleQuery}</Link>
           ) : (
             <Link href="/create" className="font-medium text-ink underline">
               {tokens?.length ? "Launch a coin" : "Launch the first one"}

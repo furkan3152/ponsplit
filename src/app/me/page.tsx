@@ -6,14 +6,13 @@ import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 import { Progress } from "@/components/Progress";
 import { TokenAvatar } from "@/components/TokenAvatar";
-import { CreatorAvatarStack } from "@/components/CreatorAvatar";
-import { StateIcon } from "@/components/StateIcon";
+import { GithubAvatarStack } from "@/components/GithubAvatar";
+import { EmptyArt, StepLaunch, TokenSticker } from "@/components/art";
 import { CountUp, Flash, Reveal } from "@/components/motion";
 import { coinImage, progressTag } from "@/lib/coin-ui";
 import { compact, formatSol, formatTokens, progressText, shortAddress } from "@/lib/format";
 import { useCoins, useHoldings } from "@/lib/hooks";
 import type { Coin } from "@/lib/types";
-import { isTikTokLaunchReady } from "@/lib/tiktok-config";
 
 type Holding = { t: Coin; bal: bigint; value: number };
 
@@ -25,7 +24,6 @@ export default function PortfolioPage() {
   const { setVisible } = useWalletModal();
   const address = publicKey?.toBase58();
 
-  if (!isTikTokLaunchReady()) return <div className="card mx-auto max-w-xl p-8 text-center"><StateIcon kind="wallet" className="mx-auto h-24 w-24" /><h1 className="display mt-5 text-[30px]">Creator portfolios are not available yet.</h1><p className="mt-3 text-[14px] leading-relaxed text-ink-2">Creator coins will appear here after the mainnet escrow and verification service are configured.</p><Link href="/docs" className="btn-secondary mt-6">How creator fees work</Link></div>;
   if (!connected || !address) return <ConnectPrompt onConnect={() => setVisible(true)} />;
   // Keyed by wallet: switching accounts starts fresh instead of briefly showing the previous one's coins.
   return <Portfolio key={address} address={address} />;
@@ -40,12 +38,12 @@ function ConnectPrompt({ onConnect }: { onConnect?: () => void }) {
           <div aria-hidden className="absolute left-1/2 top-4 -z-10 h-52 w-52 -translate-x-1/2 rounded-full bg-lime opacity-[0.12] blur-3xl" />
           {/* Coins waiting in the corners while the sleepy one naps until a wallet is connected. */}
           <div aria-hidden className="absolute left-6 top-8 -rotate-12 opacity-80 sm:left-10">
-            <StateIcon className="h-10 w-10" />
+            <TokenSticker seed="portfolio:left" size={40} className="animate-float" />
           </div>
           <div aria-hidden className="absolute right-6 top-14 rotate-12 opacity-80 sm:right-10">
-            <StateIcon className="h-9 w-9" />
+            <TokenSticker seed="portfolio:right" size={34} className="animate-float [animation-delay:-2.5s]" />
           </div>
-          <StateIcon kind="wallet" className="mx-auto h-28 w-28" />
+          <EmptyArt className="mx-auto h-28 w-36 animate-float" />
           <div className="eyebrow mt-6">Portfolio</div>
           <h1 className="display mt-2 text-[34px] leading-[0.95] sm:text-[44px]">Connect to see your coins</h1>
           <p className="mx-auto mt-3 max-w-sm text-[15px] leading-relaxed text-ink-2">
@@ -62,10 +60,10 @@ function ConnectPrompt({ onConnect }: { onConnect?: () => void }) {
 
 function Portfolio({ address }: { address: string }) {
   const { data: newestFirst, error: tokensError } = useCoins();
-  const { holdings: held, isLoading: balancesLoading, error: balancesError } = useHoldings(address);
+  const { holdings: held, isLoading: balancesLoading } = useHoldings(address);
 
   // Don't show zeros for data we don't have yet: unknown is "–", not "0".
-  const unavailable = (Boolean(tokensError) && !newestFirst) || Boolean(balancesError);
+  const unavailable = Boolean(tokensError) && !newestFirst;
   const loading = (!newestFirst && !unavailable) || balancesLoading;
   const holdings: Holding[] = held
     .map(({ coin, balance }) => ({ t: coin, bal: balance, value: (Number(balance) / 1e6) * coin.price }))
@@ -352,7 +350,7 @@ function LaunchedCard({ t }: { t: Coin }) {
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <CreatorAvatarStack people={t.recipients} size={20} max={3} />
+        <GithubAvatarStack people={t.recipients} size={20} max={3} />
         <span className="ml-auto font-mono text-[11px] text-ink-3">
           mcap <span className="text-[13px] font-semibold text-ink">{compact(t.marketCap)} SOL</span>
         </span>
@@ -378,7 +376,7 @@ function EmptyHoldings() {
     <div className="card relative isolate flex flex-col items-center overflow-hidden px-6 py-12 text-center sm:py-14">
       <div aria-hidden className="bg-grid absolute inset-0 -z-10" />
       <div aria-hidden className="absolute left-1/2 top-6 -z-10 h-44 w-44 -translate-x-1/2 rounded-full bg-lime opacity-10 blur-3xl" />
-      <StateIcon kind="wallet" className="h-24 w-24" />
+      <EmptyArt className="h-24 w-32 animate-float" />
       <div className="display mt-5 text-[26px] leading-tight">No coins yet.</div>
       <p className="mt-2 max-w-xs text-[14px] leading-relaxed text-ink-2">Coins you buy show up here, valued at their current price.</p>
       <Link href="/" className="btn-neon group/cta mt-6 px-5 py-3">
@@ -394,10 +392,10 @@ function EmptyHoldings() {
 function EmptyLaunched() {
   return (
     <div className="flex flex-col items-start gap-4 rounded-[22px] border border-dashed border-line-2 p-5 sm:flex-row sm:items-center sm:p-6">
-      <StateIcon kind="launch" className="h-16 w-16 shrink-0" />
+      <StepLaunch className="h-16 w-16 shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="text-[16px] font-semibold">Nothing yet.</div>
-        <p className="mt-0.5 text-[14px] leading-relaxed text-ink-2">Launch a coin that shares its creator fees with the TikTok creators you pick.</p>
+        <p className="mt-0.5 text-[14px] leading-relaxed text-ink-2">Launch a coin and every trade pays the GitHub developers you pick.</p>
       </div>
       <Link href="/create" className="btn-secondary">
         Launch a coin

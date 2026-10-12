@@ -2,7 +2,7 @@ import Link from "next/link";
 import { coinImage, recipientNames } from "@/lib/coin-ui";
 import { compact, formatPrice, progressText } from "@/lib/format";
 import type { Coin } from "@/lib/types";
-import { CreatorAvatarStack } from "./CreatorAvatar";
+import { GithubAvatarStack } from "./GithubAvatar";
 import { Progress } from "./Progress";
 import { TokenAvatar } from "./TokenAvatar";
 
@@ -29,10 +29,10 @@ export function KingCard({ t }: { t: Coin }) {
             <span className="shrink-0 font-mono text-[13px] text-ink-2">${t.symbol}</span>
           </div>
           <p className="mt-2 line-clamp-2 max-w-xl text-[15px] text-ink-2">
-            {t.description || `Creator fees support ${recipientNames(t).map((h) => `@${h}`).join(", ")} on TikTok.`}
+            {t.description || `Every trade pays ${recipientNames(t).map((h) => `@${h}`).join(", ")} on GitHub.`}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-[13px] text-ink-2">
-            <CreatorAvatarStack people={t.recipients} size={24} />
+            <GithubAvatarStack people={t.recipients} size={24} />
             <span>
               mcap <span className="num font-semibold text-ink">{compact(t.marketCap)} SOL</span>
             </span>

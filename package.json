@@ -13,7 +13,6 @@
     "test": "node --experimental-strip-types --import ./src/lib/test-hooks.mjs --test src/lib/*.test.ts src/lib/solana/*.test.ts"
   },
   "dependencies": {
-    "@noble/curves": "^1.9.7",
     "@pump-fun/pump-sdk": "^2.0.0",
     "@pump-fun/pump-swap-sdk": "^1.20.0",
     "@solana/spl-token": "^0.4.15",

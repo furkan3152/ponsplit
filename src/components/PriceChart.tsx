@@ -44,13 +44,11 @@ type Ohlcv = { o: number; h: number; l: number; c: number; v?: number };
 export function PriceChart({
   trades,
   loading,
-  error = false,
   partial = false,
   symbol,
 }: {
   trades: readonly Trade[] | undefined;
   loading?: boolean;
-  error?: boolean;
   /** Older trades exist that aren't loaded yet. */
   partial?: boolean;
   /** Shown faintly behind the candles, the way trading terminals label a chart. */
@@ -211,7 +209,7 @@ export function PriceChart({
                 {shown.v !== undefined ? <Readout k="Vol" v={`${volume(shown.v)} SOL`} /> : null}
               </>
             ) : (
-              <span>{loading ? "Loading trade history…" : error ? "Trade history is temporarily unavailable." : trades?.length ? "Waiting for trade timestamps…" : trades ? "No trades yet" : "Trade history has not loaded."}</span>
+              <span>No trades yet</span>
             )}
             {first && !hover && partial && trades ? <span className="text-ink-3">over the last {trades.length.toLocaleString("en-US")} trades</span> : null}
           </div>
@@ -233,7 +231,7 @@ export function PriceChart({
           <div className="absolute inset-0 grid place-items-center px-6">
             <div className="flex flex-col items-center gap-2 text-center">
               <StepTrade className="h-24 w-24 animate-float" />
-              <p className="text-[14px] text-ink-2">{error ? "Trade history is temporarily unavailable." : trades?.length ? "Waiting for confirmed trade timestamps." : trades ? "The chart starts with the first trade." : "Trade history has not loaded."}</p>
+              <p className="text-[14px] text-ink-2">The chart starts with the first trade.</p>
             </div>
           </div>
         ) : null}

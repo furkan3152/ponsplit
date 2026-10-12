@@ -1,16 +1,64 @@
 import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
-import { Wordmark } from "./art/Logo";
-import { ArrowIcon } from "./icons";
+import { Wordmark } from "./art";
+import { FollowX } from "./home/Official";
 
 export function Footer() {
   return (
-    <footer className="editorial-footer mt-16">
-      <div className="mx-auto max-w-[1240px] px-4 pb-24 pt-7 sm:px-6 lg:pb-8">
-        <div className="mb-7 flex items-center justify-between"><Wordmark size={26} textClassName="text-[29px]" /><span className="edition-label">Independent / Solana</span></div>
-        <div className="flex flex-col gap-7 sm:flex-row sm:items-end sm:justify-between"><div className="footer-creator-word" aria-hidden>Keep<br /><span className="outline-type">creating.</span></div><div className="flex max-w-[360px] flex-wrap items-center gap-x-5 gap-y-4 pb-1 text-[12px] text-ink-2"><Link href="/how" className="hover:text-ink">How it works</Link><Link href="/docs" className="hover:text-ink">Docs</Link><Link href="/create" className="hover:text-ink">Launch</Link><Link href="/claim" className="hover:text-ink">Creator earnings</Link><a href="https://solscan.io" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-ink">Solana explorer <ArrowIcon size={12} className="arrow-diagonal" /></a><ThemeToggle compact /></div></div>
-        <div className="mt-6 flex gap-5 text-[12px] text-ink-2"><Link href="/privacy" className="hover:text-ink">Privacy policy</Link><Link href="/terms" className="hover:text-ink">Terms of use</Link><a href="https://github.com/furkan3152" target="_blank" rel="noreferrer" className="hover:text-ink">Operator / contact</a></div>
-        <div className="mt-7 flex items-start justify-between gap-5 border-t border-line pt-5"><p className="max-w-[710px] text-[10px] leading-[1.8] text-ink-3">Tiksplit is independent and is not affiliated with TikTok or pump.fun. Creator earnings depend on actual trading activity and are not guaranteed. Coins are speculative; trading can result in loss.</p><div className="mt-1 flex shrink-0 gap-1" aria-hidden><span className="h-2 w-2 bg-lime" /><span className="h-2 w-2 bg-ink" /><span className="h-2 w-2 bg-[var(--coral)]" /></div></div>
+    <footer className="relative mt-8 overflow-hidden border-t border-line">
+      <div className="mx-auto max-w-6xl px-4 pb-28 pt-12 sm:px-6 md:pb-10">
+        <div className="flex flex-col gap-8 sm:flex-row sm:items-end sm:justify-between">
+          <div className="max-w-sm space-y-3">
+            <Wordmark size={30} />
+            <p className="text-[14px] leading-relaxed text-ink-2">
+              Coins that pay developers. Every Splitdev coin is a pump.fun coin whose creator fees go, for good, to the GitHub accounts it names, on the curve and after it graduates.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <FollowX />
+              <span className="inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-[12px] font-medium text-ink-2">
+                <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-lime" aria-hidden />
+                Solana
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-[14px] text-ink-2">
+            <Link href="/how" className="transition hover:text-ink">
+              How it works
+            </Link>
+            <Link href="/docs" className="transition hover:text-ink">
+              Docs
+            </Link>
+            <Link href="/create" className="transition hover:text-ink">
+              Launch
+            </Link>
+            <Link href="/claim" className="transition hover:text-ink">
+              Claim
+            </Link>
+            <a href="https://solscan.io" target="_blank" rel="noreferrer" className="transition hover:text-ink">
+              Explorer ↗
+            </a>
+            <ThemeToggle />
+          </div>
+        </div>
+        <div className="mt-8 space-y-2 text-[12px] leading-relaxed text-ink-3">
+          <p>
+            Splitdev is an independent app built on pump.fun&apos;s public programs (
+            <a href="https://pump.fun" target="_blank" rel="noreferrer" className="underline-offset-2 hover:text-ink-2 hover:underline">
+              pump.fun
+            </a>
+            ). It is not affiliated with, endorsed by or operated by pump.fun or GitHub.
+          </p>
+          <p>Experimental software on a live network; trade at your own risk.</p>
+        </div>
+        {/* Filled, fading into the page. An outline would show where the variable font's glyph
+            contours overlap. */}
+        <div
+          aria-hidden
+          className="display pointer-events-none mt-4 select-none whitespace-nowrap bg-clip-text text-[21vw] leading-[0.84] text-transparent sm:text-[168px]"
+          style={{ backgroundImage: "linear-gradient(to bottom, var(--line-2) 10%, transparent 92%)" }}
+        >
+          Splitdev
+        </div>
       </div>
     </footer>
   );

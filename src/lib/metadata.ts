@@ -4,7 +4,6 @@ export type TokenMetadata = {
   website?: string;
   telegram?: string;
   twitter?: string;
-  tiktok?: string;
 };
 
 const IPFS_GATEWAY = process.env.NEXT_PUBLIC_IPFS_GATEWAY || "https://ipfs.io/ipfs/";
@@ -30,7 +29,6 @@ export function parseMetadata(raw: string): TokenMetadata {
       website: safeUrl(m.website),
       telegram: safeUrl(m.telegram),
       twitter: safeUrl(m.twitter),
-      tiktok: safeUrl(m.tiktok),
     };
   } catch {
     return {};

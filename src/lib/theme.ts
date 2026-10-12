@@ -8,7 +8,7 @@ export const THEME_KEY = "ponsplit:theme";
 export const SIDEBAR_KEY = "splitearn:sidebar";
 
 /** The browser toolbar color for each theme (<meta name="theme-color">). */
-const BAR = { dark: "#0b0c0f", light: "#f3f0e8" };
+const BAR = { dark: "#0d0a1a", light: "#fbf6ec" };
 
 /**
  * Runs in <head> before the first paint: applies the saved theme (dark unless the visitor chose

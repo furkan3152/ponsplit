@@ -5,10 +5,6 @@ import { readJson } from "@/lib/body";
 import { safeUrl } from "@/lib/metadata";
 import { clientIp, limitClient, rateLimit } from "@/lib/ratelimit";
 import { memoryMetadata } from "./store";
-import { isValidTikTokHandle, normalizeTikTokHandle } from "@/lib/tiktok-config";
-import { creatorFeeSplit } from "@/lib/tiktok-fees";
-import { PLATFORM_BPS } from "@/lib/solana/config";
-import { runtimeStatus } from "@/lib/runtime-status";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +17,8 @@ export async function POST(req: Request) {
   const jwt = process.env.PINATA_JWT;
   const blob = process.env.BLOB_READ_WRITE_TOKEN;
   // The local end-to-end test has no storage service: it keeps metadata in this server's memory.
-  const memory = process.env.NODE_ENV !== "production" && process.env.SPLIDEV_METADATA_STORE === "memory";
+  const memory = process.env.SPLIDEV_METADATA_STORE === "memory";
   if (!jwt && !blob && !memory) return NextResponse.json({ error: "Metadata storage is not configured on this server." }, { status: 501 });
-  if (process.env.NODE_ENV === "production" && !(await runtimeStatus().catch(() => null))?.launchesReady) return NextResponse.json({ error: "New launches are paused until creator verification and the mainnet program are ready." }, { status: 503 });
   if (!limitClient("metadata", clientIp(req), 10)) return NextResponse.json({ error: "Too many requests, try again in a minute." }, { status: 429 });
   if (!rateLimit("metadata:*", 1_000, 86_400_000)) return NextResponse.json({ error: "Launches are paused for today. Try again tomorrow." }, { status: 429 });
   const body = await readJson<Record<string, unknown>>(req);
@@ -31,11 +26,6 @@ export async function POST(req: Request) {
   const name = str("name", 32);
   const symbol = str("symbol", 13);
   if (!name || !symbol) return NextResponse.json({ error: "A name and a ticker are required." }, { status: 400 });
-  const tiktokHandle = normalizeTikTokHandle(str("tiktokHandle", 200));
-  if (!isValidTikTokHandle(tiktokHandle)) return NextResponse.json({ error: "A valid TikTok handle is required." }, { status: 400 });
-  const launcherBps = body?.launcherBps ?? 0;
-  if (launcherBps !== 0 || (body?.platformBps !== undefined && body.platformBps !== PLATFORM_BPS)) return NextResponse.json({ error: "New launches use the fixed 20% platform / 80% creator split." }, { status: 400 });
-  try { creatorFeeSplit(PLATFORM_BPS, 0); } catch { return NextResponse.json({ error: "The fee split is not configured safely." }, { status: 503 }); }
   const link = (k: string) => (str(k, 200) && safeUrl(str(k, 200))) || undefined;
   const meta = {
     name,
@@ -43,11 +33,7 @@ export async function POST(req: Request) {
     description: str("description", 500),
     image: link("image") ?? "",
     showName: true,
-    createdOn: process.env.SITE_URL || new URL(req.url).origin,
-    tiktok: `https://www.tiktok.com/@${tiktokHandle}`,
-    tiktokHandle,
-    launcherBps,
-    platformBps: PLATFORM_BPS,
+    createdOn: "https://splitdev.app",
     ...(link("website") ? { website: link("website") } : {}),
     ...(link("twitter") ? { twitter: link("twitter") } : {}),
     ...(link("telegram") ? { telegram: link("telegram") } : {}),

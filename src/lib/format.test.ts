@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { errorMessage, formatPrice, progressText } from "./format.ts";
+import { formatPrice, progressText } from "./format.ts";
 
 // Run with: node --experimental-strip-types --test src/lib/format.test.ts
 test("tiny prices use the subscript zero count (0.0₈205 = 0.00000000205)", () => {
@@ -47,13 +47,4 @@ test("curve progress rounds down, so a coin still on the curve never reads 100%"
   assert.equal(progressText(0.29 * 100), "29");
   assert.equal(progressText(12.3, 1), "12.3");
   assert.equal(progressText(57.07, 1), "57.0");
-});
-
-
-test("wallet transport failures remain visible and are not mislabeled as user cancellation", () => {
-  const error = new Error("Batch signing is not supported by this wallet");
-  error.name = "WalletSignTransactionError";
-  assert.equal(errorMessage(error), "Batch signing is not supported by this wallet");
-  error.message = "User rejected the request";
-  assert.equal(errorMessage(error), "Cancelled in wallet.");
 });
