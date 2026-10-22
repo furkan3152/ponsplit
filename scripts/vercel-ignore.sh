@@ -9,5 +9,5 @@ git log -1 --format=%B | grep -q '\[deploy\]' && exit 1
 [ -n "$VERCEL_GIT_PREVIOUS_SHA" ] || exit 1
 git cat-file -e "$VERCEL_GIT_PREVIOUS_SHA" 2>/dev/null || exit 1
 git diff --quiet "$VERCEL_GIT_PREVIOUS_SHA" HEAD -- src public package.json package-lock.json \
-  next.config.mjs tailwind.config.ts postcss.config.js tsconfig.json .npmrc .vercelignore vercel.json \
+  next.config.mjs tailwind.config.ts postcss.config.js tsconfig.json .npmrc vercel.json \
   scripts/vercel-ignore.sh

@@ -7,9 +7,9 @@
 // Prints latency percentiles, status counts and errors per phase; exits non-zero on 5xx or
 // timeouts from the site.
 //
-//   SITE=https://splitearn.app RPC=https://api.mainnet-beta.solana.com COIN=<mint> \
+//   SITE=https://splitdev.app RPC=https://api.mainnet-beta.solana.com COIN=<mint> \
 //   CONCURRENCY=40 REQUESTS=600 node scripts/stress.mjs
-const SITE = (process.env.SITE || "https://splitearn.app").replace(/\/$/, "");
+const SITE = (process.env.SITE || "https://splitdev.app").replace(/\/$/, "");
 const RPC = process.env.RPC || "https://api.mainnet-beta.solana.com";
 const COIN = process.env.COIN || "";
 const CONCURRENCY = Number(process.env.CONCURRENCY || 40);

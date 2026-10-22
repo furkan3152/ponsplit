@@ -19,7 +19,5 @@ id.json
 # Build output
 /build
 /dist
-contracts/artifacts
-contracts/cache
 e2e/node_modules
 e2e/shots
