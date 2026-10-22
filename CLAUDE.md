@@ -62,11 +62,11 @@ owner's request; the old code is in git history (last SplitEarn commit: `d37e1fa
   mainnet accounts they need, dumped by `.github/workflows/solana-fixtures.yml` (re-run it when pump.fun upgrades).
   Real GitHub accounts: torvalds = 1024025, gaearon = 810438.
 
-Layout: Next.js 14 app at the repo root. `src/lib/solana/` (config, pump.ts builders, reads.ts, trades.ts
+Layout: Next.js 15 app at the repo root. `src/lib/solana/` (config, pump.ts builders, reads.ts, trades.ts
 event parser, server.ts snapshot/caches, server-types.ts), `src/lib/github.ts` (+ github-handles.ts,
 github-types.ts), `src/lib/hooks.ts`, `src/app` pages (/, /explore, /create, /token/[address], /claim, /me,
 /how, /docs) and API routes (/api/snapshot, /api/coin, /api/trades, /api/github/resolve, /api/metadata,
-/api/upload). Docs for the owner are Turkish: README.md.
+/api/upload). README.md is the public English overview; the owner's Turkish notes are docs/README.tr.md.
 
 ## Design system ("night shift", 2026-10-05)
 

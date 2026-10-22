@@ -1,81 +1,143 @@
+<p align="center"><img src="public/logo.svg" alt="Splitdev logo" width="96" /></p>
+
 # Splitdev
 
-Splitdev, **pump.fun** (Solana) üzerinde coin basan ve coin'in yaratıcı ücretlerini **GitHub
-hesapları** arasında bölen bir launchpad. Bir coin basarken en fazla 9 GitHub kullanıcı adı ve
-payları seçilir; coin'in her alım satımından gelen yaratıcı ücreti bu geliştiricilere akar.
+**Launch a pump.fun coin whose creator fees are split, permanently, between GitHub developers.**
 
-Splitdev pump.fun ile bağlantılı değildir; pump.fun'ın herkese açık programlarını kullanır.
+[![Splitdev CI](https://github.com/furkan3152/ponsplit/actions/workflows/splidev.yml/badge.svg)](https://github.com/furkan3152/ponsplit/actions/workflows/splidev.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-12 Ekim 2026: GitHub sürümü (`8806e4c`) ve Splitdev tasarımı geri getirildi. Güncel pump.fun
-programları için ücretlerin curve/pool hesaplarından aktarılması ve güncel işlem geçmişi
-okuma düzeltmeleri korundu. Canlı adres **https://splitdev.app**; `www` bu adrese yönlenir.
-Ücretsiz RPC kullanılır: tarayıcıda PublicNode, sunucudaki hesap taramasında Solana public mainnet.
-`SITE_URL` ve sitemap için `NEXTAUTH_URL` aynı canlı adrese ayarlanır.
+Splitdev is a launchpad on [pump.fun](https://pump.fun) (Solana). When you launch a coin you pick up to
+nine GitHub accounts and their shares. Every trade of the coin pays pump.fun's creator fee, and Splitdev
+routes that fee to those developers through pump.fun's own on-chain fee sharing, locked so that nobody,
+not even the launcher, can change it later. Developers claim on pump.fun by signing in with GitHub, so
+they need no wallet in advance and Splitdev never holds anyone's money.
 
-## Nasıl çalışır
+**Live:** [splitdev.app](https://splitdev.app) (Solana mainnet)
 
-1. **Basım.** /create sayfasında isim, sembol, resim, GitHub kullanıcı adları ve paylar girilir.
-   Cüzdan tek seferde imzalar:
-   - pump.fun `create_v2` (+ isteğe bağlı ilk alım), yaratıcı = basan cüzdan;
-   - eksik GitHub ücret hesapları (pump.fun'ın kendi GitHub hesapları, kullanıcı id'sine bağlı);
-   - kalıcı ücret paylaşımı: önce Splitdev hazinesi (`platformBps`, şimdi %10), kalanı GitHub
-     hesaplarına; yönetici yetkisi kaldırılır, paylar bir daha değişmez;
-   - basım ücreti (`launchFeeSol`, şimdi 0.01 SOL) hazineye.
-2. **Alım satım.** Coin sayfasında bonding curve üzerinde, mezuniyetten sonra pump.fun'ın
-   havuzunda (PumpSwap) alım satım yapılır.
-3. **Ücretler.** pump.fun'ın yaratıcı ücreti coin'in kasasında birikir. Coin sayfasındaki
-   **"Distribute now"** düğmesi (herkes basabilir) bunu paylara göre dağıtır.
-4. **Para alma.** Geliştiriciler paralarını **pump.fun'da GitHub ile giriş yaparak** alır. Splitdev'in
-   ayrı bir sözleşmesi ya da imza anahtarı yoktur. /claim sayfası bir GitHub kullanıcısının ne kadar
-   alabileceğini ve hangi coin'lerden geldiğini gösterir.
+> Splitdev is an independent project and is not affiliated with pump.fun or GitHub.
 
-## Ayarlar
+## Features
 
-`src/splidev.json`:
+- **One-prompt launch.** `create_v2` plus an optional first buy, the GitHub fee accounts that don't exist
+  yet, the fee-sharing config with admin revoked, and the launch fee are built client-side and signed
+  together with `signAllTransactions`.
+- **Interrupted launches recover.** If the coin lands but the fee split doesn't, the pending launch is
+  saved per wallet and mint, re-checked against the chain, and offered as "Finish launch".
+- **Trading on the curve and the pool.** Buy and sell on the bonding curve and, after graduation, on
+  PumpSwap. Quotes include virtual pool reserves, and a trade aborts if the price moved past slippage.
+- **Permissionless fee distribution.** A "Distribute now" button sweeps the creator vault (and the pool
+  side for graduated coins) to the shareholders.
+- **Claim lookup.** `/claim` shows what any GitHub username has waiting and from which coins.
+- **Spoof-resistant listing.** Only coins with Splitdev's exact on-chain shape are listed: final and
+  active split, treasury first at the allowed share, every other shareholder a pump.fun GitHub fee
+  account. Trades are read only from events emitted by the pump.fun programs.
+- **Charts and live data.** Candles built from on-chain trade events, rendered with lightweight-charts.
+- **Hardened server.** Per-IP rate limits, a budgeted GitHub API client with caching, image uploads
+  validated from their bytes, DNS-rebinding-safe metadata fetches, strict security headers.
 
-| Alan | Anlamı |
-| --- | --- |
-| `treasury` | Splitdev'in Solana cüzdan adresi (boşken basım kapalı) |
-| `platformBps` | Splitdev payı, baz puan (1000 = %10) |
-| `launchFeeSol` | Basım ücreti, SOL |
-| `hidden` | Sitede gösterilmeyecek coin adresleri |
-| `officialToken` | Resmi coin adresi (boş = "Coming soon") |
+## How it works
 
-Vercel ortam değişkenleri:
+```mermaid
+flowchart LR
+  W[Launcher wallet] -->|signAllTransactions| L[Launch transactions]
+  L --> C[pump.fun create_v2 + first buy]
+  L --> G[GitHub fee accounts<br/>keyed by numeric GitHub id]
+  L --> F[Fee sharing config<br/>treasury + up to 9 devs, admin revoked]
+  T[Every trade] -->|creator fee| V[Creator vault]
+  V -->|Distribute now| F
+  F --> D[Developers claim on pump.fun<br/>by signing in with GitHub]
+```
 
-- `NEXT_PUBLIC_SOLANA_RPC_URL`: tarayıcı RPC'si (`https://solana-rpc.publicnode.com`)
-- `SOLANA_RPC_URL`: hesap taraması destekleyen sunucu RPC'si (`https://api.mainnet-beta.solana.com`)
-- `SITE_URL` ve `NEXTAUTH_URL`: `https://splitdev.app`
-- `GITHUB_TOKEN`: GitHub kullanıcı aramaları için (yetkisiz/scope'suz bir token yeterli)
-- `BLOB_READ_WRITE_TOKEN`: coin resimleri ve metadata için Vercel Blob
+There is no Splitdev smart contract: a Splitdev coin is a normal pump.fun coin. Discovery is a single
+filtered `getProgramAccounts` call on pump.fun's fee program (SharingConfig discriminator + treasury at
+offset 80), which lists every Splitdev coin without an indexer or database.
 
-## Yayın ayarları (12 Ekim 2026)
+Fees (pump.fun mainnet, October 2026): the bonding curve charges 1.25 %, of which 0.30 % is the creator
+fee. Splitdev keeps `platformBps` of the creator fee (10 % today) and charges a 0.01 SOL launch fee; the
+rest goes to the GitHub accounts by their shares. Settings live in [`src/splidev.json`](src/splidev.json)
+and are validated at build time by `next.config.mjs`.
 
-- Üretim alan adı **splitdev.app**; `www.splitdev.app` bu adrese yönlenir.
-- Hazine: `D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm`.
-- RPC: ücretsiz PublicNode ve Solana mainnet; eski QuickNode bağlantıları kullanılmaz.
-- Önerilen adım: GitHub → Settings → Developer settings → Personal access tokens → "Generate new token"
-  (hiçbir izin seçme), çıkan değeri Vercel → ponsplit → Settings → Environment Variables'a `GITHUB_TOKEN`
-  adıyla ekle. Böylece GitHub aramaları saatte 60 yerine 5.000 olur.
+## Tech stack
 
-## Geliştirme
+- **App:** Next.js 15 (App Router), React 18, TypeScript, Tailwind CSS, TanStack Query
+- **Solana:** `@solana/web3.js`, Solana wallet adapter, `@pump-fun/pump-sdk` v2, `@pump-fun/pump-swap-sdk`, SPL Token
+- **Data:** GitHub REST API, Vercel Blob (coin images and metadata), optional Pinata/IPFS
+- **Testing:** Node test runner (unit), `solana-test-validator` with pump.fun's real programs dumped from
+  mainnet (integration), Playwright (browser end-to-end)
+- **Hosting/CI:** Vercel, GitHub Actions
+
+## Project structure
+
+```
+src/
+  app/                 pages (/, /explore, /create, /token/[address], /claim, /me, /how, /docs)
+    api/               coin, snapshot, trades, github/resolve, metadata, upload
+  components/          UI, charts, trade panel, "Bitbug" mascot art
+  lib/
+    solana/            pump.ts (transaction builders), reads.ts (discovery), trades.ts (event parser),
+                       server.ts (snapshot and caches), fee math
+    github.ts          budgeted, cached GitHub lookups
+    ratelimit.ts, ip.ts, image-bytes.ts, metadata.ts   server hardening
+  splidev.json         treasury, platform share, launch fee, hidden coins
+e2e/
+  solana/              local validator, fixtures (pump.fun programs + mainnet accounts), launch/graduate tests
+  splidev.mjs          Playwright test of the real UI against the local validator
+scripts/               logo renderer, stress test, Vercel ignored-build step
+docs/README.tr.md      Turkish operator notes
+```
+
+## Getting started
+
+Prerequisites: Node.js 22 and npm. The integration tests also need the
+[Solana CLI](https://docs.anza.xyz/cli/install) (Agave 2.3).
 
 ```bash
+git clone https://github.com/furkan3152/ponsplit.git
+cd ponsplit
 npm ci
-npx tsc --noEmit && npx next lint && npm test   # tip kontrolü, lint, birim testleri
+cp .env.example .env.local   # public RPCs work out of the box; see the comments in the file
+npm run dev                  # http://localhost:3000
+```
+
+Checks:
+
+```bash
+npx tsc --noEmit && npm run lint && npm test   # typecheck, lint, 39 unit tests
 npm run build
 ```
 
-Testler pump.fun'ın **gerçek** programlarıyla, yerel bir `solana-test-validator` üzerinde çalışır
-(programlar ve hesaplar `e2e/solana/fixtures` içinde, `solana-fixtures.yml` ile mainnet'ten alınır):
+Integration tests against pump.fun's real programs on a local validator:
 
 ```bash
-e2e/solana/validator.sh /tmp/ledger     # pump.fun programlarıyla yerel validator
+e2e/solana/validator.sh /tmp/ledger
 node e2e/solana/build-lib.mjs
-node e2e/solana/launch-local.mjs        # basım, alım satım, dağıtım
-node e2e/solana/graduate-local.mjs      # mezuniyet, havuz alım satımı
-node e2e/solana/github-fee-compat-local.mjs # güncel creator-fee kasaları, 9 alıcı ve devam etme
+RPC=http://127.0.0.1:8899 node e2e/solana/launch-local.mjs           # launch, list, trade, distribute, claim lookup
+RPC=http://127.0.0.1:8899 node e2e/solana/graduate-local.mjs         # graduation and pool trading
+RPC=http://127.0.0.1:8899 node e2e/solana/github-fee-compat-local.mjs # current fee vaults, nine recipients
 ```
 
-CI (`splidev.yml`): `pump-local` (yukarıdaki testler), `web` (tip, lint, birim, build) ve
-`browser` (Chromium'da /create üzerinden gerçek bir basım, alım satım, dağıtım ve /claim).
+CI ([`splidev.yml`](.github/workflows/splidev.yml)) runs these on every push, plus the web checks and a
+Chromium test that launches, trades, distributes and checks every page at desktop and phone widths.
+
+## Security
+
+- **Non-custodial.** Users sign in their own wallet; the site has no signing key and never holds funds.
+  Fees move only through pump.fun's programs.
+- **Immutable splits.** Fee-sharing admin rights are revoked at launch.
+- **No secrets in the repo.** `.env*` and keypair files are gitignored; tests use throwaway keypairs on a
+  local validator only.
+- Trading memecoins is risky; the site shows a risk notice and nothing here is financial advice.
+
+## Status
+
+Live on Solana mainnet at [splitdev.app](https://splitdev.app). The history also contains SplitEarn, the
+earlier Robinhood Chain (EVM) version of the idea.
+
+## License
+
+[MIT](LICENSE)
+
+---
+
+Built by Furkan Akdogan ([@furkan3152](https://github.com/furkan3152)).
