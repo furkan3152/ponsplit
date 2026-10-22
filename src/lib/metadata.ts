@@ -34,8 +34,3 @@ export function parseMetadata(raw: string): TokenMetadata {
     return {};
   }
 }
-
-export function encodeMetadata(m: TokenMetadata): string {
-  const clean = Object.fromEntries(Object.entries(m).filter(([, v]) => typeof v === "string" && v.trim() !== ""));
-  return JSON.stringify(clean);
-}

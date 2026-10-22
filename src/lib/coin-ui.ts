@@ -4,9 +4,6 @@ import type { Coin } from "./types";
 /** The coin's picture from its metadata, when it's a link the site may render (https or ipfs). */
 export const coinImage = (c: Pick<Coin, "image">) => safeUrl(c.image);
 
-/** Where a coin trades, in a word or two. */
-export const venueLabel = (c: Pick<Coin, "graduated">) => (c.graduated ? "pump.fun pool" : "bonding curve");
-
 /** The short tag next to a coin's progress bar. */
 export const progressTag = (c: Pick<Coin, "graduated">, pctText: string) => (c.graduated ? "graduated" : `${pctText}%`);
 
