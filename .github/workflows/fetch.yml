@@ -12,6 +12,9 @@ on:
         description: Characters of text to print per page
         default: "40000"
 
+permissions:
+  contents: read
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
