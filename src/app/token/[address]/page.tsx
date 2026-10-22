@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
@@ -24,7 +24,8 @@ import type { Coin, Trade } from "@/lib/types";
 
 const isMint = (v: string) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v);
 
-export default function TokenPage({ params }: { params: { address: string } }) {
+export default function TokenPage() {
+  const params = useParams<{ address: string }>();
   const token = isMint(params.address) ? params.address : undefined;
   const { data: t, isLoading, isError, refetch } = useCoin(token);
   const trades = useCoinTrades(t);

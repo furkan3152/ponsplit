@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { coinView } from "@/lib/solana/server";
 
-export async function generateMetadata({ params }: { params: { address: string } }): Promise<Metadata> {
-  const t = await coinView(params.address).catch(() => null);
+export async function generateMetadata({ params }: { params: Promise<{ address: string }> }): Promise<Metadata> {
+  const { address } = await params;
+  const t = await coinView(address).catch(() => null);
   if (!t) return { title: "Coin" };
   const who = t.recipients.map((r) => r.login ?? `#${r.githubId}`).join(", ");
   const description = (t.description ?? "").trim().slice(0, 300) || `Every trade of $${t.symbol} pays ${who} on GitHub.`;
