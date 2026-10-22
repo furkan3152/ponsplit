@@ -25,12 +25,6 @@ export const onCircle = (cx: number, cy: number, r: number, deg: number): [numbe
   return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
 };
 
-/** Quadratic bezier point. */
-export const qPoint = (p0: [number, number], p1: [number, number], p2: [number, number], t: number): [number, number] => {
-  const m = 1 - t;
-  return [m * m * p0[0] + 2 * m * t * p1[0] + t * t * p2[0], m * m * p0[1] + 2 * m * t * p1[1] + t * t * p2[1]];
-};
-
 const SQ = Math.SQRT1_2;
 
 /** Two halves of a coin split by a "/" diagonal gap. [upper-left, lower-right] path data. */
@@ -203,35 +197,6 @@ export function Sparkle({ x, y, s, color = C.sun, sw }: { x: number; y: number; 
       strokeLinejoin="round"
     />
   );
-}
-
-/** Chunky 5-point star with rounded joins. */
-export function Star({ x, y, s, color = C.sun, sw, rot = 0 }: { x: number; y: number; s: number; color?: string; sw: number; rot?: number }) {
-  let d = "";
-  for (let i = 0; i < 10; i++) {
-    const rr = i % 2 === 0 ? s : s * 0.5;
-    const [px, py] = onCircle(x, y, rr, 90 + rot + i * 36);
-    d += `${i === 0 ? "M" : "L"}${pt(px, py)}`;
-  }
-  return <path d={`${d}Z`} fill={color} stroke={INK} strokeWidth={sw} strokeLinejoin="round" />;
-}
-
-/** Little confetti bits: "r" rectangle, "w" squiggle, "d" dot. */
-export function Confetti({ x, y, kind, color, sw, rot = 0 }: { x: number; y: number; kind: "r" | "w" | "d"; color: string; sw: number; rot?: number }) {
-  if (kind === "d") return <circle cx={x} cy={y} r={sw * 1.3} fill={color} stroke={INK} strokeWidth={sw * 0.7} />;
-  if (kind === "r")
-    return <rect x={x - 5} y={y - 2.5} width={10} height={5} rx={1.6} fill={color} stroke={INK} strokeWidth={sw * 0.7} transform={`rotate(${rot} ${x} ${y})`} />;
-  return (
-    <g transform={`rotate(${rot} ${x} ${y})`} strokeLinecap="round" fill="none">
-      <path d={`M${x - 8} ${y}q2 -4 4 0t4 0t4 0t4 0`} stroke={INK} strokeWidth={sw * 2.2} />
-      <path d={`M${x - 8} ${y}q2 -4 4 0t4 0t4 0t4 0`} stroke={color} strokeWidth={sw * 0.9} />
-    </g>
-  );
-}
-
-/** Dotted flight trail. */
-export function Trail({ d, sw }: { d: string; sw: number }) {
-  return <path d={d} fill="none" stroke={INK} strokeOpacity={0.4} strokeWidth={sw} strokeDasharray={`0.1 ${q(sw * 2.8)}`} strokeLinecap="round" />;
 }
 
 export type Hair = 0 | 1 | 2 | 3 | 4;

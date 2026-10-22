@@ -1,6 +1,4 @@
 export { LogoMark, Wordmark, WordmarkText } from "./Logo";
-export { Bug, BugMark, type BugFace } from "./Bug";
-export { SplitMachine } from "./SplitMachine";
 export { StepLaunch } from "./StepLaunch";
 export { StepTrade } from "./StepTrade";
 export { StepSplit } from "./StepSplit";

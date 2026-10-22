@@ -279,9 +279,6 @@ export function newCurvePreview(global: PumpGlobal, tokensBought: bigint) {
   };
 }
 
-/** Token decimals of every pump.fun coin. */
-export const TOKEN_DECIMALS = 6;
-
 /** pump.fun's pool for a coin that has left the curve. */
 export const poolOf = (mint: PublicKey) => canonicalPumpPoolPda(mint);
 
