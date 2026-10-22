@@ -7,3 +7,19 @@ next-env.d.ts
 *.tsbuildinfo
 .vercel
 promo/*.mp4
+
+# Secrets and keys
+.env.*
+!.env.example
+*-keypair.json
+id.json
+*.pem
+*.key
+
+# Build output
+/build
+/dist
+contracts/artifacts
+contracts/cache
+e2e/node_modules
+e2e/shots
