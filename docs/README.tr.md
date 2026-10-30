@@ -1,5 +1,7 @@
 # Splitdev
 
+> English version: [README.md](README.md). Bu, operatör notlarının Türkçe çevirisidir.
+
 Splitdev, **pump.fun** (Solana) üzerinde coin basan ve coin'in yaratıcı ücretlerini **GitHub
 hesapları** arasında bölen bir launchpad. Bir coin basarken en fazla 9 GitHub kullanıcı adı ve
 payları seçilir; coin'in her alım satımından gelen yaratıcı ücreti bu geliştiricilere akar.

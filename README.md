@@ -84,7 +84,9 @@ e2e/
   solana/              local validator, fixtures (pump.fun programs + mainnet accounts), launch/graduate tests
   splidev.mjs          Playwright test of the real UI against the local validator
 scripts/               logo renderer, stress test, Vercel ignored-build step
-docs/README.tr.md      Turkish operator notes
+docs/
+  README.md            operator notes (deployment, environment, settings)
+  README.tr.md         Turkish translation of the operator notes
 ```
 
 ## Getting started
