@@ -21,3 +21,7 @@ id.json
 /dist
 e2e/node_modules
 e2e/shots
+
+# OS files
+.DS_Store
+Thumbs.db
