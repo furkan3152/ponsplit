@@ -86,7 +86,6 @@ e2e/
 scripts/               logo renderer, stress test, Vercel ignored-build step
 docs/
   README.md            operator notes (deployment, environment, settings)
-  README.tr.md         Turkish translation of the operator notes
 ```
 
 ## Getting started

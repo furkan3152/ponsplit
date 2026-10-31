@@ -7,7 +7,7 @@ the creator fee from every trade of the coin flows to those developers.
 Splitdev is not affiliated with pump.fun; it uses pump.fun's public programs.
 
 These are operator notes for running and deploying the live site. For a project overview, see the
-top-level [README](../README.md). A Turkish translation of this document is in [README.tr.md](README.tr.md).
+top-level [README](../README.md).
 
 ## How it works
 
