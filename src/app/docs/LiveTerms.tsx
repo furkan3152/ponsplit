@@ -7,14 +7,14 @@ const CURVE_CREATOR = 0.3;
 
 /** The fee table: what a curve trade pays and where every part goes. */
 export function FeeTable() {
-  const splidev = PLATFORM_BPS / 100;
-  const devs = 100 - splidev;
+  const platformPct = PLATFORM_BPS / 100;
+  const devs = 100 - platformPct;
   const rows: { part: string; ofTrade: string; to: string; strong?: boolean }[] = [
     { part: "pump.fun fee", ofTrade: pct(CURVE_PROTOCOL + CURVE_CREATOR), to: "Every buy and sell on the bonding curve", strong: true },
     { part: "↳ pump.fun", ofTrade: pct(CURVE_PROTOCOL), to: "Kept by pump.fun" },
     { part: "↳ creator fee", ofTrade: pct(CURVE_CREATOR), to: "Shared through pump.fun's fee sharing, set for good at launch" },
     { part: "   ↳ GitHub devs", ofTrade: pct((CURVE_CREATOR * devs) / 100), to: `${devs}% of the creator fee, by the shares set at launch`, strong: true },
-    { part: "   ↳ Splitdev", ofTrade: pct((CURVE_CREATOR * splidev) / 100), to: `${splidev}% of the creator fee` },
+    { part: "   ↳ Splitdev", ofTrade: pct((CURVE_CREATOR * platformPct) / 100), to: `${platformPct}% of the creator fee` },
     { part: "after graduating", ofTrade: "0.05–0.95%", to: "pump.fun's pool sets the creator fee by market cap; same split", strong: true },
   ];
   return (
@@ -46,13 +46,13 @@ export function FeeTable() {
 
 /** A worked example on a 1 SOL trade. */
 export function FeeExample() {
-  const splidev = PLATFORM_BPS / 100;
+  const platformPct = PLATFORM_BPS / 100;
   const s = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 5 })} SOL`;
   return (
     <p className="text-[15px] leading-relaxed text-ink-2">
       Someone buys for <span className="num text-ink">1 SOL</span> on the curve: the trade pays <span className="num text-ink">{s(0.0125)}</span> in fees.{" "}
-      <span className="num text-ink">{s(0.0095)}</span> goes to pump.fun, <span className="num text-ink">{s((0.003 * (100 - splidev)) / 100)}</span> to the coin&apos;s
-      GitHub developers and <span className="num text-ink">{s((0.003 * splidev) / 100)}</span> to Splitdev.
+      <span className="num text-ink">{s(0.0095)}</span> goes to pump.fun, <span className="num text-ink">{s((0.003 * (100 - platformPct)) / 100)}</span> to the coin&apos;s
+      GitHub developers and <span className="num text-ink">{s((0.003 * platformPct) / 100)}</span> to Splitdev.
     </p>
   );
 }
