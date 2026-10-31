@@ -1,16 +1,17 @@
-// Load test for the live site and the chain's RPC, from one machine (the stress.yml runner).
+// Load test for the live site and, optionally, a Solana RPC, from one machine (the stress.yml runner).
 // Nothing is signed or sent on-chain. Phases:
 //   1. pages:  the public pages and a coin page, many at once (what Vercel serves)
 //   2. apis:   the read APIs the pages call (snapshot, coin, trades, GitHub lookups; their
 //               per-client limits answer 429 by design, since every request here comes from one IP)
-//   3. rpc:    a burst of reads against the Solana RPC the browsers use (public or paid)
+//   3. rpc:    a burst of reads against a Solana RPC, only when RPC is set. Point it at an
+//               endpoint you operate or pay for, not at a shared public RPC.
 // Prints latency percentiles, status counts and errors per phase; exits non-zero on 5xx or
 // timeouts from the site.
 //
-//   SITE=https://splitdev.app RPC=https://api.mainnet-beta.solana.com COIN=<mint> \
+//   SITE=https://splitdev.app [RPC=<your RPC URL>] COIN=<mint> \
 //   CONCURRENCY=40 REQUESTS=600 node scripts/stress.mjs
 const SITE = (process.env.SITE || "https://splitdev.app").replace(/\/$/, "");
-const RPC = process.env.RPC || "https://api.mainnet-beta.solana.com";
+const RPC = process.env.RPC || "";
 const COIN = process.env.COIN || "";
 const CONCURRENCY = Number(process.env.CONCURRENCY || 40);
 const REQUESTS = Number(process.env.REQUESTS || 600);
@@ -70,23 +71,29 @@ if (COIN) results.push(await run("api/trades", 100, 20, () => get(`/api/trades?m
 // Coin share cards render server-side from the chain.
 if (COIN) results.push(await run("coin share card", 40, 10, () => get(`/token/${COIN}/opengraph-image`)));
 
-// 3. The Solana RPC: what one busy browser session sends (single and batched reads).
+// 3. The Solana RPC (optional): what one busy browser session sends (single and batched reads).
 const body = (i) =>
   JSON.stringify(
     i % 5 === 1
       ? [1, 2, 3, 4, 5].map((k) => ({ jsonrpc: "2.0", id: i * 10 + k, method: "getSlot", params: [] }))
       : { jsonrpc: "2.0", id: i, method: i % 2 ? "getSlot" : "getLatestBlockhash", params: [] }
   );
-const rpcRes = await run("rpc", REQUESTS, CONCURRENCY, (i) =>
-  fetch(RPC, { method: "POST", headers: { "content-type": "application/json" }, body: body(i), signal: AbortSignal.timeout(TIMEOUT) })
-);
+const rpcRes = RPC
+  ? await run("rpc", REQUESTS, CONCURRENCY, (i) =>
+      fetch(RPC, { method: "POST", headers: { "content-type": "application/json" }, body: body(i), signal: AbortSignal.timeout(TIMEOUT) })
+    )
+  : null;
 
 // Verdict: the site must never answer 5xx or time out; the RPC's 429s are reported, not fatal.
 const siteBad = results.reduce(
   (n, r) => n + [...r.statuses].filter(([s]) => s >= 500).reduce((a, [, c]) => a + c, 0) + [...r.errors.values()].reduce((a, c) => a + c, 0),
   0
 );
-const rpc429 = rpcRes.statuses.get(429) ?? 0;
 console.log(`\nSITE: ${siteBad ? `${siteBad} failed responses (5xx / timeouts / network)` : "no 5xx, no timeouts"}`);
-console.log(`RPC: ${rpc429} rate-limited (429) of ${REQUESTS}; ${[...rpcRes.errors.values()].reduce((a, c) => a + c, 0)} network errors`);
+if (rpcRes) {
+  const rpc429 = rpcRes.statuses.get(429) ?? 0;
+  console.log(`RPC: ${rpc429} rate-limited (429) of ${REQUESTS}; ${[...rpcRes.errors.values()].reduce((a, c) => a + c, 0)} network errors`);
+} else {
+  console.log("RPC: skipped (set RPC to burst an endpoint you operate)");
+}
 if (siteBad) process.exit(1);

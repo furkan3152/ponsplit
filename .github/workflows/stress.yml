@@ -1,7 +1,8 @@
 name: Stress test
 
 # Load test of the live site (read-only: nothing is signed or sent on-chain). Many requests at once
-# to the pages and read APIs and a burst against the chain RPC the browsers use. See scripts/stress.mjs.
+# to the pages and read APIs and, only when an RPC URL is given, a burst against that RPC. Use an
+# endpoint you operate or pay for, never a shared public RPC. See scripts/stress.mjs.
 on:
   workflow_dispatch:
     inputs:
@@ -12,8 +13,8 @@ on:
         description: A listed coin's address for the coin page (optional)
         default: ""
       rpc:
-        description: RPC to burst (the one browsers use)
-        default: https://api.mainnet-beta.solana.com
+        description: RPC URL to burst (your own endpoint; leave empty to skip the RPC phase)
+        default: ""
       concurrency:
         description: HTTP requests at a time
         default: "40"
