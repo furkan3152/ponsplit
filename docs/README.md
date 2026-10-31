@@ -50,9 +50,9 @@ Vercel environment variables:
 
 - The production domain is **splitdev.app**; `www.splitdev.app` redirects to it.
 - Treasury: `D2Ts7yCiVjedo6uwqpkM44QA8J45NdVU1J3k5m6iWtvm`.
-- RPC: the free PublicNode and Solana mainnet endpoints; the old QuickNode endpoints are no longer used.
+- RPC: the free public endpoints listed above; no paid RPC provider is configured.
 - Recommended step: GitHub → Settings → Developer settings → Personal access tokens → "Generate new
-  token" (select no permissions), then add the resulting value to Vercel → ponsplit → Settings →
+  token" (select no permissions), then add the resulting value to the Vercel project's Settings →
   Environment Variables as `GITHUB_TOKEN`. This raises GitHub lookups from 60 to 5,000 per hour.
 
 ## Development
