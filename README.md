@@ -135,6 +135,14 @@ Chromium test that launches, trades, distributes and checks every page at deskto
 Live on Solana mainnet at [splitdev.app](https://splitdev.app). The history also contains SplitEarn, the
 earlier Robinhood Chain (EVM) version of the idea.
 
+## Naming
+
+The product is **Splitdev** ([splitdev.app](https://splitdev.app)); `ponsplit` is the name of this
+repository. Older spellings remain in identifiers that deployments or visitors' saved state depend on:
+`splidev` in file names and the `SPLIDEV_*` / `NEXT_PUBLIC_SPLIDEV_*` environment variables, the
+`ponsplit-web` and `splidev-e2e` package names, and the `splidev:*`, `ponsplit:theme` and
+`splitearn:sidebar` browser storage keys.
+
 ## License
 
 [MIT](LICENSE)
