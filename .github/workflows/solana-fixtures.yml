@@ -25,7 +25,8 @@ jobs:
           echo "$PWD/solana-release/bin" >> "$GITHUB_PATH"
       - name: Collect accounts
         run: |
-          rm -rf e2e/solana/fixtures
+          # Replace the dumped state but keep the hand-written README.md.
+          rm -rf e2e/solana/fixtures/accounts e2e/solana/fixtures/programs e2e/solana/fixtures/programs.txt
           node e2e/solana/collect-fixtures.mjs e2e/solana/fixtures
       - name: Dump programs
         run: |
